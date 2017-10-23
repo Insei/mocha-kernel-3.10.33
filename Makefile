@@ -1,10 +1,6 @@
 VERSION = 3
 PATCHLEVEL = 10
-<<<<<<< HEAD
-SUBLEVEL = 33
-=======
 SUBLEVEL = 96
->>>>>>> update/master
 EXTRAVERSION =
 NAME = TOSSUG Baby Fish
 
