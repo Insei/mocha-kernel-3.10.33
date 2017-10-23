@@ -2618,13 +2618,10 @@ struct wiphy_vendor_command {
  * @extended_capabilities_len: length of the extended capabilities
  * @country_ie_pref: country IE processing preferences specified
  *	by enum nl80211_country_ie_pref
-<<<<<<< HEAD
-=======
  * @vendor_commands: array of vendor commands supported by the hardware
  * @n_vendor_commands: number of vendor commands
  * @vendor_events: array of vendor events supported by the hardware
  * @n_vendor_events: number of vendor events
->>>>>>> update/master
  */
 struct wiphy {
 	/* assign these fields before you register the wiphy */
