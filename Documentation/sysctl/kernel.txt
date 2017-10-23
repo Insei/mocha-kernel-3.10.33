@@ -427,8 +427,6 @@ This file shows up if CONFIG_DEBUG_STACKOVERFLOW is enabled.
 
 ==============================================================
 
-<<<<<<< HEAD
-=======
 panic_on_unrecovered_nmi:
 
 The default Linux behaviour on an NMI of either memory or unknown is
@@ -482,7 +480,6 @@ CONFIG_SECURITY_PERF_EVENTS_RESTRICT is set, or 1 otherwise.
 >=3: Disallow all event access by users without CAP_SYS_ADMIN
 
 ==============================================================
->>>>>>> update/master
 
 pid_max:
 
