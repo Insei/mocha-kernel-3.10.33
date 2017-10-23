@@ -3,11 +3,6 @@ Dynamic ldousb input selection based on input voltage
 Required Properties:
 - compatible: Must be "ti,palmas-ldousb-in"
 - ti,ldousb-in-threshold-voltage: Threshold voltage on input to change
-<<<<<<< HEAD
-               inputs i.e. IN1 or IN2. The unut is uV.
-=======
-               inputs i.e. IN1 or IN2. The unit is uV.
->>>>>>> update/master
 - ti,enable-in1-above-threshold: Boolean type. Enable IN1 above threshold.
                If this property is not available then enable IN2 on aboe
                threshold.
