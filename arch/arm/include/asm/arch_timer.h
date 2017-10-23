@@ -95,25 +95,14 @@ static inline u32 arch_timer_get_cntkctl(void)
 }
 
 static inline void arch_timer_set_cntkctl(u32 cntkctl)
-{
-<<<<<<< HEAD
-=======
-	/* Disable user access to both physical/virtual counters/timers */
-	/* Also disable virtual event stream */
-	cntkctl &= ~(ARCH_TIMER_USR_PT_ACCESS_EN
-			| ARCH_TIMER_USR_VT_ACCESS_EN
-			| ARCH_TIMER_VIRT_EVT_EN
-			| ARCH_TIMER_USR_PCT_ACCESS_EN);
 
->>>>>>> update/master
 	asm volatile("mcr p15, 0, %0, c14, c1, 0" : : "r" (cntkctl));
 }
 
 static inline void arch_counter_set_user_access(void)
 {
 	u32 cntkctl = arch_timer_get_cntkctl();
-
-<<<<<<< HEAD
+	
 	/* Disable user access to everything except the virtual counter */
 	cntkctl &= ~((3 << 8) | (5 << 0));
 
@@ -122,7 +111,6 @@ static inline void arch_counter_set_user_access(void)
 
 	arch_timer_set_cntkctl(cntkctl);
 }
-=======
 	/* Disable user access to the timers and the physical counter */
 	/* Also disable virtual event stream */
 	cntkctl &= ~(ARCH_TIMER_USR_PT_ACCESS_EN
@@ -147,7 +135,6 @@ static inline void arch_timer_evtstrm_enable(int divider)
 	elf_hwcap |= HWCAP_EVTSTRM;
 }
 
->>>>>>> update/master
 #endif
 
 #endif
