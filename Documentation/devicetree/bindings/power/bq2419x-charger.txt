@@ -52,13 +52,11 @@ Optional properties:
 		> 60 : Charging will be disabled by HW.
 -ti,auto-recharge-time-suspend: time setting in seconds to register
                       rtc alarm timer to wake the device from LP0.
-<<<<<<< HEAD
 - ti,charge-status-gpio : charger gpio control to isolate green led
-=======
+
 -extcon-name: the extcon name to be used for USB VBUS detection
 -ti,charge-hw-current-limit-milliamp: maximum hardware input charge
 		 current limit in milliamp
->>>>>>> update/master
 
 Subnode properties:
 ==================
