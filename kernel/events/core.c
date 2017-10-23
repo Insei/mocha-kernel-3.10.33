@@ -6951,12 +6951,8 @@ SYSCALL_DEFINE5(perf_event_open,
 		 */
 		mutex_lock_double(&gctx->mutex, &ctx->mutex);
 
-<<<<<<< HEAD
-		mutex_lock(&gctx->mutex);
-		perf_remove_from_context(group_leader);
-=======
+
 		perf_remove_from_context(group_leader, false);
->>>>>>> update/master
 
 		/*
 		 * Removing from the context ends up with disabled
@@ -7689,13 +7685,7 @@ static void perf_event_exit_cpu_context(int cpu)
 static void perf_event_exit_cpu(int cpu)
 {
 	perf_event_exit_cpu_context(cpu);
-<<<<<<< HEAD
 
-	mutex_lock(&swhash->hlist_mutex);
-	swevent_hlist_release(swhash);
-	mutex_unlock(&swhash->hlist_mutex);
-=======
->>>>>>> update/master
 }
 #else
 static inline void perf_event_exit_cpu(int cpu) { }
