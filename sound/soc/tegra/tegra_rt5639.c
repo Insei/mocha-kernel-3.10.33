@@ -57,15 +57,11 @@
 #define DAI_LINK_BTSCO		2
 #define DAI_LINK_VOICE_CALL	3
 #define DAI_LINK_BT_VOICE_CALL	4
-<<<<<<< HEAD
-#define NUM_DAI_LINKS		5
-=======
 #define DAI_LINK_PCM_OFFLOAD_FE	5
 #define DAI_LINK_COMPR_OFFLOAD_FE	6
 #define DAI_LINK_PCM_OFFLOAD_CAPTURE_FE	7
 #define DAI_LINK_I2S_OFFLOAD_BE	8
-#define NUM_DAI_LINKS		9
->>>>>>> update/master
+#define NUM_DAI_LINKS		5
 
 #define DELAY_AFTR_LDO1_EN_UP   450
 #define DELAY_BFR_LDO1_EN_DOWN  250
@@ -1653,26 +1649,7 @@ err_free_machine:
 
 void disable_rt5639_regulators(struct tegra_rt5639 *machine)
 {
-<<<<<<< HEAD
-	struct snd_soc_card *card = platform_get_drvdata(pdev);
-	struct tegra_rt5639 *machine = snd_soc_card_get_drvdata(card);
-	struct tegra_asoc_platform_data *pdata = machine->pdata;
-	struct device_node *np = pdev->dev.of_node;
 
-	snd_soc_unregister_card(card);
-
-	msleep(DELAY_BFR_LDO1_EN_DOWN);
-	if (gpio_is_valid(pdata->gpio_ldo1_en)) {
-		gpio_set_value(pdata->gpio_ldo1_en, 0);
-		gpio_free(pdata->gpio_ldo1_en);
-	}
-	if (machine->gpio_requested & GPIO_HP_DET)
-		snd_soc_jack_free_gpios(&tegra_rt5639_hp_jack,
-					1,
-					&tegra_rt5639_hp_jack_gpio);
-
-=======
->>>>>>> update/master
 	if (machine->digital_reg) {
 		regulator_disable(machine->digital_reg);
 		regulator_put(machine->digital_reg);
@@ -1692,9 +1669,7 @@ void disable_rt5639_regulators(struct tegra_rt5639 *machine)
 		regulator_put(machine->codec_reg);
 	}
 
-<<<<<<< HEAD
-=======
-	return;
+   return;
 }
 
 void tegra_rt5639_driver_shutdown(struct platform_device *pdev)
@@ -1731,7 +1706,6 @@ static int tegra_rt5639_driver_remove(struct platform_device *pdev)
 	struct device_node *np = pdev->dev.of_node;
 
 	snd_soc_unregister_card(card);
->>>>>>> update/master
 
 	msleep(DELAY_BFR_LDO1_EN_DOWN);
 	if (gpio_is_valid(pdata->gpio_ldo1_en)) {
