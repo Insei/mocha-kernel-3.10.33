@@ -93,9 +93,6 @@
 #define TEGRA_DC_EXT_FLIP_FLAG_BLOCKLINEAR	(1 << 5)
 #define TEGRA_DC_EXT_FLIP_FLAG_SCAN_COLUMN	(1 << 6)
 #define TEGRA_DC_EXT_FLIP_FLAG_INTERLACE	(1 << 7)
-<<<<<<< HEAD
-#define TEGRA_DC_EXT_FLIP_FLAG_UPDATE_CSC	(1 << 9)
-=======
 #define TEGRA_DC_EXT_FLIP_FLAG_COMPRESSED	(1 << 8)
 #define TEGRA_DC_EXT_FLIP_FLAG_UPDATE_CSC	(1 << 9)
 #define TEGRA_DC_EXT_FLIP_FLAG_UPDATE_CSC_V2	(1 << 10)
@@ -121,7 +118,6 @@
 #define TEGRA_DC_EXT_CEA861_3_EOTF_SDR_LR	(1 << 0)
 #define TEGRA_DC_EXT_CEA861_3_EOTF_HDR_LR	(1 << 1)
 #define TEGRA_DC_EXT_CEA861_3_EOTF_SMPTE_2084	(1 << 2)
->>>>>>> update/master
 
 struct tegra_timespec {
 	__s32	tv_sec; /* seconds */
@@ -173,14 +169,7 @@ struct tegra_dc_ext_flip_windowattr {
 	__u8	block_height_log2;
 	__u8	pad1[2];
 	union { /* fields for mutually exclusive options */
-<<<<<<< HEAD
-		struct { /* TEGRA_DC_EXT_FLIP_FLAG_INTERLACE */
-			__u32	offset2;
-			__u32	offset_u2;
-			__u32	offset_v2;
-			__u32   pad2[1];
-		};
-=======
+
 		struct { /* used if TEGRA_DC_EXT_FLIP_FLAG_INTERLACE set */
 			__u32	offset2;
 			__u32	offset_u2;
@@ -195,7 +184,6 @@ struct tegra_dc_ext_flip_windowattr {
 			__u16	offset_y;
 			__u32	zbc_color;
 		} cde;
->>>>>>> update/master
 		struct { /* TEGRA_DC_EXT_FLIP_FLAG_UPDATE_CSC */
 			__u16 yof;	/* s.7.0 */
 			__u16 kyrgb;	/*   2.8 */
@@ -207,8 +195,6 @@ struct tegra_dc_ext_flip_windowattr {
 			__u16 kvb;	/* s.2.8 */
 		} csc;
 	};
-<<<<<<< HEAD
-=======
 };
 
 /*
@@ -299,7 +285,6 @@ struct tegra_dc_ext_flip_windowattr_v2 {
 			__u32 const2b;	/* s.3.16 */
 		} csc2;
 	};
->>>>>>> update/master
 };
 
 #define TEGRA_DC_EXT_FLIP_N_WINDOWS	3
@@ -784,8 +769,6 @@ struct tegra_dc_ext_feature {
 #define TEGRA_DC_EXT_SET_CMU_ALIGNED \
 	_IOW('D', 0x16, struct tegra_dc_ext_cmu)
 
-<<<<<<< HEAD
-=======
 #define TEGRA_DC_EXT_SET_CSC_V2 \
 	_IOW('D', 0x17, struct tegra_dc_ext_csc_v2)
 
@@ -810,7 +793,6 @@ struct tegra_dc_ext_feature {
 #define TEGRA_DC_EXT_GET_CAP_INFO\
 	_IOW('D', 0x1E, struct tegra_dc_ext_get_cap_info)
 
->>>>>>> update/master
 enum tegra_dc_ext_control_output_type {
 	TEGRA_DC_EXT_DSI,
 	TEGRA_DC_EXT_LVDS,
@@ -877,16 +859,6 @@ struct tegra_dc_ext_control_event_vblank {
 	__u64 timestamp_ns;
 };
 
-<<<<<<< HEAD
-#define TEGRA_DC_EXT_EVENT_VBLANK			(1 << 1)
-struct tegra_dc_ext_control_event_vblank {
-	__u32 handle;
-	__u32 reserved; /* unused */
-	__u64 timestamp_ns;
-};
-
-=======
->>>>>>> update/master
 #define TEGRA_DC_EXT_EVENT_BANDWIDTH_INC	(1 << 2)
 #define TEGRA_DC_EXT_EVENT_BANDWIDTH_DEC	(1 << 3)
 struct tegra_dc_ext_control_event_bandwidth {
