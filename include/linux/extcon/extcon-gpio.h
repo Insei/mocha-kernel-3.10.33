@@ -29,10 +29,19 @@
  * @gpio:		Corresponding GPIO.
  * @debounce:		Debounce time for GPIO IRQ in ms.
  * @irq_flags:		IRQ Flags (e.g., IRQF_TRIGGER_LOW).
+<<<<<<< HEAD
+=======
+ * @connection_state_low: Connection state is GPIO low state.
+ * @default_state: Default state of the connection if gpio is not provided.
+>>>>>>> update/master
  * @state_on:		print_state is overriden with state_on if attached.
  *			If NULL, default method of extcon class is used.
  * @state_off:		print_state is overriden with state_on if detached.
  *			If NUll, default method of extcon class is used.
+<<<<<<< HEAD
+=======
+ * @cable_name		Extcon cable name.
+>>>>>>> update/master
  *
  * Note that in order for state_on or state_off to be valid, both state_on
  * and state_off should be not NULL. If at least one of them is NULL,
@@ -40,13 +49,16 @@
  */
 struct gpio_extcon_platform_data {
 	const char *name;
-	unsigned gpio;
+	int gpio;
 	unsigned long debounce;
 	unsigned long irq_flags;
+	bool connection_state_low;
+	bool default_state;
 
 	/* if NULL, "0" or "1" will be printed */
 	const char *state_on;
 	const char *state_off;
+	const char *cable_name;
 };
 
 #endif /* __EXTCON_GPIO_H__ */

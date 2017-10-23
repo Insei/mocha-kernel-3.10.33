@@ -16,9 +16,20 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+<<<<<<< HEAD
 /* Some USB Sound device depends on other conditions to prempt sound play/acquire.
  * Prevent them from sending uevent upon connection/disconnection
  */
 {
     USB_DEVICE(0x0955, 0x7210),//This is the VID and PID for Blake device
+=======
+/*
+ * Some USB Sound device depends on other conditions to prempt sound
+ * play/acquire.
+ * Prevent them from sending uevent upon connection/disconnection
+ */
+{
+	/*This is the VID and PID for Blake device*/
+	USB_DEVICE(0x0955, 0x7210),
+>>>>>>> update/master
 },

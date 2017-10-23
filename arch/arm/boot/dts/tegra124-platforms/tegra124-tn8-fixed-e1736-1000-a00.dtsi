@@ -173,6 +173,7 @@
 				};
 			};
 		};
+<<<<<<< HEAD
 		
 		vdd_cam_1v8: regulator@10 {
 				compatible = "regulator-fixed-sync";
@@ -206,5 +207,7 @@
 						};
 				};
 		};				
+=======
+>>>>>>> update/master
 	};
 };

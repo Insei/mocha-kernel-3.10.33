@@ -1,7 +1,7 @@
 /*
  * include/linux/therm_est.h
  *
- * Copyright (c) 2010-2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2010-2016, NVIDIA CORPORATION.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -26,11 +26,23 @@
 #define MAX_ACTIVE_STATES	10
 #define MAX_TIMER_TRIPS		10
 
-struct therm_est_subdevice {
-	void *dev_data;
-	struct thermal_zone_device *sub_thz;
-	long coeffs[HIST_LEN];
+struct therm_est_sub_thz {
+	struct thermal_zone_device *thz;
 	long hist[HIST_LEN];
+};
+
+struct therm_est_coeffs {
+	long toffset;
+	long (*coeffs)[HIST_LEN];
+};
+
+struct therm_est_subdevice {
+	struct therm_est_sub_thz *sub_thz;
+	struct therm_est_coeffs *coeffs_set;
+	int num_devs;
+	int num_coeffs;
+	int active_coeffs;
+	int ntemp;
 };
 
 /*
@@ -74,21 +86,22 @@ struct therm_est_data {
 
 	/* zone parameters */
 	struct thermal_zone_params *tzp;
-	long toffset;
 	long polling_period;
 	int passive_delay;
 	int tc1;
 	int tc2;
-	int ndevs;
-	struct therm_est_subdevice *devs;
+	struct therm_est_subdevice subdevice;
+	bool dual_coeff_table;
+	int n_psy_cables;
+	const char **psy_cable_names;
 	int use_activator;
 };
 
 struct therm_fan_est_subdevice {
-	void *dev_data;
-	int (*get_temp)(void *, long *);
-	long coeffs[HIST_LEN];
-	long hist[HIST_LEN];
+	const char *dev_data;
+	int (*get_temp)(const char *, long *);
+	int coeffs[HIST_LEN];
+	int hist[HIST_LEN];
 };
 
 struct therm_fan_est_data {

@@ -2,6 +2,7 @@
 
   Intel(R) Gigabit Ethernet Linux driver
   Copyright(c) 2007-2013 Intel Corporation.
+  Copyright (c) 2014, NVIDIA CORPORATION.  All rights reserved.
 
   This program is free software; you can redistribute it and/or modify it
   under the terms and conditions of the GNU General Public License,
@@ -691,7 +692,7 @@ static int __init igb_init_module(void)
 	return ret;
 }
 
-module_init(igb_init_module);
+late_initcall(igb_init_module);
 
 /**
  *  igb_exit_module - Driver Exit Cleanup Routine
@@ -1584,6 +1585,8 @@ void igb_power_up_link(struct igb_adapter *adapter)
 		igb_power_up_phy_copper(&adapter->hw);
 	else
 		igb_power_up_serdes_link_82575(&adapter->hw);
+
+	igb_setup_link(&adapter->hw);
 }
 
 /**

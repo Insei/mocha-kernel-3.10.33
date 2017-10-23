@@ -1,7 +1,11 @@
 /*
  * include/linux/tegra_profiler.h
  *
+<<<<<<< HEAD
  * Copyright (c) 2013-2015, NVIDIA CORPORATION.  All rights reserved.
+=======
+ * Copyright (c) 2013-2016, NVIDIA CORPORATION.  All rights reserved.
+>>>>>>> update/master
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -19,8 +23,13 @@
 
 #include <linux/ioctl.h>
 
+<<<<<<< HEAD
 #define QUADD_SAMPLES_VERSION	34
 #define QUADD_IO_VERSION	18
+=======
+#define QUADD_SAMPLES_VERSION	36
+#define QUADD_IO_VERSION	20
+>>>>>>> update/master
 
 #define QUADD_IO_VERSION_DYNAMIC_RB		5
 #define QUADD_IO_VERSION_RB_MAX_FILL_COUNT	6
@@ -36,6 +45,11 @@
 #define QUADD_IO_VERSION_STACK_OFFSET		16
 #define QUADD_IO_VERSION_SECTIONS_INFO		17
 #define QUADD_IO_VERSION_UNW_METHODS_OPT	18
+<<<<<<< HEAD
+=======
+#define QUADD_IO_VERSION_PER_CPU_SETUP          19
+#define QUADD_IO_VERSION_TRACE_ALL_TASKS        20
+>>>>>>> update/master
 
 #define QUADD_SAMPLE_VERSION_THUMB_MODE_FLAG	17
 #define QUADD_SAMPLE_VERSION_GROUP_SAMPLES	18
@@ -53,6 +67,11 @@
 #define QUADD_SAMPLE_VERSION_SCHED_TASK_STATE	32
 #define QUADD_SAMPLE_VERSION_URCS		33
 #define QUADD_SAMPLE_VERSION_HOTPLUG		34
+<<<<<<< HEAD
+=======
+#define QUADD_SAMPLE_VERSION_PER_CPU_SETUP      35
+#define QUADD_SAMPLE_VERSION_REPORT_TGID        36
+>>>>>>> update/master
 
 #define QUADD_MMAP_HEADER_VERSION		1
 
@@ -112,6 +131,23 @@
  * Send sections info
  */
 #define IOCTL_SET_SECTIONS_INFO _IOW(QUADD_IOCTL, 8, struct quadd_sections)
+<<<<<<< HEAD
+=======
+
+/*
+ * Per CPU PMU setup
+ */
+#define IOCTL_SETUP_PMU_FOR_CPU _IOW(QUADD_IOCTL, 9,\
+				     struct quadd_pmu_setup_for_cpu)
+
+/*
+ * Per CPU capabilities
+ */
+#define IOCTL_GET_CAP_FOR_CPU _IOWR(QUADD_IOCTL, 10,\
+				    struct quadd_comm_cap_for_cpu)
+
+
+>>>>>>> update/master
 
 #define QUADD_CPUMODE_TEGRA_POWER_CLUSTER_LP	(1 << 29)	/* LP CPU */
 #define QUADD_CPUMODE_THUMB			(1 << 30)	/* thumb mode */
@@ -217,6 +253,7 @@ enum {
 struct quadd_sample_data {
 	u64 ip;
 	u32 pid;
+	u32 tgid;
 	u64 time;
 
 	u16	cpu:6,
@@ -282,6 +319,10 @@ enum {
 
 struct quadd_sched_data {
 	u32 pid;
+<<<<<<< HEAD
+=======
+	u32 tgid;
+>>>>>>> update/master
 	u64 time;
 
 	u32	cpu:6,
@@ -331,6 +372,10 @@ struct quadd_debug_data {
 #define QUADD_HDR_USE_ARCH_TIMER	(1 << 3)
 #define QUADD_HDR_STACK_OFFSET		(1 << 4)
 #define QUADD_HDR_BT_DWARF		(1 << 5)
+<<<<<<< HEAD
+=======
+#define QUADD_HDR_HAS_CPUID		(1 << 6)
+>>>>>>> update/master
 
 struct quadd_header_data {
 	u16 magic;
@@ -387,6 +432,10 @@ enum {
 #define QUADD_PARAM_EXTRA_STACK_OFFSET		(1 << 5)
 #define QUADD_PARAM_EXTRA_BT_UT_CE		(1 << 6)
 #define QUADD_PARAM_EXTRA_BT_DWARF		(1 << 7)
+<<<<<<< HEAD
+=======
+#define QUADD_PARAM_EXTRA_PER_PMU_SETUP		(1 << 8)
+>>>>>>> update/master
 
 struct quadd_parameters {
 	u32 freq;
@@ -396,7 +445,8 @@ struct quadd_parameters {
 	u64	backtrace:1,
 		use_freq:1,
 		system_wide:1,
-		debug_samples:1;
+		debug_samples:1,
+		trace_all_tasks:1;
 
 	u32 pids[QUADD_MAX_PROCESS];
 	u32 nr_pids;
@@ -407,6 +457,14 @@ struct quadd_parameters {
 	u32 nr_events;
 
 	u32 reserved[16];	/* reserved fields for future extensions */
+};
+
+struct quadd_pmu_setup_for_cpu {
+	u32 cpuid;
+	u32 events[QUADD_MAX_COUNTERS];
+	u32 nr_events;
+
+	u32 reserved[16];
 };
 
 struct quadd_events_cap {
@@ -427,6 +485,7 @@ struct quadd_events_cap {
 
 enum {
 	QUADD_COMM_CAP_IDX_EXTRA = 0,
+	QUADD_COMM_CAP_IDX_CPU_MASK = 1,
 };
 
 #define QUADD_COMM_CAP_EXTRA_BT_KERNEL_CTX	(1 << 0)
@@ -439,6 +498,10 @@ enum {
 #define QUADD_COMM_CAP_EXTRA_UNW_ENTRY_TYPE	(1 << 7)
 #define QUADD_COMM_CAP_EXTRA_ARCH_TIMER		(1 << 8)
 #define QUADD_COMM_CAP_EXTRA_RB_MMAP_OP		(1 << 9)
+<<<<<<< HEAD
+=======
+#define QUADD_COMM_CAP_EXTRA_CPU_MASK		(1 << 10)
+>>>>>>> update/master
 
 struct quadd_comm_cap {
 	u32	pmu:1,
@@ -448,9 +511,16 @@ struct quadd_comm_cap {
 		tegra_lp_cluster:1,
 		blocked_read:1;
 
-	struct quadd_events_cap events_cap;
+	struct quadd_events_cap events_cap; /* Deprecated. */
 
 	u32 reserved[16];	/* reserved fields for future extensions */
+};
+
+struct quadd_comm_cap_for_cpu {
+	u32	l2_cache:1,
+		l2_multiple_events:1;
+	int cpuid;
+	struct quadd_events_cap events_cap;
 };
 
 enum {
@@ -499,6 +569,26 @@ struct quadd_sec_info {
 	u64 length;
 
 	u64 mmap_offset;
+<<<<<<< HEAD
+};
+
+struct quadd_sections {
+	u64 vm_start;
+	u64 vm_end;
+
+	struct quadd_sec_info sec[QUADD_SEC_TYPE_MAX];
+
+	u64 user_mmap_start;
+
+	u64 reserved[4];	/* reserved fields for future extensions */
+};
+
+struct quadd_mmap_rb_info {
+	u32 cpu_id;
+
+	u64 vm_start;
+	u64 vm_end;
+=======
 };
 
 struct quadd_sections {
@@ -529,6 +619,7 @@ struct quadd_mmap_header {
 
 	u32 cpu_id;
 	u32 samples_version;
+>>>>>>> update/master
 
 	u32 reserved[4];	/* reserved fields for future extensions */
 } __aligned(8);
@@ -539,6 +630,27 @@ enum {
 	QUADD_RB_STATE_STOPPED,
 };
 
+<<<<<<< HEAD
+#define QUADD_MMAP_HEADER_MAGIC		0x33445566
+
+struct quadd_mmap_header {
+	u32 magic;
+	u32 version;
+
+	u32 cpu_id;
+	u32 samples_version;
+
+	u32 reserved[4];	/* reserved fields for future extensions */
+} __aligned(8);
+
+enum {
+	QUADD_RB_STATE_NONE = 0,
+	QUADD_RB_STATE_ACTIVE,
+	QUADD_RB_STATE_STOPPED,
+};
+
+=======
+>>>>>>> update/master
 struct quadd_ring_buffer_hdr {
 	u32 state;
 	u32 size;

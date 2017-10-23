@@ -34,8 +34,13 @@
  */
 struct adc_jack_cond {
 	u32 state;	/* extcon state value. 0 if invalid */
+<<<<<<< HEAD
 	u32 min_adc;
 	u32 max_adc;
+=======
+	int min_adc;
+	int max_adc;
+>>>>>>> update/master
 };
 
 /**
@@ -66,6 +71,7 @@ struct adc_jack_pdata {
 
 	unsigned long irq_flags;
 	unsigned long handling_delay_ms; /* in ms */
+	int debounce_ms;
 };
 
 #endif /* _EXTCON_ADC_JACK_H */

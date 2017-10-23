@@ -50,6 +50,16 @@ ENTRY(efi_pe_entry)
 	pushl	%eax
 	pushl	%esi
 	pushl	%ecx
+<<<<<<< HEAD
+=======
+
+	call	reloc
+reloc:
+	popl	%ecx
+	subl	$reloc, %ecx
+	movl	%ecx, BP_code32_start(%eax)
+
+>>>>>>> update/master
 	sub	$0x4, %esp
 
 ENTRY(efi_stub_entry)

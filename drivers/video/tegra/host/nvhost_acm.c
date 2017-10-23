@@ -3,7 +3,7 @@
  *
  * Tegra Graphics Host Automatic Clock Management
  *
- * Copyright (c) 2010-2014, NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2010-2015, NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -34,11 +34,14 @@
 #include <linux/tegra-soc.h>
 #include <trace/events/nvhost.h>
 #include <linux/platform_data/tegra_edp.h>
+#include <linux/tegra_pm_domains.h>
+#include <linux/nvhost_ioctl.h>
 
-#include <mach/mc.h>
-#include <mach/pm_domains.h>
+#include <linux/platform/tegra/mc.h>
 
 #include "nvhost_acm.h"
+#include "nvhost_vm.h"
+#include "nvhost_scale.h"
 #include "nvhost_channel.h"
 #include "dev.h"
 #include "bus_client.h"
@@ -47,19 +50,28 @@
 #define POWERGATE_DELAY 			10
 #define MAX_DEVID_LENGTH			16
 
+static void nvhost_module_load_regs(struct platform_device *pdev, bool prod);
+static int nvhost_module_toggle_slcg(struct notifier_block *nb,
+				     unsigned long action, void *data);
+
 #ifdef CONFIG_PM_GENERIC_DOMAINS
+static int nvhost_module_suspend(struct device *dev);
 static int nvhost_module_power_on(struct generic_pm_domain *domain);
 static int nvhost_module_power_off(struct generic_pm_domain *domain);
+static int nvhost_module_prepare_poweroff(struct device *dev);
+static int nvhost_module_finalize_poweron(struct device *dev);
 #endif
 
-DEFINE_MUTEX(client_list_lock);
+static DEFINE_MUTEX(client_list_lock);
 
 struct nvhost_module_client {
 	struct list_head node;
-	unsigned long rate[NVHOST_MODULE_MAX_CLOCKS];
+	unsigned long constraint[NVHOST_MODULE_MAX_CLOCKS];
+	unsigned long type[NVHOST_MODULE_MAX_CLOCKS];
 	void *priv;
 };
 
+#ifdef CONFIG_ARCH_TEGRA
 static void do_powergate_locked(int id)
 {
 	nvhost_dbg_fn("%d", id);
@@ -78,9 +90,27 @@ static void do_unpowergate_locked(int id)
 	}
 }
 
+static void dump_clock_status(struct platform_device *dev)
+{
+	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
+	int i;
+
+	pr_info("\n%s: %s status:\n", __func__, dev_name(&dev->dev));
+
+	for (i = 0; i < NVHOST_MODULE_MAX_CLOCKS; i++) {
+		if (!pdata->clocks[i].name)
+			break;
+		pr_info("%s: clock %s: enabled=%d, rate = %lu\n",
+			__func__, pdata->clocks[i].name,
+			!!tegra_is_clk_enabled(pdata->clk[i]),
+			clk_get_rate(pdata->clk[i]));
+	}
+}
+
 static void do_module_reset_locked(struct platform_device *dev)
 {
 	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
+	int ret;
 
 	if (pdata->reset) {
 		pdata->reset(dev);
@@ -89,12 +119,20 @@ static void do_module_reset_locked(struct platform_device *dev)
 
 	/* assert module and mc client reset */
 	if (pdata->clocks[0].reset) {
-		tegra_mc_flush(pdata->clocks[0].reset);
+		ret = tegra_mc_flush(pdata->clocks[0].reset);
+		if (ret) {
+			dump_clock_status(nvhost_get_host(dev)->dev);
+			dump_clock_status(dev);
+		}
 		tegra_periph_reset_assert(pdata->clk[0]);
 	}
 
 	if (pdata->clocks[1].reset) {
-		tegra_mc_flush(pdata->clocks[1].reset);
+		ret = tegra_mc_flush(pdata->clocks[1].reset);
+		if (ret) {
+			dump_clock_status(nvhost_get_host(dev)->dev);
+			dump_clock_status(dev);
+		}
 		tegra_periph_reset_assert(pdata->clk[1]);
 	}
 
@@ -112,21 +150,65 @@ static void do_module_reset_locked(struct platform_device *dev)
 	}
 }
 
-void nvhost_module_reset(struct platform_device *dev)
+static unsigned long nvhost_emc_bw_to_freq_req(unsigned long rate)
+{
+	return tegra_emc_bw_to_freq_req((unsigned long)(rate));
+}
+#else
+static void do_powergate_locked(int id)
+{
+	nvhost_dbg_fn("%d", id);
+}
+
+static void do_unpowergate_locked(int id)
+{
+	nvhost_dbg_fn("");
+}
+
+static void do_module_reset_locked(struct platform_device *dev)
+{
+	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
+
+	nvhost_dbg_fn("");
+
+	if (pdata->reset) {
+		pdata->reset(dev);
+		return;
+	}
+}
+static unsigned long nvhost_emc_bw_to_freq_req(unsigned long rate)
+{
+	return 0;
+}
+#endif
+
+void nvhost_module_reset(struct platform_device *dev, bool reboot)
 {
 	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
 
 	dev_dbg(&dev->dev,
-		"%s: asserting %s module reset (id %d, id2 %d)\n",
+		"%s: asserting %s module reset (id %d)\n",
 		__func__, dev_name(&dev->dev),
-		pdata->powergate_ids[0], pdata->powergate_ids[1]);
+		pdata->powergate_id);
+
+	/* Ensure that the device state is sane (i.e. device specifics
+	 * IRQs get disabled */
+	if (reboot)
+		if (pdata->prepare_poweroff)
+			pdata->prepare_poweroff(dev);
 
 	mutex_lock(&pdata->lock);
 	do_module_reset_locked(dev);
 	mutex_unlock(&pdata->lock);
 
-	if (pdata->finalize_poweron)
-		pdata->finalize_poweron(dev);
+	if (reboot) {
+		/* Load clockgating registers */
+		nvhost_module_load_regs(dev, pdata->engine_can_cg);
+
+		/* ..and execute engine specific operations (i.e. boot) */
+		if (pdata->finalize_poweron)
+			pdata->finalize_poweron(dev);
+	}
 
 	dev_dbg(&dev->dev, "%s: module %s out of reset\n",
 		__func__, dev_name(&dev->dev));
@@ -175,6 +257,23 @@ int nvhost_module_busy(struct platform_device *dev)
 		nvhost_err(&dev->dev, "failed to power on, err %d", ret);
 		return ret;
 	}
+#else
+	if (!pdata->booted && pdata->finalize_poweron) {
+		ret = nvhost_vm_init_device(dev);
+		if (ret < 0) {
+			nvhost_err(&dev->dev, "failed to init vm, err %d",
+				   ret);
+			return ret;
+		}
+
+		ret = pdata->finalize_poweron(dev);
+		if (ret < 0) {
+			nvhost_err(&dev->dev, "failed to power on, err %d",
+				   ret);
+			return ret;
+		}
+		pdata->booted = true;
+	}
 #endif
 
 	if (pdata->busy)
@@ -187,17 +286,40 @@ void nvhost_module_disable_poweroff(struct platform_device *dev)
 {
 	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
 
-	if (!dev_pm_qos_request_active(&pdata->no_poweroff_req))
+	mutex_lock(&pdata->no_poweroff_req_mutex);
+	pdata->no_poweroff_req_count++;
+	if (!dev_pm_qos_request_active(&pdata->no_poweroff_req)) {
+		int ret;
+
 		dev_pm_qos_add_request(&dev->dev, &pdata->no_poweroff_req,
 				DEV_PM_QOS_FLAGS, PM_QOS_FLAG_NO_POWER_OFF);
+
+		/* Flush the request */
+		ret = nvhost_module_busy(dev);
+		if (!ret)
+			nvhost_module_idle(dev);
+	}
+	mutex_unlock(&pdata->no_poweroff_req_mutex);
 }
 
 void nvhost_module_enable_poweroff(struct platform_device *dev)
 {
 	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
 
-	if (dev_pm_qos_request_active(&pdata->no_poweroff_req))
+	mutex_lock(&pdata->no_poweroff_req_mutex);
+	pdata->no_poweroff_req_count--;
+	if (!pdata->no_poweroff_req_count &&
+	    dev_pm_qos_request_active(&pdata->no_poweroff_req)) {
+		int ret;
+
 		dev_pm_qos_remove_request(&pdata->no_poweroff_req);
+
+		/* Flush the request */
+		ret = nvhost_module_busy(dev);
+		if (!ret)
+			nvhost_module_idle(dev);
+	}
+	mutex_unlock(&pdata->no_poweroff_req_mutex);
 }
 
 void nvhost_module_idle_mult(struct platform_device *dev, int refs)
@@ -253,44 +375,68 @@ int nvhost_module_get_rate(struct platform_device *dev, unsigned long *rate,
 
 static int nvhost_module_update_rate(struct platform_device *dev, int index)
 {
+	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
+	unsigned long bw_constraint = 0, floor_rate = 0, pixelrate = 0;
 	unsigned long rate = 0;
 	struct nvhost_module_client *m;
-	unsigned long devfreq_rate, default_rate;
-	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
 	int ret;
 
 	if (!pdata->clk[index])
 		return -EINVAL;
 
-	/* If devfreq is on, use that clock rate, otherwise default */
-	devfreq_rate = pdata->clocks[index].devfreq_rate;
-	default_rate = devfreq_rate ?
-		devfreq_rate : pdata->clocks[index].default_rate;
-	default_rate = clk_round_rate(pdata->clk[index], default_rate);
-
+	/* aggregate client constraints */
 	list_for_each_entry(m, &pdata->client_list, node) {
-		unsigned long r = m->rate[index];
-		if (!r)
-			r = default_rate;
-		rate = max(r, rate);
-	}
-	if (!rate)
-		rate = default_rate;
+		unsigned long constraint = m->constraint[index];
+		unsigned long type = m->type[index];
 
-	trace_nvhost_module_update_rate(dev->name,
-			pdata->clocks[index].name, rate);
+		if (!constraint)
+			continue;
+
+		/* Note: We need to take max to avoid wrapping issues */
+		if (type == NVHOST_BW)
+			bw_constraint = max(bw_constraint,
+				bw_constraint + (constraint / 1000));
+		else if (type == NVHOST_PIXELRATE)
+			pixelrate = max(pixelrate,
+				pixelrate + constraint);
+		else if (type == NVHOST_BW_KHZ)
+			bw_constraint = max(bw_constraint,
+				bw_constraint + constraint);
+		else
+			floor_rate = max(floor_rate, constraint);
+	}
+
+	/* use client specific aggregation if available */
+	if (pdata->aggregate_constraints)
+		rate = pdata->aggregate_constraints(dev, index, floor_rate,
+						    pixelrate, bw_constraint);
+
+	/* if frequency is not available, use default policy */
+	if (!rate) {
+		unsigned long bw_freq_khz =
+			nvhost_emc_bw_to_freq_req(bw_constraint);
+		bw_freq_khz = min(ULONG_MAX / 1000, bw_freq_khz);
+		rate = max(floor_rate, bw_freq_khz * 1000);
+	}
+
+	/* take devfreq rate into account */
+	rate = max(rate, pdata->clocks[index].devfreq_rate);
+
+	/* if we still don't have any rate, use default */
+	if (!rate)
+		rate = pdata->clocks[index].default_rate;
+
+	trace_nvhost_module_update_rate(dev->name, pdata->clocks[index].name,
+					rate);
 
 	ret = clk_set_rate(pdata->clk[index], rate);
-
-	if (pdata->update_clk)
-		pdata->update_clk(dev);
 
 	return ret;
 
 }
 
 int nvhost_module_set_rate(struct platform_device *dev, void *priv,
-		unsigned long rate, int index, int bBW)
+		unsigned long constraint, int index, unsigned long type)
 {
 	struct nvhost_module_client *m;
 	int ret = 0;
@@ -301,23 +447,8 @@ int nvhost_module_set_rate(struct platform_device *dev, void *priv,
 	mutex_lock(&client_list_lock);
 	list_for_each_entry(m, &pdata->client_list, node) {
 		if (m->priv == priv) {
-			if (bBW) {
-				/*
-				 * If client sets BW, then we need to
-				 * convert it to freq.
-				 * rate is Bps and input param of
-				 * tegra_emc_bw_to_freq_req is KBps.
-				 */
-				unsigned int freq_khz =
-				tegra_emc_bw_to_freq_req
-					((unsigned long)(rate >> 10));
-
-				m->rate[index] =
-					clk_round_rate(pdata->clk[index],
-					(unsigned long)(freq_khz << 10));
-			} else
-				m->rate[index] =
-					clk_round_rate(pdata->clk[index], rate);
+			m->constraint[index] = constraint;
+			m->type[index] = type;
 		}
 	}
 
@@ -373,6 +504,48 @@ void nvhost_module_remove_client(struct platform_device *dev, void *priv)
 	mutex_unlock(&client_list_lock);
 }
 
+static ssize_t force_on_store(struct kobject *kobj,
+	struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int force_on = 0, ret = 0;
+	struct nvhost_device_power_attr *power_attribute =
+		container_of(attr, struct nvhost_device_power_attr,
+			     power_attr[NVHOST_POWER_SYSFS_ATTRIB_FORCE_ON]);
+	struct platform_device *dev = power_attribute->ndev;
+	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
+
+	ret = sscanf(buf, "%d", &force_on);
+	if (ret != 1)
+		return -EINVAL;
+
+	/* should we force the power on or off? */
+	if (force_on && !pdata->forced_on) {
+		/* force on */
+		ret = nvhost_module_busy(dev);
+		if (!ret)
+			pdata->forced_on = true;
+	} else if (!force_on && pdata->forced_on) {
+		/* force off */
+		nvhost_module_idle(dev);
+		pdata->forced_on = false;
+	}
+
+	return count;
+}
+
+static ssize_t force_on_show(struct kobject *kobj,
+	struct kobj_attribute *attr, char *buf)
+{
+	struct nvhost_device_power_attr *power_attribute =
+		container_of(attr, struct nvhost_device_power_attr,
+			     power_attr[NVHOST_POWER_SYSFS_ATTRIB_FORCE_ON]);
+	struct platform_device *dev = power_attribute->ndev;
+	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
+
+	return sprintf(buf, "%d\n", pdata->forced_on);
+
+}
+
 static ssize_t powergate_delay_store(struct kobject *kobj,
 	struct kobj_attribute *attr, const char *buf, size_t count)
 {
@@ -388,17 +561,19 @@ static ssize_t powergate_delay_store(struct kobject *kobj,
 		return count;
 	}
 
-	mutex_lock(&pdata->lock);
 	ret = sscanf(buf, "%d", &powergate_delay);
 	if (ret == 1 && powergate_delay >= 0) {
 		struct generic_pm_domain *genpd =
 			pd_to_genpd(dev->dev.pm_domain);
+
+		mutex_lock(&pdata->lock);
 		pdata->powergate_delay = powergate_delay;
+		mutex_unlock(&pdata->lock);
+
 		pm_genpd_set_poweroff_delay(genpd, pdata->powergate_delay);
-	}
-	else
+	} else {
 		dev_err(&dev->dev, "Invalid powergate delay\n");
-	mutex_unlock(&pdata->lock);
+	}
 
 	return count;
 }
@@ -430,16 +605,17 @@ static ssize_t clockgate_delay_store(struct kobject *kobj,
 	struct platform_device *dev = power_attribute->ndev;
 	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
 
-	mutex_lock(&pdata->lock);
 	ret = sscanf(buf, "%d", &clockgate_delay);
 	if (ret == 1 && clockgate_delay >= 0) {
+		mutex_lock(&pdata->lock);
 		pdata->clockgate_delay = clockgate_delay;
+		mutex_unlock(&pdata->lock);
+
 		pm_runtime_set_autosuspend_delay(&dev->dev,
-			pdata->clockgate_delay);
-	}
-	else
+				pdata->clockgate_delay);
+	} else {
 		dev_err(&dev->dev, "Invalid clockgate delay\n");
-	mutex_unlock(&pdata->lock);
+	}
 
 	return count;
 }
@@ -461,23 +637,18 @@ static ssize_t clockgate_delay_show(struct kobject *kobj,
 	return ret;
 }
 
-int nvhost_module_set_devfreq_rate(struct platform_device *dev, int index,
-		unsigned long rate)
+int nvhost_clk_get(struct platform_device *dev, char *name, struct clk **clk)
 {
+	int i;
 	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
-	int ret;
 
-	rate = clk_round_rate(pdata->clk[index], rate);
-	pdata->clocks[index].devfreq_rate = rate;
-
-	trace_nvhost_module_set_devfreq_rate(dev->name,
-			pdata->clocks[index].name, rate);
-
-	mutex_lock(&client_list_lock);
-	ret = nvhost_module_update_rate(dev, index);
-	mutex_unlock(&client_list_lock);
-
-	return ret;
+	for (i = 0; i < pdata->num_clks; i++) {
+		if (strcmp(pdata->clocks[i].name, name) == 0) {
+			*clk = pdata->clk[i];
+			return 0;
+		}
+	}
+	return -EINVAL;
 }
 
 int nvhost_module_init(struct platform_device *dev)
@@ -485,10 +656,21 @@ int nvhost_module_init(struct platform_device *dev)
 	int i = 0, err = 0;
 	struct kobj_attribute *attr = NULL;
 	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
+	int partition_id = -1;
+#ifdef CONFIG_PM_GENERIC_DOMAINS_OF
+	struct device_node *dn;
+	struct generic_pm_domain *gpd;
+#endif
 
 	/* initialize clocks to known state (=enabled) */
 	pdata->num_clks = 0;
 	INIT_LIST_HEAD(&pdata->client_list);
+
+	if (nvhost_dev_is_virtual(dev)) {
+		pm_runtime_enable(&dev->dev);
+		return err;
+	}
+
 	while (i < NVHOST_MODULE_MAX_CLOCKS && pdata->clocks[i].name) {
 		char devname[MAX_DEVID_LENGTH];
 		long rate = pdata->clocks[i].default_rate;
@@ -497,7 +679,15 @@ int nvhost_module_init(struct platform_device *dev)
 		snprintf(devname, MAX_DEVID_LENGTH,
 			 (dev->id <= 0) ? "tegra_%s" : "tegra_%s.%d",
 			 dev->name, dev->id);
-		c = clk_get_sys(devname, pdata->clocks[i].name);
+
+		/* Get device managed clock if CCF is available, otherwise
+		 * assume tegra specific clock framework */
+
+		if (IS_ENABLED(CONFIG_COMMON_CLK))
+			c = devm_clk_get(&dev->dev, pdata->clocks[i].name);
+		else
+			c = clk_get_sys(devname, pdata->clocks[i].name);
+
 		if (IS_ERR(c)) {
 			dev_err(&dev->dev, "clk_get_sys failed for i=%d %s:%s",
 				i, devname, pdata->clocks[i].name);
@@ -526,13 +716,67 @@ int nvhost_module_init(struct platform_device *dev)
 	for (i = 0; i < pdata->num_clks; ++i)
 		clk_disable_unprepare(pdata->clk[i]);
 
+	/* disable railgating if pm runtime is not available */
+	pdata->can_powergate = IS_ENABLED(CONFIG_PM_RUNTIME) &&
+		IS_ENABLED(CONFIG_PM_GENERIC_DOMAINS) &&
+		pdata->can_powergate;
+
+
+#ifdef CONFIG_PM_GENERIC_DOMAINS_OF
+	gpd = dev_to_genpd(&dev->dev);
+	if (!gpd)
+		return -EINVAL;
+
+	dn = gpd->of_node;
+	of_property_read_u32(dn, "partition-id", &partition_id);
+#else
+	partition_id = pdata->powergate_id;
+#endif
+
+	/* needed to WAR MBIST issue */
+	if (pdata->poweron_toggle_slcg) {
+		pdata->toggle_slcg_notifier.notifier_call =
+			&nvhost_module_toggle_slcg;
+		if (partition_id != -1)
+			slcg_register_notifier(partition_id,
+					       &pdata->toggle_slcg_notifier);
+	}
+
+	/* Ensure that the above or device specific MBIST WAR gets applied */
+	if (pdata->poweron_toggle_slcg || pdata->slcg_notifier_enable) {
+		do_powergate_locked(partition_id);
+		do_unpowergate_locked(partition_id);
+	}
+
 	/* power gate units that we can power gate */
 	if (pdata->can_powergate) {
-		do_powergate_locked(pdata->powergate_ids[0]);
-		do_powergate_locked(pdata->powergate_ids[1]);
+		do_powergate_locked(partition_id);
 	} else {
-		do_unpowergate_locked(pdata->powergate_ids[0]);
-		do_unpowergate_locked(pdata->powergate_ids[1]);
+		do_unpowergate_locked(partition_id);
+	}
+
+	/* set pm runtime delays */
+	if (pdata->clockgate_delay) {
+		pm_runtime_set_autosuspend_delay(&dev->dev,
+			pdata->clockgate_delay);
+		pm_runtime_use_autosuspend(&dev->dev);
+	}
+
+	/* initialize no_poweroff_req_mutex */
+	mutex_init(&pdata->no_poweroff_req_mutex);
+
+	/* turn on pm runtime */
+	pm_runtime_enable(&dev->dev);
+	if (!pm_runtime_enabled(&dev->dev))
+		nvhost_module_enable_clk(&dev->dev);
+
+	/* if genpd is not available, the domain is powered already.
+	 * just ensure that we load the gating registers now */
+	if (!(IS_ENABLED(CONFIG_PM_GENERIC_DOMAINS) &&
+	      IS_ENABLED(CONFIG_PM_RUNTIME))) {
+		nvhost_module_enable_clk(&dev->dev);
+		nvhost_module_load_regs(dev, pdata->engine_can_cg);
+		nvhost_module_disable_clk(&dev->dev);
 	}
 
 	/* Init the power sysfs attributes for this device */
@@ -575,15 +819,23 @@ int nvhost_module_init(struct platform_device *dev)
 		goto fail_powergatedelay;
 	}
 
-	if (pdata->clockgate_delay) {
-		pm_runtime_set_autosuspend_delay(&dev->dev,
-			pdata->clockgate_delay);
-		pm_runtime_use_autosuspend(&dev->dev);
+	attr = &pdata->power_attrib->power_attr[NVHOST_POWER_SYSFS_ATTRIB_FORCE_ON];
+	attr->attr.name = "force_on";
+	attr->attr.mode = S_IWUSR | S_IRUGO;
+	attr->show = force_on_show;
+	attr->store = force_on_store;
+	sysfs_attr_init(&attr->attr);
+	if (sysfs_create_file(pdata->power_kobj, &attr->attr)) {
+		dev_err(&dev->dev, "Could not create sysfs attribute force_on\n");
+		err = -EIO;
+		goto fail_forceon;
 	}
-	pm_runtime_enable(&dev->dev);
-	if (!pm_runtime_enabled(&dev->dev))
-		nvhost_module_enable_clk(&dev->dev);
+
 	return 0;
+
+fail_forceon:
+	attr = &pdata->power_attrib->power_attr[NVHOST_POWER_SYSFS_ATTRIB_POWERGATE_DELAY];
+	sysfs_remove_file(pdata->power_kobj, &attr->attr);
 
 fail_powergatedelay:
 	attr = &pdata->power_attrib->power_attr[NVHOST_POWER_SYSFS_ATTRIB_CLOCKGATE_DELAY];
@@ -599,56 +851,31 @@ fail_attrib_alloc:
 }
 EXPORT_SYMBOL(nvhost_module_init);
 
-int nvhost_module_suspend(struct device *dev)
-{
-	struct nvhost_device_data *pdata = dev_get_drvdata(dev);
-
-	/*
-	 * device_prepare takes one ref, so expect usage count to
-	 * be 1 at this point.
-	 */
-	if (atomic_read(&dev->power.usage_count) > 1)
-		return -EBUSY;
-
-	if (pdata->prepare_poweroff)
-		pdata->prepare_poweroff(to_platform_device(dev));
-
-	if (pdata->suspend_ndev)
-		pdata->suspend_ndev(dev);
-
-	/* inform edp governor that there is no load any more */
-	if (pdata->gpu_edp_device)
-		tegra_edp_notify_gpu_load(0);
-
-	return 0;
-}
-EXPORT_SYMBOL(nvhost_module_suspend);
-
-int nvhost_module_resume(struct device *dev)
-{
-	struct nvhost_device_data *pdata = dev_get_drvdata(dev);
-
-	if (pdata->finalize_poweron)
-		pdata->finalize_poweron(to_platform_device(dev));
-
-	return 0;
-}
-EXPORT_SYMBOL(nvhost_module_resume);
-
 void nvhost_module_deinit(struct platform_device *dev)
 {
 	int i;
 	struct kobj_attribute *attr = NULL;
 	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
 
-	if (!pm_runtime_enabled(&dev->dev))
-		nvhost_module_disable_clk(&dev->dev);
-	else
-		pm_runtime_disable(&dev->dev);
+	devfreq_suspend_device(pdata->power_manager);
 
-	nvhost_module_suspend(&dev->dev);
-	for (i = 0; i < pdata->num_clks; i++)
-		clk_put(pdata->clk[i]);
+	if (pm_runtime_enabled(&dev->dev)) {
+		pm_runtime_disable(&dev->dev);
+	} else {
+		/* call device specific poweroff call */
+		if (pdata->booted && pdata->prepare_poweroff)
+			pdata->prepare_poweroff(dev);
+
+		/* disable clock.. */
+		nvhost_module_disable_clk(&dev->dev);
+
+		/* ..and turn off the module */
+		do_powergate_locked(pdata->powergate_id);
+	}
+
+	if (!IS_ENABLED(CONFIG_COMMON_CLK))
+		for (i = 0; i < pdata->num_clks; i++)
+			clk_put(pdata->clk[i]);
 
 	if (pdata->power_kobj) {
 		for (i = 0; i < NVHOST_POWER_SYSFS_ATTRIB_MAX; i++) {
@@ -660,23 +887,116 @@ void nvhost_module_deinit(struct platform_device *dev)
 	}
 }
 
-#ifdef CONFIG_PM
 const struct dev_pm_ops nvhost_module_pm_ops = {
 #if defined(CONFIG_PM_RUNTIME) && !defined(CONFIG_PM_GENERIC_DOMAINS)
 	.runtime_suspend = nvhost_module_disable_clk,
 	.runtime_resume = nvhost_module_enable_clk,
 #endif
 };
-#endif
 EXPORT_SYMBOL(nvhost_module_pm_ops);
 
-/*FIXME Use API to get host1x domain */
-struct generic_pm_domain *host1x_domain;
+#ifdef CONFIG_PM_GENERIC_DOMAINS_OF
+static int _nvhost_init_domain(struct device_node *np,
+			       struct generic_pm_domain *gpd)
+{
+	bool is_off = false;
 
-int _nvhost_module_add_domain(struct generic_pm_domain *domain,
+	gpd->name = (char *)np->name;
+
+	if (pm_genpd_lookup_name(gpd->name))
+		return 0;
+
+	if (of_property_read_bool(np, "is_off"))
+		is_off = true;
+
+	pm_genpd_init(gpd, NULL, is_off);
+
+	gpd->power_off = nvhost_module_power_off;
+	gpd->power_on = nvhost_module_power_on;
+	gpd->dev_ops.start = nvhost_module_enable_clk;
+	gpd->dev_ops.stop = nvhost_module_disable_clk;
+	gpd->dev_ops.save_state = nvhost_module_prepare_poweroff;
+	gpd->dev_ops.restore_state = nvhost_module_finalize_poweron;
+	if (!of_property_read_bool(np, "host1x")) {
+		gpd->dev_ops.suspend = nvhost_module_suspend;
+		gpd->dev_ops.resume = nvhost_module_finalize_poweron;
+	}
+
+	of_genpd_add_provider_simple(np, gpd);
+	gpd->of_node = of_node_get(np);
+
+	genpd_pm_subdomain_attach(gpd);
+	return 0;
+}
+
+int nvhost_domain_init(struct of_device_id *matches)
+{
+	struct device_node *np;
+	int ret = 0;
+	struct nvhost_device_data *dev_data;
+	struct generic_pm_domain *gpd;
+	for_each_matching_node(np, matches) {
+		const struct of_device_id *match = of_match_node(matches, np);
+		dev_data = (struct nvhost_device_data *)match->data;
+		gpd = &dev_data->pd;
+		ret = _nvhost_init_domain(np, gpd);
+		if (ret)
+			break;
+	}
+	return ret;
+
+}
+EXPORT_SYMBOL(nvhost_domain_init);
+
+void nvhost_register_client_domain(struct generic_pm_domain *domain)
+{
+}
+EXPORT_SYMBOL(nvhost_register_client_domain);
+
+void nvhost_unregister_client_domain(struct generic_pm_domain *domain)
+{
+}
+EXPORT_SYMBOL(nvhost_unregister_client_domain);
+
+int nvhost_module_add_domain(struct generic_pm_domain *domain,
+	struct platform_device *pdev)
+{
+	struct nvhost_device_data *pdata;
+	struct device_node *dn = of_node_get(pdev->dev.of_node);
+	bool wakeup_capable = false;
+	struct dev_power_governor *pm_domain_gov = NULL;
+
+	pdata = platform_get_drvdata(pdev);
+	if (!pdata)
+		return -EINVAL;
+
+	if (!pdata->can_powergate)
+		pm_domain_gov = &pm_domain_always_on_gov;
+	domain->gov = pm_domain_gov;
+
+	if (pdata->powergate_delay)
+		pm_genpd_set_poweroff_delay(domain,
+				pdata->powergate_delay);
+
+	if (of_property_read_bool(dn, "wakeup-capable"))
+		wakeup_capable = true;
+
+	device_set_wakeup_capable(&pdev->dev, wakeup_capable);
+
+	return 0;
+}
+EXPORT_SYMBOL(nvhost_module_add_domain);
+
+#else
+/*FIXME Use API to get host1x domain */
+static struct generic_pm_domain *host1x_domain;
+
+static int _nvhost_module_add_domain(struct generic_pm_domain *domain,
 	struct platform_device *pdev, bool client)
 {
 	int ret = 0;
+
+#ifdef CONFIG_PM_GENERIC_DOMAINS
 	struct nvhost_device_data *pdata;
 	struct dev_power_governor *pm_domain_gov = NULL;
 
@@ -684,7 +1004,6 @@ int _nvhost_module_add_domain(struct generic_pm_domain *domain,
 	if (!pdata)
 		return -EINVAL;
 
-#ifdef CONFIG_PM_GENERIC_DOMAINS
 	if (!pdata->can_powergate)
 		pm_domain_gov = &pm_domain_always_on_gov;
 
@@ -699,7 +1018,7 @@ int _nvhost_module_add_domain(struct generic_pm_domain *domain,
 		domain->dev_ops.restore_state = nvhost_module_finalize_poweron;
 		if (client) {
 			domain->dev_ops.suspend = nvhost_module_suspend;
-			domain->dev_ops.resume = nvhost_module_resume;
+			domain->dev_ops.resume = nvhost_module_finalize_poweron;
 		}
 
 		/* Set only host1x as wakeup capable */
@@ -726,6 +1045,15 @@ void nvhost_register_client_domain(struct generic_pm_domain *domain)
 }
 EXPORT_SYMBOL(nvhost_register_client_domain);
 
+<<<<<<< HEAD
+=======
+void nvhost_unregister_client_domain(struct generic_pm_domain *domain)
+{
+	pm_genpd_remove_subdomain(host1x_domain, domain);
+}
+EXPORT_SYMBOL(nvhost_unregister_client_domain);
+
+>>>>>>> update/master
 /* common runtime pm and power domain APIs */
 int nvhost_module_add_domain(struct generic_pm_domain *domain,
 	struct platform_device *pdev)
@@ -736,6 +1064,7 @@ int nvhost_module_add_domain(struct generic_pm_domain *domain,
 		return _nvhost_module_add_domain(domain, pdev, 1);
 }
 EXPORT_SYMBOL(nvhost_module_add_domain);
+#endif
 
 int nvhost_module_enable_clk(struct device *dev)
 {
@@ -759,9 +1088,11 @@ int nvhost_module_enable_clk(struct device *dev)
 		}
 	}
 
+	trace_nvhost_module_enable_clk(pdata->pdev->name,
+					pdata->num_clks);
+
 	return 0;
 }
-EXPORT_SYMBOL(nvhost_module_enable_clk);
 
 int nvhost_module_disable_clk(struct device *dev)
 {
@@ -772,8 +1103,13 @@ int nvhost_module_disable_clk(struct device *dev)
 	if (!pdata)
 		return -EINVAL;
 
+<<<<<<< HEAD
 	if (pdata->channel)
 		nvhost_channel_suspend(pdata->channel);
+=======
+	trace_nvhost_module_disable_clk(pdata->pdev->name,
+					pdata->num_clks);
+>>>>>>> update/master
 
 	for (index = 0; index < pdata->num_clks; index++)
 		clk_disable_unprepare(pdata->clk[index]);
@@ -784,23 +1120,62 @@ int nvhost_module_disable_clk(struct device *dev)
 
 	return 0;
 }
-EXPORT_SYMBOL(nvhost_module_disable_clk);
+
+static void nvhost_module_load_regs(struct platform_device *pdev, bool prod)
+{
+	struct nvhost_device_data *pdata = platform_get_drvdata(pdev);
+	struct nvhost_gating_register *regs = pdata->engine_cg_regs;
+
+	if (!regs)
+		return;
+
+	while (regs->addr) {
+		if (prod)
+			host1x_writel(pdev, regs->addr, regs->prod);
+		else
+			host1x_writel(pdev, regs->addr, regs->disable);
+		regs++;
+	}
+}
 
 #ifdef CONFIG_PM_GENERIC_DOMAINS
+static int nvhost_module_suspend(struct device *dev)
+{
+	/*
+	 * device_prepare takes one ref, so expect usage count to
+	 * be 1 at this point.
+	 */
+#ifdef CONFIG_PM_RUNTIME
+	if (atomic_read(&dev->power.usage_count) > 1)
+		return -EBUSY;
+#endif
+
+	return nvhost_module_prepare_poweroff(dev);
+}
+
 static int nvhost_module_power_on(struct generic_pm_domain *domain)
 {
 	struct nvhost_device_data *pdata;
+	int partition_id = -1;
+#ifdef CONFIG_PM_GENERIC_DOMAINS_OF
+	struct device_node *dn;
+#endif
 
 	pdata = container_of(domain, struct nvhost_device_data, pd);
+#ifdef CONFIG_PM_GENERIC_DOMAINS_OF
+	dn = domain->of_node;
+	of_property_read_u32(dn, "partition-id", &partition_id);
+#else
+	partition_id = pdata->powergate_id;
+#endif
 
 	mutex_lock(&pdata->lock);
 	if (pdata->can_powergate) {
-		do_unpowergate_locked(pdata->powergate_ids[0]);
-		do_unpowergate_locked(pdata->powergate_ids[1]);
+		trace_nvhost_module_power_on(pdata->pdev->name,
+			partition_id);
+		do_unpowergate_locked(partition_id);
 	}
 
-	if (pdata->powerup_reset)
-		do_module_reset_locked(pdata->pdev);
 	mutex_unlock(&pdata->lock);
 
 	return 0;
@@ -809,26 +1184,40 @@ static int nvhost_module_power_on(struct generic_pm_domain *domain)
 static int nvhost_module_power_off(struct generic_pm_domain *domain)
 {
 	struct nvhost_device_data *pdata;
+	int partition_id = -1;
+#ifdef CONFIG_PM_GENERIC_DOMAINS_OF
+	struct device_node *dn;
+#endif
 
 	pdata = container_of(domain, struct nvhost_device_data, pd);
+#ifdef CONFIG_PM_GENERIC_DOMAINS_OF
+	dn = domain->of_node;
+	of_property_read_u32(dn, "partition-id", &partition_id);
+#else
+	partition_id = pdata->powergate_id;
+#endif
 
 	mutex_lock(&pdata->lock);
 	if (pdata->can_powergate) {
-		do_powergate_locked(pdata->powergate_ids[0]);
-		do_powergate_locked(pdata->powergate_ids[1]);
+		trace_nvhost_module_power_off(pdata->pdev->name,
+		partition_id);
+		do_powergate_locked(partition_id);
 	}
 	mutex_unlock(&pdata->lock);
 
 	return 0;
 }
 
-int nvhost_module_prepare_poweroff(struct device *dev)
+static int nvhost_module_prepare_poweroff(struct device *dev)
 {
 	struct nvhost_device_data *pdata;
 
 	pdata = dev_get_drvdata(dev);
 	if (!pdata)
 		return -EINVAL;
+
+	devfreq_suspend_device(pdata->power_manager);
+	nvhost_scale_hw_deinit(to_platform_device(dev));
 
 	if (pdata->prepare_poweroff)
 		pdata->prepare_poweroff(to_platform_device(dev));
@@ -836,66 +1225,101 @@ int nvhost_module_prepare_poweroff(struct device *dev)
 	return 0;
 }
 
-int nvhost_module_finalize_poweron(struct device *dev)
+static int nvhost_module_finalize_poweron(struct device *dev)
 {
+	struct platform_device *pdev = to_platform_device(dev);
 	struct nvhost_device_data *pdata;
-	int ret = 0;
+	int retry_count, ret = 0;
 
 	pdata = dev_get_drvdata(dev);
 	if (!pdata)
 		return -EINVAL;
 
-	if (pdata->finalize_poweron)
-		ret = pdata->finalize_poweron(to_platform_device(dev));
+	/* WAR to bug 1588951: Retry booting 3 times */
+
+	for (retry_count = 0; retry_count < 3; retry_count++) {
+		if (!pdata->poweron_toggle_slcg) {
+			if (pdata->poweron_reset)
+				nvhost_module_reset(pdev, false);
+
+			/* Load clockgating registers */
+			nvhost_module_load_regs(pdev, pdata->engine_can_cg);
+		} else {
+			/* If poweron_toggle_slcg is set, following is already
+			 * executed once. Skip to avoid doing it twice. */
+			if (retry_count > 0) {
+				/* First, reset module */
+				nvhost_module_reset(pdev, false);
+
+				/* Disable SLCG, wait and re-enable it */
+				nvhost_module_load_regs(pdev, false);
+				udelay(1);
+				if (pdata->engine_can_cg)
+					nvhost_module_load_regs(pdev, true);
+			}
+		}
+
+		/* initialize device vm */
+		ret = nvhost_vm_init_device(pdev);
+		if (ret)
+			continue;
+
+		if (pdata->finalize_poweron)
+			ret = pdata->finalize_poweron(to_platform_device(dev));
+
+		/* Exit loop if we pass module specific initialization */
+		if (!ret)
+			break;
+	}
+
+	nvhost_scale_hw_init(to_platform_device(dev));
+	devfreq_resume_device(pdata->power_manager);
 
 	return ret;
 }
 #endif
 
+static int nvhost_module_toggle_slcg(struct notifier_block *nb,
+				     unsigned long action, void *data)
+{
+	struct nvhost_device_data *pdata =
+		container_of(nb, struct nvhost_device_data,
+			     toggle_slcg_notifier);
+	struct platform_device *pdev = pdata->pdev;
+
+	/* First, reset the engine */
+	do_module_reset_locked(pdev);
+
+	/* Then, disable slcg, wait a while and re-enable it */
+	nvhost_module_load_regs(pdev, false);
+	udelay(1);
+	if (pdata->engine_can_cg)
+		nvhost_module_load_regs(pdev, true);
+
+	return 0;
+}
+
 /* public host1x power management APIs */
 bool nvhost_module_powered_ext(struct platform_device *dev)
 {
-	struct platform_device *pdev;
-
-	if (!nvhost_get_parent(dev)) {
-		dev_err(&dev->dev, "Module powered called with wrong dev\n");
-		return 0;
-	}
-
-	/* get the parent */
-	pdev = to_platform_device(dev->dev.parent);
-
-	return nvhost_module_powered(pdev);
+	if (dev->dev.parent && dev->dev.parent != &platform_bus)
+		dev = to_platform_device(dev->dev.parent);
+	return nvhost_module_powered(dev);
 }
+EXPORT_SYMBOL(nvhost_module_powered_ext);
 
 int nvhost_module_busy_ext(struct platform_device *dev)
 {
-	struct platform_device *pdev;
-
-	if (!nvhost_get_parent(dev)) {
-		dev_err(&dev->dev, "Module busy called with wrong dev\n");
-		return -EINVAL;
-	}
-
-	/* get the parent */
-	pdev = to_platform_device(dev->dev.parent);
-
-	return nvhost_module_busy(pdev);
+	if (dev->dev.parent && dev->dev.parent != &platform_bus)
+		dev = to_platform_device(dev->dev.parent);
+	return nvhost_module_busy(dev);
 }
 EXPORT_SYMBOL(nvhost_module_busy_ext);
 
 void nvhost_module_idle_ext(struct platform_device *dev)
 {
-	struct platform_device *pdev;
-
-	if (!nvhost_get_parent(dev)) {
-		dev_err(&dev->dev, "Module idle called with wrong dev\n");
-		return;
-	}
-
-	/* get the parent */
-	pdev = to_platform_device(dev->dev.parent);
-
-	nvhost_module_idle(pdev);
+	if (dev->dev.parent && dev->dev.parent != &platform_bus)
+		dev = to_platform_device(dev->dev.parent);
+	nvhost_module_idle(dev);
 }
 EXPORT_SYMBOL(nvhost_module_idle_ext);

@@ -116,6 +116,7 @@ struct pinctrl_dev *get_pinctrl_dev_from_devname(const char *devname)
 
 	return found ? pctldev : NULL;
 }
+EXPORT_SYMBOL_GPL(get_pinctrl_dev_from_devname);
 
 struct pinctrl_dev *get_pinctrl_dev_from_of_node(struct device_node *np)
 {
@@ -133,6 +134,7 @@ struct pinctrl_dev *get_pinctrl_dev_from_of_node(struct device_node *np)
 
 	return NULL;
 }
+EXPORT_SYMBOL_GPL(get_pinctrl_dev_from_of_node);
 
 /**
  * pin_get_from_name() - look up a pin number from a name
@@ -457,6 +459,56 @@ pinctrl_find_gpio_range_from_pin(struct pinctrl_dev *pctldev,
 EXPORT_SYMBOL_GPL(pinctrl_find_gpio_range_from_pin);
 
 /**
+ * pinctrl_get_pin_id_from_gpio() - Get pinID from the gpio
+ * @pctldev: the pin controller device to look in
+ * @gpio: GPIO number whose pinid need to be find.
+ */
+int pinctrl_get_pin_id_from_gpio(struct pinctrl_dev *pctldev,
+		unsigned gpio)
+{
+	struct pinctrl_gpio_range *range;
+	int ret;
+
+	range = pinctrl_match_gpio_range(pctldev, gpio);
+	if (!range) {
+		pr_err("Pincontrol does not have gpio %d\n", gpio);
+		return -EINVAL;
+	}
+
+	/* Convert to the pin controllers number space */
+	ret = gpio - range->base + range->pin_base;
+	return ret;
+}
+
+/**
+ * pinctrl_get_pinctrl_dev_pin_id_from_gpio() - Get pinID and pincontrol dev
+ * from the gpio. It returns the pinctrl device handle and pin id for the gpio
+ * which it belongs to.
+ * @gpio: GPIO number whose pinid need to be find.
+ */
+int pinctrl_get_pinctrl_dev_pin_id_from_gpio(unsigned gpio,
+	struct pinctrl_dev **pctl_dev, unsigned *pin_id)
+{
+	struct pinctrl_dev *pctldev;
+	struct pinctrl_gpio_range *range;
+	int ret;
+
+	mutex_lock(&pinctrldev_list_mutex);
+
+	ret = pinctrl_get_device_gpio_range(gpio, &pctldev, &range);
+	if (ret < 0) {
+		pr_err("Pincontrol not found for gpio %d\n", gpio);
+		goto unlock;
+	}
+
+	*pctl_dev = pctldev;
+	*pin_id = gpio - range->base + range->pin_base;
+unlock:
+	mutex_unlock(&pinctrldev_list_mutex);
+	return ret;
+}
+
+/**
  * pinctrl_remove_gpio_range() - remove a range of GPIOs fro a pin controller
  * @pctldev: pin controller device to remove the range from
  * @range: the GPIO range to remove
@@ -500,6 +552,48 @@ int pinctrl_get_group_selector(struct pinctrl_dev *pctldev,
 		pin_group);
 
 	return -EINVAL;
+}
+
+/**
+ * pinctrl_get_group_selector_from_pin() - returns the group selector for a pin
+ * @pctldev: the pin controller handling the group
+ * @pin: the pin id on the look up
+ */
+int pinctrl_get_group_selector_from_pin(struct pinctrl_dev *pctldev,
+			unsigned int pin)
+{
+	const struct pinctrl_ops *ops = pctldev->desc->pctlops;
+	unsigned ngroups, selector;
+	bool found = false;
+
+	mutex_lock(&pctldev->mutex);
+
+	ngroups = ops->get_groups_count(pctldev);
+	for (selector = 0; selector < ngroups; ++selector) {
+		const unsigned *pins;
+		unsigned num_pins;
+		int ret;
+
+		ret = ops->get_group_pins(pctldev, selector, &pins, &num_pins);
+		if (ret < 0) {
+			dev_err(pctldev->dev,
+				"Not getting group pins for selector %u\n",
+				selector);
+			continue;
+		}
+		if (num_pins != 1) {
+			dev_dbg(pctldev->dev,
+				"Multiple pins for the selector %u\n",
+				selector);
+			continue;
+		}
+		if (pins[0] == pin) {
+			found = true;
+			break;
+		}
+	}
+	mutex_unlock(&pctldev->mutex);
+	return found ? selector : -EINVAL;
 }
 
 /**
@@ -795,7 +889,14 @@ static struct pinctrl *create_pinctrl(struct device *dev)
 			mutex_unlock(&pinctrl_maps_mutex);
 			return ERR_PTR(ret);
 		}
+		if (ret < 0) {
+			dev_err(dev, "add setting for %s:map %s failed:%d\n",
+				devname, map->name, ret);
+			goto break_loop;
+		}
 	}
+
+break_loop:
 	mutex_unlock(&pinctrl_maps_mutex);
 
 	if (ret < 0) {
@@ -1136,7 +1237,7 @@ void devm_pinctrl_put(struct pinctrl *p)
 EXPORT_SYMBOL_GPL(devm_pinctrl_put);
 
 int pinctrl_register_map(struct pinctrl_map const *maps, unsigned num_maps,
-			 bool dup, bool locked)
+			 bool dup)
 {
 	int i, ret;
 	struct pinctrl_maps *maps_node;
@@ -1204,11 +1305,9 @@ int pinctrl_register_map(struct pinctrl_map const *maps, unsigned num_maps,
 		maps_node->maps = maps;
 	}
 
-	if (!locked)
-		mutex_lock(&pinctrl_maps_mutex);
+	mutex_lock(&pinctrl_maps_mutex);
 	list_add_tail(&maps_node->node, &pinctrl_maps);
-	if (!locked)
-		mutex_unlock(&pinctrl_maps_mutex);
+	mutex_unlock(&pinctrl_maps_mutex);
 
 	return 0;
 }
@@ -1223,7 +1322,7 @@ int pinctrl_register_map(struct pinctrl_map const *maps, unsigned num_maps,
 int pinctrl_register_mappings(struct pinctrl_map const *maps,
 			      unsigned num_maps)
 {
-	return pinctrl_register_map(maps, num_maps, true, false);
+	return pinctrl_register_map(maps, num_maps, true);
 }
 
 void pinctrl_unregister_map(struct pinctrl_map const *map)
@@ -1728,6 +1827,9 @@ struct pinctrl_dev *pinctrl_register(struct pinctrl_desc *pctldesc,
 						    PINCTRL_STATE_SLEEP);
 		if (IS_ERR(pctldev->hog_sleep))
 			dev_dbg(dev, "failed to lookup the sleep state\n");
+	} else {
+		dev_err(dev, "pinctrl_get failed: %ld\n", PTR_ERR(pctldev->p));
+		goto out_err;
 	}
 
 	pinctrl_init_device_debugfs(pctldev);
@@ -1753,14 +1855,15 @@ void pinctrl_unregister(struct pinctrl_dev *pctldev)
 	if (pctldev == NULL)
 		return;
 
-	mutex_lock(&pinctrldev_list_mutex);
 	mutex_lock(&pctldev->mutex);
-
 	pinctrl_remove_device_debugfs(pctldev);
+	mutex_unlock(&pctldev->mutex);
 
 	if (!IS_ERR(pctldev->p))
 		pinctrl_put(pctldev->p);
 
+	mutex_lock(&pinctrldev_list_mutex);
+	mutex_lock(&pctldev->mutex);
 	/* TODO: check that no pinmuxes are still active? */
 	list_del(&pctldev->node);
 	/* Destroy descriptor tree */

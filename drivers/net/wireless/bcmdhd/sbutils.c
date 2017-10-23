@@ -2,8 +2,12 @@
  * Misc utility routines for accessing chip-specific features
  * of the SiliconBackplane-based Broadcom chips.
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+>>>>>>> update/master
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -23,7 +27,11 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
+<<<<<<< HEAD
  * $Id: sbutils.c 431423 2013-10-23 16:07:35Z $
+=======
+ * $Id: sbutils.c 467150 2014-04-02 17:30:43Z $
+>>>>>>> update/master
  */
 
 #include <bcm_cfg.h>
@@ -47,7 +55,6 @@ static uint _sb_scan(si_info_t *sii, uint32 sba, void *regs, uint bus, uint32 sb
                      uint ncores);
 static uint32 _sb_coresba(si_info_t *sii);
 static void *_sb_setcoreidx(si_info_t *sii, uint coreidx);
-
 #define	SET_SBREG(sii, r, mask, val)	\
 		W_SBREG((sii), (r), ((R_SBREG((sii), (r)) & ~(mask)) | (val)))
 #define	REGS2SB(va)	(sbconfig_t*) ((int8*)(va) + SBCONFIGOFF)
@@ -497,7 +504,11 @@ sb_corereg_addr(si_t *sih, uint coreidx, uint regoff)
 		/* map if does not exist */
 		if (!cores_info->regs[coreidx]) {
 			cores_info->regs[coreidx] = REG_MAP(cores_info->coresba[coreidx],
+<<<<<<< HEAD
 						SI_CORE_SIZE);
+=======
+			                            SI_CORE_SIZE);
+>>>>>>> update/master
 			ASSERT(GOODREGS(cores_info->regs[coreidx]));
 		}
 		r = (uint32 *)((uchar *)cores_info->regs[coreidx] + regoff);
@@ -516,19 +527,32 @@ sb_corereg_addr(si_t *sih, uint coreidx, uint regoff)
 			fast = TRUE;
 			if (SI_FAST(sii))
 				r = (uint32 *)((char *)sii->curmap +
+<<<<<<< HEAD
 							PCI_16KB0_PCIREGS_OFFSET + regoff);
 			else
 				r = (uint32 *)((char *)sii->curmap +
 							((regoff >= SBCONFIGOFF) ?
 							PCI_BAR0_PCISBR_OFFSET : PCI_BAR0_PCIREGS_OFFSET) +
 							regoff);
+=======
+				               PCI_16KB0_PCIREGS_OFFSET + regoff);
+			else
+				r = (uint32 *)((char *)sii->curmap +
+				               ((regoff >= SBCONFIGOFF) ?
+				                PCI_BAR0_PCISBR_OFFSET : PCI_BAR0_PCIREGS_OFFSET) +
+				               regoff);
+>>>>>>> update/master
 		}
 	}
 
 	if (!fast)
 		return 0;
 
+<<<<<<< HEAD
 	return r;
+=======
+	return (r);
+>>>>>>> update/master
 }
 
 /* Scan the enumeration space to find all cores starting from the given
@@ -1069,3 +1093,39 @@ sb_size(uint32 admatch)
 
 	return (size);
 }
+
+#if defined(BCMDBG_PHYDUMP)
+/* print interesting sbconfig registers */
+void
+sb_dumpregs(si_t *sih, struct bcmstrbuf *b)
+{
+	sbconfig_t *sb;
+	uint origidx, i, intr_val = 0;
+	si_info_t *sii = SI_INFO(sih);
+	si_cores_info_t *cores_info = (si_cores_info_t *)sii->cores_info;
+
+	origidx = sii->curidx;
+
+	INTR_OFF(sii, intr_val);
+
+	for (i = 0; i < sii->numcores; i++) {
+		sb = REGS2SB(sb_setcoreidx(sih, i));
+
+		bcm_bprintf(b, "core 0x%x: \n", cores_info->coreid[i]);
+
+		if (sii->pub.socirev > SONICS_2_2)
+			bcm_bprintf(b, "sbimerrlog 0x%x sbimerrloga 0x%x\n",
+			          sb_corereg(sih, si_coreidx(&sii->pub), SBIMERRLOG, 0, 0),
+			          sb_corereg(sih, si_coreidx(&sii->pub), SBIMERRLOGA, 0, 0));
+
+		bcm_bprintf(b, "sbtmstatelow 0x%x sbtmstatehigh 0x%x sbidhigh 0x%x "
+		            "sbimstate 0x%x\n sbimconfiglow 0x%x sbimconfighigh 0x%x\n",
+		            R_SBREG(sii, &sb->sbtmstatelow), R_SBREG(sii, &sb->sbtmstatehigh),
+		            R_SBREG(sii, &sb->sbidhigh), R_SBREG(sii, &sb->sbimstate),
+		            R_SBREG(sii, &sb->sbimconfiglow), R_SBREG(sii, &sb->sbimconfighigh));
+	}
+
+	sb_setcoreidx(sih, origidx);
+	INTR_RESTORE(sii, intr_val);
+}
+#endif	

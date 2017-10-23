@@ -3,6 +3,7 @@
 #
 GCOV_PROFILE := y
 
+ccflags += -Werror
 obj-$(CONFIG_IBM_ASM)		+= ibmasm/
 obj-$(CONFIG_AD525X_DPOT)	+= ad525x_dpot.o
 obj-$(CONFIG_AD525X_DPOT_I2C)	+= ad525x_dpot-i2c.o
@@ -75,6 +76,7 @@ obj-$(CONFIG_SND_SOC_TEGRA_CS42L73)	+= a2220.o
 obj-$(CONFIG_SND_SOC_TEGRA_RT5640)	+= tfa9887.o
 obj-$(CONFIG_FAN_THERM_EST)	+= therm_fan_est.o
 obj-$(CONFIG_BLUEDROID_PM)      += bluedroid_pm.o
+obj-$(CONFIG_GPS_HWGEOFENCING)  += gps_wake.o
 obj-$(CONFIG_CPULOAD_MONITOR)	+= cpuload.o
 obj-$(CONFIG_SIM_MAX77660)	+= max77660-sim.o
 obj-$(CONFIG_SIM_PALMAS)	+= palmas-sim.o
@@ -82,7 +84,13 @@ obj-$(CONFIG_PALMAS_LDOUSB_INPUT)	+= palmas-ldousb-in.o
 obj-y				+= issp/
 obj-$(CONFIG_TEGRA_PROFILER)    += tegra-profiler/
 obj-$(CONFIG_MTK_GPS)		+= gps/
-obj-y		+= tegra-fuse/
+obj-$(CONFIG_PLATFORM_TEGRA)	+= tegra-fuse/
 obj-$(CONFIG_DENVER_CPU)	+= force_idle_t132.o
 obj-$(CONFIG_ARCH_TEGRA)        +=tegra_timerinfo.o
 obj-$(CONFIG_MODS) 		+= mods/
+obj-$(CONFIG_DENVER_CPU)	+= idle_test_t132.o
+obj-$(CONFIG_TEGRA_PROC_POWER_MODEL) += tegra_ppm.o
+obj-$(CONFIG_NV_GAMEPAD_RESET)	+= nv_gamepad_reset.o
+obj-$(CONFIG_SAF775x_HWDEP)	+= saf775x/
+obj-$(CONFIG_TEGRA_CPC)		+= tegra_cpc.o
+obj-$(CONFIG_UID_CPUTIME) += uid_cputime.o

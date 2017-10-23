@@ -1,7 +1,7 @@
 /*
  * Driver for the NVIDIA Tegra pinmux
  *
- * Copyright (c) 2011-2012, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2014, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -48,18 +48,26 @@ struct tegra_function {
  * @lock_reg:		Lock register offset. -1 if unsupported.
  * @lock_bank:		Lock register bank. 0 if unsupported.
  * @lock_bit:		Lock register bit. 0 if unsupported.
+ * @parked_reg:		Parked register offset. -1 if unsupported.
+ * @parked_bank:	Parked register bank. 0 if unsupported.
+ * @parked_bit:		Parked register bit. 0 if unsupported.
  * @ioreset_reg:	IO reset register offset. -1 if unsupported.
  * @ioreset_bank:	IO reset register bank. 0 if unsupported.
  * @ioreset_bit:	IO reset register bit. 0 if unsupported.
  * @rcv_sel_reg:	Receiver select offset. -1 if unsupported.
  * @rcv_sel_bank:	Receiver select bank. 0 if unsupported.
  * @rcv_sel_bit:	Receiver select bit. 0 if unsupported.
+ * @e_io_hv_reg:	E_IO_HV register offset. -1 if unsupported.
+ * @e_io_hv_bank:	E_IO_HV register bank. 0 if unsupported.
+ * @e_io_hv_bit:	E_IO_HV register bit. 0 if unsupported.
  * @drv_reg:		Drive fields register offset. -1 if unsupported.
  *			This register contains the hsm, schmitt, lpmd, drvdn,
  *			drvup, slwr, and slwf parameters.
  * @drv_bank:		Drive fields register bank. 0 if unsupported.
  * @hsm_bit:		High Speed Mode register bit. 0 if unsupported.
+ * @hsm_reg:		High Speed Mode register offset. -1 if unsupported.
  * @schmitt_bit:	Scmitt register bit. 0 if unsupported.
+ * @schmitt_reg:	Schmitt register offset. -1 if unsupported.
  * @lpmd_bit:		Low Power Mode register bit. 0 if unsupported.
  * @drvdn_bit:		Drive Down register bit. 0 if unsupported.
  * @drvdn_width:	Drive Down field width. 0 if unsupported.
@@ -86,19 +94,21 @@ struct tegra_pingroup {
 	const unsigned *pins;
 	unsigned npins;
 	unsigned funcs[4];
-	unsigned func_safe;
-	unsigned funcs_non_dt[4];
-	unsigned func_safe_non_dt;
-	s16 mux_reg;
-	s16 pupd_reg;
-	s16 tri_reg;
-	s16 einput_reg;
-	s16 odrain_reg;
-	s16 lock_reg;
-	s16 ioreset_reg;
-	s16 rcv_sel_reg;
-	s16 drv_reg;
-	s16 drvtype_reg;
+	s32 mux_reg;
+	s32 pupd_reg;
+	s32 tri_reg;
+	s32 einput_reg;
+	s32 odrain_reg;
+	s32 lock_reg;
+	s32 parked_reg;
+	s32 ioreset_reg;
+	s32 rcv_sel_reg;
+	s32 e_io_hv_reg;
+	s32 hsm_reg;
+	s32 schmitt_reg;
+	s32 drv_reg;
+	s32 drvtype_reg;
+	s32 gpio_reg;
 	int mux_bank;
 	int pupd_bank;
 	int tri_bank;
@@ -106,17 +116,22 @@ struct tegra_pingroup {
 	int odrain_bank;
 	int ioreset_bank;
 	int rcv_sel_bank;
+	int e_io_hv_bank;
 	int lock_bank;
+	int parked_bank;
 	int drv_bank;
 	int drvtype_bank;
+	int gpio_bank;
 	int mux_bit;
 	int pupd_bit;
 	int tri_bit;
 	int einput_bit;
 	int odrain_bit;
 	int lock_bit;
+	int parked_bit;
 	int ioreset_bit;
 	int rcv_sel_bit;
+	int e_io_hv_bit;
 	int hsm_bit;
 	int schmitt_bit;
 	int lpmd_bit;
@@ -124,36 +139,14 @@ struct tegra_pingroup {
 	int drvup_bit;
 	int slwr_bit;
 	int slwf_bit;
+	int gpio_bit;
 	int drvtype_bit;
 	int drvdn_width;
 	int drvup_width;
 	int slwr_width;
 	int slwf_width;
 	int drvtype_width;
-	const char *dev_id;
-};
-
-/* struct tegra_pinctrl_driver_config_data: Drive pingroup default data.
- * @name: Name of the group;
- * @high_speed_mode: Enable high speed mode
- * @schmitt: Enable schimit.
- * @low_power_mode: Low power mode value.
- * @pull_down_strength: Pull down strength.
- * @pull_up_strength: Pull up strength.
- * @slew_rate_rising: Rising slew rate.
- * @slew_rate_falling: Falling slew rate.
- * @drive_type: Drive type.
- */
-struct tegra_pinctrl_group_config_data {
-	const char *name;
-	int high_speed_mode;
-	int schmitt;
-	int low_power_mode;
-	int pull_down_strength;
-	int pull_up_strength;
-	int slew_rate_rising;
-	int slew_rate_falling;
-	int drive_type;
+	int gpio_width;
 };
 
 /**
@@ -168,6 +161,7 @@ struct tegra_pinctrl_group_config_data {
  * @nfunctions:	The numbmer of entries in @functions.
  * @groups:	An array describing all pin groups the pin SoC supports.
  * @ngroups:	The numbmer of entries in @groups.
+ * @is_gpio_reg_support: GPIO/SFIO selection support in pinmux register.
  * @config_data: List of configuration data which is SoC specific.
  * @nconfig_data: Number of config data.
  */
@@ -179,10 +173,10 @@ struct tegra_pinctrl_soc_data {
 	unsigned nfunctions;
 	const struct tegra_pingroup *groups;
 	unsigned ngroups;
-	struct tegra_pinctrl_group_config_data *config_data;
-	unsigned nconfig_data;
+	bool is_gpio_reg_support;
 	int (*suspend)(u32 *pg_data);
 	void (*resume)(u32 *pg_data);
+	int (*gpio_request_enable)(unsigned pin);
 };
 
 int tegra_pinctrl_probe(struct platform_device *pdev,
@@ -192,20 +186,9 @@ int tegra_pinctrl_remove(struct platform_device *pdev);
 u32 tegra_pinctrl_readl(u32 bank, u32 reg);
 void tegra_pinctrl_writel(u32 val, u32 bank, u32 reg);
 
-/* Some macro for usage */
-#define TEGRA_PINCTRL_SET_DRIVE(_name, _hsm, _schmitt, _drive,		\
-	_pulldn_drive, _pullup_drive, _pulldn_slew, _pullup_slew,	\
-	_drive_type)							\
-	{								\
-		.name = "drive_"#_name,					\
-		.high_speed_mode = _hsm,				\
-		.schmitt = _schmitt,					\
-		.low_power_mode = _drive,				\
-		.pull_down_strength = _pulldn_drive,			\
-		.pull_up_strength = _pullup_drive,			\
-		.slew_rate_rising = _pullup_slew,			\
-		.slew_rate_falling = _pulldn_slew,			\
-		.drive_type = _drive_type,				\
-	}
+/* Special pinmux options */
+#define TEGRA_PINMUX_SPECIAL_GPIO		0
+#define TEGRA_PINMUX_SPECIAL_UNUSED		1
+#define TEGRA_PINMUX_SPECIAL_MAX		2
 
 #endif

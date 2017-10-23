@@ -87,7 +87,6 @@ void __init init_IRQ(void)
 }
 
 #ifdef CONFIG_HOTPLUG_CPU
-
 static bool migrate_one_irq(struct irq_desc *desc)
 {
 	struct irq_data *d = irq_desc_get_irq_data(desc);
@@ -111,7 +110,7 @@ static bool migrate_one_irq(struct irq_desc *desc)
 	c = irq_data_get_irq_chip(d);
 	if (!c->irq_set_affinity)
 		pr_debug("IRQ%u: unable to set affinity\n", d->irq);
-	else if (c->irq_set_affinity(d, affinity, true) == IRQ_SET_MASK_OK
+	else if (c->irq_set_affinity(d, affinity, false) == IRQ_SET_MASK_OK
 		 && ret)
 		cpumask_copy(d->affinity, affinity);
 
@@ -141,11 +140,11 @@ void migrate_irqs(void)
 		affinity_broken = migrate_one_irq(desc);
 		raw_spin_unlock(&desc->lock);
 
-		if (affinity_broken && printk_ratelimit())
-			pr_warn("IRQ%u no longer affine to CPU%u\n", i,
-				smp_processor_id());
+		if (affinity_broken)
+			pr_warn_ratelimited("IRQ%u no longer affine to CPU%u\n",
+					    i, smp_processor_id());
 	}
 
 	local_irq_restore(flags);
 }
-#endif
+#endif /* CONFIG_HOTPLUG_CPU */

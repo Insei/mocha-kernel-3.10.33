@@ -4,7 +4,7 @@
  *
  * Copyright (C) 2011 Samsung Electronics
  *	MyungJoo Ham <myungjoo.ham@samsung.com>
- * Copyright (c) 2013-2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2016, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -110,6 +110,9 @@ static int devfreq_update_status(struct devfreq *devfreq, unsigned long freq)
 {
 	int lev, prev_lev;
 	unsigned long cur_time;
+
+	if (devfreq->suspended)
+		return 0;
 
 	lev = devfreq_get_freq_level(devfreq, freq);
 	if (lev < 0)
@@ -558,6 +561,12 @@ int devfreq_suspend_device(struct devfreq *devfreq)
 	if (!devfreq)
 		return -EINVAL;
 
+	/* Last update before suspend */
+	mutex_lock(&devfreq->lock);
+	devfreq_update_status(devfreq, devfreq->previous_freq);
+	devfreq->suspended = true;
+	mutex_unlock(&devfreq->lock);
+
 	if (!devfreq->governor)
 		return 0;
 
@@ -574,6 +583,12 @@ int devfreq_resume_device(struct devfreq *devfreq)
 {
 	if (!devfreq)
 		return -EINVAL;
+
+	/* Update the timestamp before resuming */
+	mutex_lock(&devfreq->lock);
+	devfreq->last_stat_updated = jiffies;
+	devfreq->suspended = false;
+	mutex_unlock(&devfreq->lock);
 
 	if (!devfreq->governor)
 		return 0;
@@ -941,9 +956,11 @@ static ssize_t show_trans_table(struct device *dev, struct device_attribute *att
 	int prev_freq_level;
 	unsigned long prev_freq;
 
+	mutex_lock(&devfreq->lock);
 	err = devfreq_update_status(devfreq, devfreq->previous_freq);
 	if (err)
 		return 0;
+	mutex_unlock(&devfreq->lock);
 
 	/* round the current frequency */
 	prev_freq_level = devfreq_get_freq_level(devfreq,
@@ -963,7 +980,8 @@ static ssize_t show_trans_table(struct device *dev, struct device_attribute *att
 	len += sprintf(buf + len, "   time(ms)\n");
 
 	for (i = 0; i < max_state; i++) {
-		if (devfreq->profile->freq_table[i] == prev_freq) {
+		if (devfreq->profile->freq_table[i] == prev_freq &&
+		    !devfreq->suspended) {
 			len += sprintf(buf + len, "*");
 		} else {
 			len += sprintf(buf + len, " ");
@@ -995,6 +1013,25 @@ static struct device_attribute devfreq_attrs[] = {
 	__ATTR(trans_stat, S_IRUGO, show_trans_table, NULL),
 	{ },
 };
+
+/**
+ * devfreq_watermark_event() - Handles watermark events
+ * @devfreq: the devfreq instance to be updated
+ * @type: type of watermark event
+ */
+int devfreq_watermark_event(struct devfreq *devfreq, int type)
+{
+	if (!devfreq)
+		return -EINVAL;
+
+	if (!devfreq->governor)
+		return -EINVAL;
+
+	return devfreq->governor->event_handler(devfreq,
+				DEVFREQ_GOV_WMARK, &type);
+}
+EXPORT_SYMBOL(devfreq_watermark_event);
+
 
 static int __init devfreq_init(void)
 {

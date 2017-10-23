@@ -81,9 +81,9 @@
 				};
 			};
 
-			extcon {
+			palmas_extcon: extcon {
 				compatible = "ti,palmas-usb";
-				extcon-name = "palmas-extcon";
+				#extcon-cells = <1>;
 				ti,wakeup;
 				ti,enable-id-detection;
 				ti,enable-vbus-detection;
@@ -94,25 +94,13 @@
 				system-pmic-power-off;
 			};
 
-			gpadc {
+			palams_gpadc: gpadc {
 				compatible = "ti,palmas-gpadc";
 				interrupt-parent = <&palmas>;
 				interrupts = <18 0
 					      16 0
 					      17 0>;
-				iio_map {
-					ch1 {
-						ti,adc-channel-number = <1>;
-						ti,adc-consumer-device = "generic-adc-thermal.0";
-						ti,adc-consumer-channel ="battery-temp-channel";
-					};
-
-					ch6 {
-						ti,adc-channel-number = <6>;
-						ti,adc-consumer-device = "palmas-battery";
-						ti,adc-consumer-channel ="vbat_channel";
-					};
-				};
+				#io-channel-cells = <1>;
 			};
 
 			clock {
@@ -243,22 +231,13 @@
 							c9 {
 								regulator-consumer-supply = "vddio_sys_2";
 							};
-							c10 {
-								regulator-consumer-supply = "pwrdet_nand";
-							};
 							c11 {
 								regulator-consumer-supply = "vddio_sdmmc";
 								regulator-consumer-device = "sdhci-tegra.0";
 							};
-							c12 {
-								regulator-consumer-supply = "pwrdet_sdmmc1";
-							};
 							c13 {
 								regulator-consumer-supply = "vddio_sdmmc";
 								regulator-consumer-device = "sdhci-tegra.3";
-							};
-							c14 {
-								regulator-consumer-supply = "pwrdet_sdmmc4";
 							};
 							c15 {
 								regulator-consumer-supply = "avdd_pll_utmip";
@@ -279,20 +258,11 @@
 							c20 {
 								regulator-consumer-supply = "vddio_audio";
 							};
-							c21 {
-								regulator-consumer-supply = "pwrdet_audio";
-							};
 							c22 {
 								regulator-consumer-supply = "vddio_uart";
 							};
-							c23 {
-								regulator-consumer-supply = "pwrdet_uart";
-							};
 							c24 {
 								regulator-consumer-supply = "vddio_bb";
-							};
-							c25 {
-								regulator-consumer-supply = "pwrdet_bb";
 							};
 							c26 {
 								regulator-consumer-supply = "vdd_dtv";
@@ -307,9 +277,6 @@
 							c29 {
 								regulator-consumer-supply = "vddio_cam";
 								regulator-consumer-device = "vi";
-							};
-							c30 {
-								regulator-consumer-supply = "pwrdet_cam";
 							};
 							c31 {
 								regulator-consumer-supply = "dvdd";
@@ -396,14 +363,6 @@
 								regulator-consumer-supply = "spkvdd";
 								regulator-consumer-device = "tegra-snd-rt5645.0";
 							};
-							c6 {
-								regulator-consumer-supply = "avddio_pex";
-								regulator-consumer-device = "tegra-pcie";
-							};
-							c7 {
-								regulator-consumer-supply = "dvddio_pex";
-								regulator-consumer-device = "tegra-pcie";
-							};
 						};
 					};
 
@@ -441,10 +400,6 @@
 							c9 {
 								regulator-consumer-supply = "avdd_pll_cg";
 							};
-							c10 {
-								regulator-consumer-supply = "avdd_pex_pll";
-								regulator-consumer-device = "tegra-pcie";
-							};
 							c11 {
 								regulator-consumer-supply = "avdd_hdmi_pll";
 								regulator-consumer-device = "tegradc.1";
@@ -457,21 +412,6 @@
 						regulator-name = "vdd-pex";
 						regulator-min-microvolt = <2800000>;
 						regulator-max-microvolt = <3300000>;
-
-						consumers {
-							c1 {
-								regulator-consumer-supply = "hvdd_pex";
-								regulator-consumer-device = "tegra_pcie";
-							};
-							c2 {
-								regulator-consumer-supply = "hvdd_pex_pll_e";
-								regulator-consumer-device = "tegra_pcie";
-							};
-							c3 {
-								regulator-consumer-supply = "vddio_pex_ctl";
-								regulator-consumer-device = "tegra_pcie";
-							};
-						};
 					};
 
 					ldo3 {
@@ -550,9 +490,6 @@
 								regulator-consumer-supply = "avdd_dsi_csi";
 								regulator-consumer-device = "vi.1";
 							};
-							c8 {
-								regulator-consumer-supply = "pwrdet_mipi";
-							};
 							c9 {
 								regulator-consumer-supply = "avdd_hsic_com";
 							};
@@ -567,7 +504,7 @@
 						};
 					};
 
-					ldo6 {
+					ldo6_reg: ldo6 {
 						regulator-name = "vdd-lcd-hv";
 						regulator-min-microvolt = <3300000>;
 						regulator-max-microvolt = <3300000>;
@@ -636,7 +573,7 @@
 						};
 					};
 
-					ldo9 {
+					palmas_ldo9: ldo9 {
 						regulator-name = "vddio-sdmmc-2";
 						regulator-min-microvolt = <1800000>;
 						regulator-max-microvolt = <3300000>;
@@ -645,9 +582,6 @@
 							c1 {
 								regulator-consumer-supply = "vddio_sdmmc";
 								regulator-consumer-device = "sdhci-tegra.2";
-							};
-							c2 {
-								regulator-consumer-supply = "pwrdet_sdmmc3";
 							};
 						};
 					};
@@ -667,13 +601,6 @@
 								regulator-consumer-device = "tegradc.1";
 
 							};
-							c3 {
-								regulator-consumer-supply = "pwrdet_hv";
-							};
-							c4 {
-								regulator-consumer-supply = "vddio_pex_ctl";
-								regulator-consumer-device = "tegra-pcie";
-							};
 						};
 					};
 
@@ -683,9 +610,6 @@
 						regulator-boot-on;
 
 						consumers {
-							c1 {
-								regulator-consumer-supply = "pwrdet_pex_ctl";
-							};
 							c2 {
 								regulator-consumer-supply = "avdd_usb";
 								regulator-consumer-device = "tegra-udc.0";
@@ -703,15 +627,6 @@
 								regulator-consumer-supply = "avdd_usb";
 								regulator-consumer-device = "tegra-ehci.2";
 							};
-							c7 {
-								regulator-consumer-supply = "hvdd_pex";
-								regulator-consumer-device = "tegra-pcie";
-							};
-							c8 {
-								regulator-consumer-supply = "hvdd_pex_pll_e";
-								regulator-consumer-device = "tegra-pcie";
-							};
-
 						};
 					};
 					regen1 {
@@ -755,13 +670,13 @@
 
 	i2c@7000c000 {
 
-		cw201x@62 {
+		battery-gauge@62 {
 			compatible = "cw,cw201x";
 			reg = <0x62>;
 			status = "disabled";
 			interrupt-parent = <&gpio>;
 			interrupts = <TEGRA_GPIO(Q, 5) 0x0>;		/* gpio PQ5 */
-			tz-name = "battery-temp";
+			tz-name = "Battery";
 			alert-threshold = <0>;
 			profile-tbl = <0x15 0x7E 0x64 0x63 0x60 0x5A 0x53 0x50
 				0x4E 0x4B 0x49 0x46 0x48 0x43 0x2F 0x22
@@ -773,8 +688,8 @@
 				0x2F 0x7D 0x72 0xA5 0xB5 0xC1 0x5B 0x1D>;
 		};
 
-		bq2419x: bq2419x@6b {
-			compatible = "ti,bq2419x";
+		battery-charger@6b {
+			compatible = "ti,bq2419x-st8";
 			reg = <0x6b>;
 
 			interrupt-parent = <&gpio>;

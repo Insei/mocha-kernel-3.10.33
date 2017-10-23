@@ -235,7 +235,7 @@ struct palmas {
 	DECLARE_BITMAP(volatile_smps_registers, PALMAS_MAX_FN_REGISTERS);
 
 	/* Stored chip id */
-	int id;
+	u32 id;
 
 	unsigned int submodule_lists;
 
@@ -365,8 +365,22 @@ struct palmas_reg_init {
 	 */
 	int tracking_regulator;
 
+<<<<<<< HEAD
 	/* Disable pull down fro LDO */
 	bool disable_pull_down;
+=======
+	/*
+	 * disable active discharge on idle. This will keep disablign active
+	 * discharge on idle state and enable on suspend/shutdown.
+	 */
+	bool disable_active_discharge_idle;
+
+	/* Disable pull down for SMPS/LDO */
+	bool disable_pull_down;
+
+	/* Set regulator on bypass mode when it is more than bypass voltage */
+	int bypass_voltage;
+>>>>>>> update/master
 };
 
 enum palmas_regulators {
@@ -730,6 +744,9 @@ struct palmas_pmic {
 	bool ramp_delay_support[PALMAS_NUM_REGS];
 	unsigned int current_reg_mode[PALMAS_REG_SMPS10_OUT1];
 	unsigned long config_flags[PALMAS_NUM_REGS];
+	bool disable_active_discharge_idle[PALMAS_NUM_REGS];
+	bool disable_pull_down[PALMAS_NUM_REGS];
+	struct palmas_pmic_platform_data *pdata;
 };
 
 struct palmas_resource {
@@ -764,6 +781,7 @@ struct palmas_usb {
 	int wakeup;
 	bool enable_vbus_detection;
 	bool enable_id_detection;
+	bool enable_id_detect_on_vbus;
 	struct delayed_work cable_update_wq;
 	int cable_debounce_time;
 	int cur_cable_index;

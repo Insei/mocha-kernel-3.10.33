@@ -2,6 +2,7 @@
 /* The industrial I/O core
  *
  * Copyright (c) 2008 Jonathan Cameron
+ * Copyright (c) 2014, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published by
@@ -38,6 +39,12 @@ enum iio_chan_info_enum {
 	IIO_CHAN_INFO_PHASE,
 	IIO_CHAN_INFO_HARDWAREGAIN,
 	IIO_CHAN_INFO_HYSTERESIS,
+	IIO_CHAN_INFO_THRESHOLD_LOW,
+	IIO_CHAN_INFO_THRESHOLD_HIGH,
+	IIO_CHAN_INFO_BATCH_FLAGS,
+	IIO_CHAN_INFO_BATCH_PERIOD,
+	IIO_CHAN_INFO_BATCH_TIMEOUT,
+	IIO_CHAN_INFO_BATCH_FLUSH,
 };
 
 enum iio_endian {
@@ -419,6 +426,9 @@ struct iio_dev {
 	struct dentry			*debugfs_dentry;
 	unsigned			cached_reg_addr;
 #endif
+	char				link_name[16];
+	struct device_type		dev_type;
+	spinlock_t			dc_lock;
 };
 
 /**
@@ -453,6 +463,7 @@ void devm_iio_device_unregister(struct device *dev, struct iio_dev *indio_dev);
 int iio_push_event(struct iio_dev *indio_dev, u64 ev_code, s64 timestamp);
 
 extern struct bus_type iio_bus_type;
+extern const char * const iio_chan_type_name_spec[];
 
 /**
  * iio_device_put() - reference counted deallocation of struct device
@@ -518,6 +529,7 @@ static inline void *iio_device_get_drvdata(struct iio_dev *indio_dev)
  * @sizeof_priv: 	Space to allocate for private structure.
  **/
 struct iio_dev *iio_device_alloc(int sizeof_priv);
+struct iio_dev *nvs_device_alloc(int sizeof_priv, bool multi_link);
 
 static inline void *iio_priv(const struct iio_dev *indio_dev)
 {
@@ -599,11 +611,28 @@ int iio_str_to_fixpoint(const char *str, int fract_mult, int *integer,
 #define IIO_DEGREE_TO_RAD(deg) (((deg) * 314159ULL + 9000000ULL) / 18000000ULL)
 
 /**
+ * IIO_RAD_TO_DEGREE() - Convert rad to degree
+ * @rad: A value in rad
+ *
+ * Returns the given value converted from rad to degree
+ */
+#define IIO_RAD_TO_DEGREE(rad) \
+	(((rad) * 18000000ULL + 314159ULL / 2) / 314159ULL)
+
+/**
  * IIO_G_TO_M_S_2() - Convert g to meter / second**2
  * @g: A value in g
  *
  * Returns the given value converted from g to meter / second**2
  */
 #define IIO_G_TO_M_S_2(g) ((g) * 980665ULL / 100000ULL)
+
+/**
+ * IIO_M_S_2_TO_G() - Convert meter / second**2 to g
+ * @ms2: A value in meter / second**2
+ *
+ * Returns the given value converted from meter / second**2 to g
+ */
+#define IIO_M_S_2_TO_G(ms2) (((ms2) * 100000ULL + 980665ULL / 2) / 980665ULL)
 
 #endif /* _INDUSTRIAL_IO_H_ */

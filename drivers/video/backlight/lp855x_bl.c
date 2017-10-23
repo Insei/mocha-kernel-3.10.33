@@ -17,7 +17,11 @@
 #include <linux/of.h>
 #include <linux/platform_data/lp855x.h>
 #include <linux/pwm.h>
+<<<<<<< HEAD
 #include <linux/delay.h>
+=======
+#include <../../../arch/arm/mach-tegra/board-panel.h>
+>>>>>>> update/master
 
 /* LP8550/1/2/3/6 Registers */
 #define LP855X_BRIGHTNESS_CTRL		0x00
@@ -44,6 +48,7 @@
 
 #define DEFAULT_BL_NAME		"lcd-backlight"
 #define MAX_BRIGHTNESS		255
+<<<<<<< HEAD
 
 enum lp855x_brightness_ctrl_mode {
 	PWM_BASED = 1,
@@ -79,6 +84,9 @@ struct lp855x {
 	struct pwm_device *pwm;
 };
 
+=======
+#define DC_INSTANCE_0 0
+>>>>>>> update/master
 static int lp855x_write_byte(struct lp855x *lp, u8 reg, u8 data)
 {
 	return i2c_smbus_write_byte_data(lp->client, reg, data);
@@ -171,7 +179,8 @@ static int lp855x_configure(struct lp855x *lp)
 		return -EINVAL;
 	}
 
-	if (lp->cfg->pre_init_device) {
+	if (lp->cfg->pre_init_device &&
+			!tegra_is_bl_display_initialized(DC_INSTANCE_0)) {
 		ret = lp->cfg->pre_init_device(lp);
 		if (ret) {
 			dev_err(lp->dev, "pre init device err: %d\n", ret);
@@ -221,17 +230,18 @@ static int lp855x_bl_update_status(struct backlight_device *bl)
 	int ret = 0;
 	static u8 last_val = 0x1f;
 	struct lp855x *lp = bl_get_data(bl);
+	int brightness = bl->props.brightness;
 
-	if (bl->props.state & BL_CORE_SUSPENDED)
-		bl->props.brightness = 0;
+	if (bl->props.state & (BL_CORE_SUSPENDED | BL_CORE_FBBLANK))
+		brightness = 0;
 
 	if (lp->mode == PWM_BASED) {
-		int br = bl->props.brightness;
-		int max_br = bl->props.max_brightness;
+		if (lp->notify)
+			brightness = lp->notify(lp->dev, brightness);
 
-		lp855x_pwm_ctrl(lp, br, max_br);
-
+		lp855x_pwm_ctrl(lp, brightness, bl->props.max_brightness);
 	} else if (lp->mode == REGISTER_BASED) {
+<<<<<<< HEAD
 		u8 val = bl->props.brightness;
 		ret = lp855x_write_byte(lp, lp->cfg->reg_brightness, val);
 		if (ret != 0) {
@@ -279,6 +289,12 @@ static int lp855x_bl_update_status(struct backlight_device *bl)
 				return ret;
 			}
 		}
+=======
+		if (lp->notify)
+			brightness = lp->notify(lp->dev, (u8)brightness);
+
+		lp855x_write_byte(lp, lp->cfg->reg_brightness, (u8)brightness);
+>>>>>>> update/master
 	}
 
 	last_val = bl->props.brightness;
@@ -311,10 +327,20 @@ static int lp855x_bl_get_brightness(struct backlight_device *bl)
 	return ret;
 }
 
+static int lp855x_bl_check_fb(struct backlight_device *bl,
+			struct fb_info *info)
+{
+	struct platform_device *pdev = NULL;
+	pdev = to_platform_device(bus_find_device_by_name(
+		&platform_bus_type, NULL, "tegradc.0"));
+	return info->device == &pdev->dev;
+}
+
 static const struct backlight_ops lp855x_bl_ops = {
 	.options = BL_CORE_SUSPENDRESUME,
 	.update_status = lp855x_bl_update_status,
 	.get_brightness = lp855x_bl_get_brightness,
+	.check_fb = lp855x_bl_check_fb,
 };
 
 static int lp855x_backlight_register(struct lp855x *lp)
@@ -387,6 +413,12 @@ static int lp855x_parse_dt(struct device *dev, struct device_node *node)
 {
 	struct lp855x_platform_data *pdata;
 	int rom_length;
+	int n_bl_measured = 0;
+	int n_bl_curve = 0;
+	const __be32 *p;
+	u32 u;
+	struct property *prop;
+	int ret = 0;
 
 	if (!node) {
 		dev_err(dev, "no platform data\n");
@@ -424,6 +456,36 @@ static int lp855x_parse_dt(struct device *dev, struct device_node *node)
 		pdata->rom_data = &rom[0];
 	}
 
+	of_property_for_each_u32(node, "bl-measured", prop, p, u)
+		n_bl_measured++;
+	if (n_bl_measured > 0) {
+		pdata->bl_measured = devm_kzalloc(dev,
+		sizeof(*pdata->bl_measured) * n_bl_measured, GFP_KERNEL);
+		if (!pdata->bl_measured) {
+			pr_err("bl_measured memory allocation failed\n");
+			ret = -ENOMEM;
+		}
+		n_bl_measured = 0;
+		of_property_for_each_u32(node,
+			"bl-measured", prop, p, u)
+			pdata->bl_measured[n_bl_measured++] = u;
+	}
+
+	of_property_for_each_u32(node, "bl-curve", prop, p, u)
+		n_bl_curve++;
+	if (n_bl_curve > 0) {
+		pdata->bl_curve = devm_kzalloc(dev,
+		sizeof(*pdata->bl_curve) * n_bl_curve, GFP_KERNEL);
+		if (!pdata->bl_curve) {
+			pr_err("bl_curve memory allocation failed\n");
+			ret = -ENOMEM;
+		}
+		n_bl_curve = 0;
+		of_property_for_each_u32(node,
+			"bl-curve", prop, p, u)
+			pdata->bl_curve[n_bl_curve++] = u;
+	}
+
 	dev->platform_data = pdata;
 
 	return 0;
@@ -440,6 +502,7 @@ static int lp855x_probe(struct i2c_client *cl, const struct i2c_device_id *id)
 	struct lp855x *lp;
 	struct lp855x_platform_data *pdata = cl->dev.platform_data;
 	struct device_node *node = cl->dev.of_node;
+	struct generic_bl_data_dt_ops *gn;
 	int ret;
 
 	if (!pdata) {
@@ -467,6 +530,11 @@ static int lp855x_probe(struct i2c_client *cl, const struct i2c_device_id *id)
 	lp->pdata = pdata;
 	lp->chipname = id->name;
 	lp->chip_id = id->driver_data;
+
+	gn = (struct generic_bl_data_dt_ops *)dev_get_drvdata(lp->dev);
+	if (gn->notify)
+		lp->notify = gn->notify;
+
 	i2c_set_clientdata(cl, lp);
 
 	ret = lp855x_configure(lp);

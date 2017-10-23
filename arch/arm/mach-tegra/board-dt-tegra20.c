@@ -40,7 +40,7 @@
 
 #include "board.h"
 #include "devices.h"
-#include "common.h"
+#include <linux/platform/tegra/common.h>
 #include "iomap.h"
 
 struct of_dev_auxdata tegra20_auxdata_lookup[] __initdata = {
@@ -149,6 +149,5 @@ DT_MACHINE_START(TEGRA_DT, "nVidia Tegra20 (Flattened Device Tree)")
 	.init_time	= tegra_init_timer,
 	.init_machine	= tegra_dt_init,
 	.init_late	= tegra_dt_init_late,
-	.restart	= tegra_assert_system_reset,
 	.dt_compat	= tegra20_dt_board_compat,
 MACHINE_END

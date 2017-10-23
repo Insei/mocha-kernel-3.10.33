@@ -2,7 +2,7 @@
  * tegra_asoc_utils_alt.c - MCLK and DAP Utility driver
  *
  * Author: Stephen Warren <swarren@nvidia.com>
- * Copyright (c) 2010-2013 NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2010-2016 NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -28,51 +28,64 @@
 #include <linux/of.h>
 
 #include <mach/clk.h>
-#include <mach/pinmux.h>
-#ifdef CONFIG_ARCH_TEGRA_2x_SOC
-#include <mach/pinmux-tegra20.h>
-#endif
-#ifdef CONFIG_ARCH_TEGRA_3x_SOC
-#include <mach/pinmux-tegra30.h>
-#endif
-#ifdef CONFIG_ARCH_TEGRA_11x_SOC
-#include <mach/pinmux-t11.h>
-#endif
-#ifdef CONFIG_ARCH_TEGRA_12x_SOC
-#include <mach/pinmux-t12.h>
-#endif
-#ifdef CONFIG_ARCH_TEGRA_14x_SOC
-#include <mach/pinmux-t14.h>
-#endif
 
 #include <sound/soc.h>
 
+#include <linux/pinctrl/pinctrl.h>
+#include <linux/pinctrl/consumer.h>
+#include <linux/pinctrl/pinconf-tegra.h>
+
 #include "tegra_asoc_utils_alt.h"
 
+#ifdef CONFIG_SWITCH
+static bool is_switch_registered;
+#endif
+
+#if !defined(CONFIG_ARCH_TEGRA_21x_SOC)
 static atomic_t dap_ref_count[5];
+static const char *tegra_dap_group_names[4][4] = {
+	{"dap1_fs_pn0", "dap1_din_pn1", "dap1_dout_pn2", "dap1_sclk_pn3"},
+	{"dap2_fs_pa2", "dap2_din_pa4", "dap2_dout_pa5", "dap2_sclk_pa3"},
+	{"dap3_fs_pp0", "dap3_din_pp1", "dap3_dout_pp2", "dap3_sclk_pp3"},
+	{"dap4_fs_pp4", "dap4_din_pp5", "dap4_dout_pp6", "dap4_sclk_pp7"},
+};
+#define tegra_pinmux_driver "nvidia,tegra124-pinmux"
+
+static inline void tristate_dap(int dap_nr, int tristate)
+{
+	static struct pinctrl_dev *pinctrl_dev = NULL;
+	unsigned long config;
+	int i;
+	int ret;
+
+	if (!pinctrl_dev)
+		pinctrl_dev = pinctrl_get_dev_from_of_compatible(
+					tegra_pinmux_driver);
+	if (!pinctrl_dev) {
+		pr_err("%s(): Pincontrol for Tegra not found\n", __func__);
+		return;
+	}
+
+	config = TEGRA_PINCONF_PACK(TEGRA_PINCONF_PARAM_TRISTATE, tristate);
+	for (i = 0; i < 4; ++i) {
+		ret = pinctrl_set_config_for_group_name(pinctrl_dev,
+				tegra_dap_group_names[dap_nr][i], config);
+		if (ret < 0)
+			pr_err("%s(): Pinconfig for pin %s failed: %d\n",
+				__func__, tegra_dap_group_names[dap_nr][i],
+				ret);
+	}
+}
 
 #define TRISTATE_DAP_PORT(n) \
 static void tristate_dap_##n(bool tristate) \
 { \
-	enum tegra_pingroup fs, sclk, din, dout; \
-	fs = TEGRA_PINGROUP_DAP##n##_FS; \
-	sclk = TEGRA_PINGROUP_DAP##n##_SCLK; \
-	din = TEGRA_PINGROUP_DAP##n##_DIN; \
-	dout = TEGRA_PINGROUP_DAP##n##_DOUT; \
 	if (tristate) { \
-		if (atomic_dec_return(&dap_ref_count[n-1]) == 0) {\
-			tegra_pinmux_set_tristate(fs, TEGRA_TRI_TRISTATE); \
-			tegra_pinmux_set_tristate(sclk, TEGRA_TRI_TRISTATE); \
-			tegra_pinmux_set_tristate(din, TEGRA_TRI_TRISTATE); \
-			tegra_pinmux_set_tristate(dout, TEGRA_TRI_TRISTATE); \
-		} \
+		if (atomic_dec_return(&dap_ref_count[n-1]) == 0) \
+			tristate_dap(n - 1, TEGRA_PIN_ENABLE);	\
 	} else { \
-		if (atomic_inc_return(&dap_ref_count[n-1]) == 1) {\
-			tegra_pinmux_set_tristate(fs, TEGRA_TRI_NORMAL); \
-			tegra_pinmux_set_tristate(sclk, TEGRA_TRI_NORMAL); \
-			tegra_pinmux_set_tristate(din, TEGRA_TRI_NORMAL); \
-			tegra_pinmux_set_tristate(dout, TEGRA_TRI_NORMAL); \
-		} \
+		if (atomic_inc_return(&dap_ref_count[n-1]) == 1) \
+			tristate_dap(n - 1, TEGRA_PIN_DISABLE);	\
 	} \
 }
 
@@ -81,9 +94,7 @@ TRISTATE_DAP_PORT(2)
 /*I2S2 and I2S3 for other chips do not map to DAP3 and DAP4 (also
 these pinmux dont exist for other chips), they map to some
 other pinmux*/
-#if defined(CONFIG_ARCH_TEGRA_11x_SOC)\
-		|| defined(CONFIG_ARCH_TEGRA_12x_SOC)\
-		|| defined(CONFIG_ARCH_TEGRA_3x_SOC)
+#if defined(CONFIG_ARCH_TEGRA_12x_SOC)
 	TRISTATE_DAP_PORT(3)
 	TRISTATE_DAP_PORT(4)
 #endif
@@ -100,9 +111,7 @@ int tegra_alt_asoc_utils_tristate_dap(int id, bool tristate)
 /*I2S2 and I2S3 for other chips do not map to DAP3 and DAP4 (also
 these pinmux dont exist for other chips), they map to some
 other pinmux*/
-#if defined(CONFIG_ARCH_TEGRA_11x_SOC)\
-	|| defined(CONFIG_ARCH_TEGRA_12x_SOC)\
-	|| defined(CONFIG_ARCH_TEGRA_3x_SOC)
+#if defined(CONFIG_ARCH_TEGRA_12x_SOC)
 	case 2:
 		tristate_dap_3(tristate);
 		break;
@@ -117,6 +126,7 @@ other pinmux*/
 	return 0;
 }
 EXPORT_SYMBOL_GPL(tegra_alt_asoc_utils_tristate_dap);
+#endif
 
 int tegra_alt_asoc_utils_set_rate(struct tegra_asoc_audio_clock_info *data,
 				int srate,
@@ -145,6 +155,7 @@ int tegra_alt_asoc_utils_set_rate(struct tegra_asoc_audio_clock_info *data,
 	case 48000:
 	case 64000:
 	case 96000:
+	case 192000:
 		if (data->soc == TEGRA_ASOC_UTILS_SOC_TEGRA20)
 			new_baseclock = 73728000;
 		else if (data->soc == TEGRA_ASOC_UTILS_SOC_TEGRA30)
@@ -157,7 +168,8 @@ int tegra_alt_asoc_utils_set_rate(struct tegra_asoc_audio_clock_info *data,
 	}
 
 	clk_change = ((new_baseclock != data->set_baseclock) ||
-			(mclk != data->set_mclk));
+			(mclk != data->set_mclk) ||
+			(data->set_clk_out_rate != clk_out_rate));
 	if (!clk_change)
 		return 0;
 
@@ -167,21 +179,6 @@ int tegra_alt_asoc_utils_set_rate(struct tegra_asoc_audio_clock_info *data,
 
 	data->set_baseclock = 0;
 	data->set_mclk = 0;
-
-	if (data->clk_pll_a_state) {
-		clk_disable_unprepare(data->clk_pll_a);
-		data->clk_pll_a_state = 0;
-	}
-
-	if (data->clk_pll_a_out0_state) {
-		clk_disable_unprepare(data->clk_pll_a_out0);
-		data->clk_pll_a_out0_state = 0;
-	}
-
-	if (data->clk_cdev1_state) {
-		clk_disable_unprepare(data->clk_cdev1);
-		data->clk_cdev1_state = 0;
-	}
 
 	err = clk_set_rate(data->clk_pll_a, new_baseclock);
 	if (err) {
@@ -201,29 +198,9 @@ int tegra_alt_asoc_utils_set_rate(struct tegra_asoc_audio_clock_info *data,
 		return err;
 	}
 
-	err = clk_prepare_enable(data->clk_pll_a);
-	if (err) {
-		dev_err(data->dev, "Can't enable pll_a: %d\n", err);
-		return err;
-	}
-	data->clk_pll_a_state = 1;
-
-	err = clk_prepare_enable(data->clk_pll_a_out0);
-	if (err) {
-		dev_err(data->dev, "Can't enable pll_a_out0: %d\n", err);
-		return err;
-	}
-	data->clk_pll_a_out0_state = 1;
-
-	err = clk_prepare_enable(data->clk_cdev1);
-	if (err) {
-		dev_err(data->dev, "Can't enable cdev1: %d\n", err);
-		return err;
-	}
-	data->clk_cdev1_state = 1;
-
 	data->set_baseclock = new_baseclock;
 	data->set_mclk = mclk;
+	data->set_clk_out_rate = clk_out_rate;
 
 	return 0;
 }
@@ -271,13 +248,6 @@ int tegra_alt_asoc_utils_init(struct tegra_asoc_audio_clock_info *data,
 	data->dev = dev;
 	data->card = card;
 
-	data->clk_pll_p_out1 = clk_get_sys(NULL, "pll_p_out1");
-	if (IS_ERR(data->clk_pll_p_out1)) {
-		dev_err(data->dev, "Can't retrieve clk pll_p_out1\n");
-		ret = PTR_ERR(data->clk_pll_p_out1);
-		goto err;
-	}
-
 	if (of_machine_is_compatible("nvidia,tegra20"))
 		data->soc = TEGRA_ASOC_UTILS_SOC_TEGRA20;
 	else if (of_machine_is_compatible("nvidia,tegra30"))
@@ -288,6 +258,8 @@ int tegra_alt_asoc_utils_init(struct tegra_asoc_audio_clock_info *data,
 		data->soc = TEGRA_ASOC_UTILS_SOC_TEGRA148;
 	else if (of_machine_is_compatible("nvidia,tegra124"))
 		data->soc = TEGRA_ASOC_UTILS_SOC_TEGRA124;
+	else if (of_machine_is_compatible("nvidia,tegra210"))
+		data->soc = TEGRA_ASOC_UTILS_SOC_TEGRA210;
 	else if (!dev->of_node) {
 		/* non-DT is always Tegra20 */
 #if defined(CONFIG_ARCH_TEGRA_2x_SOC)
@@ -304,6 +276,15 @@ int tegra_alt_asoc_utils_init(struct tegra_asoc_audio_clock_info *data,
 	} else
 		/* DT boot, but unknown SoC */
 		return -EINVAL;
+
+	if (data->soc < TEGRA_ASOC_UTILS_SOC_TEGRA210) {
+		data->clk_pll_p_out1 = clk_get_sys(NULL, "pll_p_out1");
+		if (IS_ERR(data->clk_pll_p_out1)) {
+			dev_err(data->dev, "Can't retrieve clk pll_p_out1\n");
+			ret = PTR_ERR(data->clk_pll_p_out1);
+			goto err;
+		}
+	}
 
 	data->clk_pll_a = clk_get_sys(NULL, "pll_a");
 	if (IS_ERR(data->clk_pll_a)) {
@@ -363,9 +344,12 @@ int tegra_alt_asoc_utils_init(struct tegra_asoc_audio_clock_info *data,
 		}
 	}
 
-	ret = tegra_alt_asoc_utils_set_rate(data, 48000, 256 * 48000, 256 * 48000);
-	if (ret)
-		goto err_put_out1;
+	if (data->soc < TEGRA_ASOC_UTILS_SOC_TEGRA210) {
+		ret = tegra_alt_asoc_utils_set_rate(data, 48000,
+					256 * 48000, 256 * 48000);
+		if (ret)
+			goto err_put_out1;
+	}
 
 	return 0;
 
@@ -417,6 +401,40 @@ int tegra_alt_asoc_utils_set_parent(struct tegra_asoc_audio_clock_info *data,
 }
 EXPORT_SYMBOL_GPL(tegra_alt_asoc_utils_set_parent);
 
+int tegra_alt_asoc_utils_set_extern_parent(
+	struct tegra_asoc_audio_clock_info *data, const char *parent)
+{
+	unsigned long rate;
+	int err;
+
+	if (data->soc == TEGRA_ASOC_UTILS_SOC_TEGRA20)
+		return -ENODEV;
+
+	rate = clk_get_rate(data->clk_cdev1);
+	if (!strcmp(parent, "clk_m")) {
+		err = clk_set_parent(data->clk_cdev1, data->clk_m);
+		if (err) {
+			dev_err(data->dev, "Can't set clk extern1 parent");
+			return err;
+		}
+	} else if (!strcmp(parent, "pll_a_out0")) {
+		err = clk_set_parent(data->clk_cdev1, data->clk_pll_a_out0);
+		if (err) {
+			dev_err(data->dev, "Can't set clk cdev1/extern1 parent");
+			return err;
+		}
+	}
+
+	err = clk_set_rate(data->clk_cdev1, rate);
+	if (err) {
+		dev_err(data->dev, "Can't set clk rate");
+		return err;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL_GPL(tegra_alt_asoc_utils_set_extern_parent);
+
 void tegra_alt_asoc_utils_fini(struct tegra_asoc_audio_clock_info *data)
 {
 	if (data->clk_cdev1_state)
@@ -435,6 +453,34 @@ void tegra_alt_asoc_utils_fini(struct tegra_asoc_audio_clock_info *data)
 		clk_put(data->clk_pll_p_out1);
 }
 EXPORT_SYMBOL_GPL(tegra_alt_asoc_utils_fini);
+
+#ifdef CONFIG_SWITCH
+int tegra_alt_asoc_switch_register(struct switch_dev *sdev)
+{
+	int ret;
+
+	if (is_switch_registered)
+		return -EBUSY;
+
+	ret = switch_dev_register(sdev);
+
+	if (ret >= 0)
+		is_switch_registered = true;
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(tegra_alt_asoc_switch_register);
+
+void tegra_alt_asoc_switch_unregister(struct switch_dev *sdev)
+{
+	if (!is_switch_registered)
+		return;
+
+	switch_dev_unregister(sdev);
+	is_switch_registered = false;
+}
+EXPORT_SYMBOL_GPL(tegra_alt_asoc_switch_unregister);
+#endif
 
 MODULE_AUTHOR("Stephen Warren <swarren@nvidia.com>");
 MODULE_DESCRIPTION("Tegra ASoC utility code");

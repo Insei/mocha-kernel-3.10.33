@@ -1,6 +1,10 @@
 /*
+<<<<<<< HEAD
 * Copyright (C) 1999-2014, Broadcom Corporation
 * Copyright (C) 2016 XiaoMi, Inc.
+=======
+* Copyright (C) 1999-2015, Broadcom Corporation
+>>>>>>> update/master
 * 
 *      Unless you and Broadcom execute a separate written software license
 * agreement governing use of this software, this software is licensed to you
@@ -19,7 +23,11 @@
 *      Notwithstanding the above, under no circumstances may you combine this
 * software in any way with any other Broadcom software provided under a license
 * other than the GPL, without Broadcom's express prior written consent.
+<<<<<<< HEAD
 * $Id: wlfc_proto.h 431159 2013-10-22 19:40:51Z $
+=======
+* $Id: wlfc_proto.h 499510 2014-08-28 23:40:47Z $
+>>>>>>> update/master
 *
 */
 #ifndef __wlfc_proto_definitions_h__
@@ -93,11 +101,15 @@
 #define WLFC_CTL_TYPE_MAC_REQUEST_PACKET	13
 #define WLFC_CTL_TYPE_HOST_REORDER_RXPKTS	14
 
+
 #define WLFC_CTL_TYPE_TX_ENTRY_STAMP		15
 #define WLFC_CTL_TYPE_RX_STAMP			16
 
 #define WLFC_CTL_TYPE_TRANS_ID			18
 #define WLFC_CTL_TYPE_COMP_TXSTATUS		19
+
+#define WLFC_CTL_TYPE_TID_OPEN			20
+#define WLFC_CTL_TYPE_TID_CLOSE			21
 
 
 #define WLFC_CTL_TYPE_FILLER			255
@@ -122,8 +134,33 @@
 #define WLFC_CTL_VALUE_LEN_REQUEST_PACKET	3	/* credit, MAC-handle, prec_bitmap */
 
 
+<<<<<<< HEAD
 #define WLFC_PKTFLAG_PKTFROMHOST	0x01
 #define WLFC_PKTFLAG_PKT_REQUESTED	0x02
+=======
+#define WLFC_PKTFLAG_PKTFROMHOST	0x01 /* packet originated from hot side */
+#define WLFC_PKTFLAG_PKT_REQUESTED	0x02 /* packet requsted by firmware side */
+#define WLFC_PKTFLAG_PKT_FORCELOWRATE	0x04 /* force low rate for this packet */
+
+#define WL_TXSTATUS_STATUS_MASK			0xff /* allow 8 bits */
+#define WL_TXSTATUS_STATUS_SHIFT		24
+
+#define WL_TXSTATUS_SET_STATUS(x, status)	((x)  = \
+	((x) & ~(WL_TXSTATUS_STATUS_MASK << WL_TXSTATUS_STATUS_SHIFT)) | \
+	(((status) & WL_TXSTATUS_STATUS_MASK) << WL_TXSTATUS_STATUS_SHIFT))
+#define WL_TXSTATUS_GET_STATUS(x)	(((x) >> WL_TXSTATUS_STATUS_SHIFT) & \
+	WL_TXSTATUS_STATUS_MASK)
+
+#define WL_TXSTATUS_GENERATION_MASK		1 /* allow 1 bit */
+#define WL_TXSTATUS_GENERATION_SHIFT		31
+
+#define WL_TXSTATUS_SET_GENERATION(x, gen)	((x) = \
+	((x) & ~(WL_TXSTATUS_GENERATION_MASK << WL_TXSTATUS_GENERATION_SHIFT)) | \
+	(((gen) & WL_TXSTATUS_GENERATION_MASK) << WL_TXSTATUS_GENERATION_SHIFT))
+
+#define WL_TXSTATUS_GET_GENERATION(x)	(((x) >> WL_TXSTATUS_GENERATION_SHIFT) & \
+	WL_TXSTATUS_GENERATION_MASK)
+>>>>>>> update/master
 
 #define WL_TXSTATUS_STATUS_MASK			0xff /* allow 8 bits */
 #define WL_TXSTATUS_STATUS_SHIFT		24
@@ -180,7 +217,11 @@
 #define WL_TXSTATUS_SET_FREERUNCTR(x, ctr)	((x)  = \
 	((x) & ~(WL_TXSTATUS_FREERUNCTR_MASK)) | \
 	((ctr) & WL_TXSTATUS_FREERUNCTR_MASK))
+<<<<<<< HEAD
 #define WL_TXSTATUS_GET_FREERUNCTR(x)		((x) & WL_TXSTATUS_FREERUNCTR_MASK)
+=======
+#define WL_TXSTATUS_GET_FREERUNCTR(x)		((x)& WL_TXSTATUS_FREERUNCTR_MASK)
+>>>>>>> update/master
 
 #define WL_SEQ_FROMFW_MASK		0x1 /* allow 1 bit */
 #define WL_SEQ_FROMFW_SHIFT		13
@@ -214,6 +255,7 @@
 /* b[7:5] -reuse guard, b[4:0] -value */
 #define WLFC_MAC_DESC_GET_LOOKUP_INDEX(x) ((x) & 0x1f)
 
+<<<<<<< HEAD
 #define WLFC_PKTFLAG_SET_PKTREQUESTED(x)	(x) |= \
 	(WLFC_PKTFLAG_PKT_REQUESTED << WL_TXSTATUS_FLAGS_SHIFT)
 
@@ -221,6 +263,8 @@
 	~(WLFC_PKTFLAG_PKT_REQUESTED << WL_TXSTATUS_FLAGS_SHIFT)
 
 
+=======
+>>>>>>> update/master
 #define WLFC_MAX_PENDING_DATALEN	120
 
 /* host is free to discard the packet */

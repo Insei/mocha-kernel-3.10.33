@@ -35,6 +35,12 @@
 
 #include "zram_drv.h"
 
+<<<<<<< HEAD
+=======
+#define CREATE_TRACE_POINTS
+#include <trace/events/zram_drv.h>
+
+>>>>>>> update/master
 /* Globals */
 static int zram_major;
 static struct zram *zram_devices;
@@ -435,16 +441,30 @@ static int zram_decompress_page(struct zram *zram, char *mem, u32 index)
 	}
 
 	cmem = zs_map_object(meta->mem_pool, handle, ZS_MM_RO);
+<<<<<<< HEAD
 	if (size == PAGE_SIZE)
 		copy_page(mem, cmem);
 	else
 		ret = zcomp_decompress(zram->comp, cmem, size, mem);
+=======
+	if (size == PAGE_SIZE) {
+		copy_page(mem, cmem);
+	} else {
+	        atomic64_inc(&zram->stats.num_decompression);
+		ret = zcomp_decompress(zram->comp, cmem, size, mem);
+	}
+
+>>>>>>> update/master
 	zs_unmap_object(meta->mem_pool, handle);
 	bit_spin_unlock(ZRAM_ACCESS, &meta->table[index].value);
 
 	/* Should NEVER happen. Return bio error if it does. */
 	if (unlikely(ret)) {
 		pr_err("Decompression failed! err=%d, page=%u\n", ret, index);
+<<<<<<< HEAD
+=======
+		atomic64_inc(&zram->stats.failed_decompression);
+>>>>>>> update/master
 		return ret;
 	}
 
@@ -459,6 +479,10 @@ static int zram_bvec_read(struct zram *zram, struct bio_vec *bvec,
 	unsigned char *user_mem, *uncmem = NULL;
 	struct zram_meta *meta = zram->meta;
 	page = bvec->bv_page;
+<<<<<<< HEAD
+=======
+	trace_zram_bvec_read(zram->disksize);
+>>>>>>> update/master
 
 	bit_spin_lock(ZRAM_ACCESS, &meta->table[index].value);
 	if (unlikely(!meta->table[index].handle) ||
@@ -528,6 +552,10 @@ static int zram_bvec_write(struct zram *zram, struct bio_vec *bvec, u32 index,
 	struct zcomp_strm *zstrm;
 	bool locked = false;
 	unsigned long alloced_pages;
+<<<<<<< HEAD
+=======
+	trace_zram_bvec_write(zram->disksize);
+>>>>>>> update/master
 
 	page = bvec->bv_page;
 	if (is_partial_io(bvec)) {
@@ -572,6 +600,10 @@ static int zram_bvec_write(struct zram *zram, struct bio_vec *bvec, u32 index,
 		goto out;
 	}
 
+<<<<<<< HEAD
+=======
+	atomic64_inc(&zram->stats.num_compression);
+>>>>>>> update/master
 	ret = zcomp_compress(zram->comp, zstrm, uncmem, &clen);
 	if (!is_partial_io(bvec)) {
 		kunmap_atomic(user_mem);
@@ -580,6 +612,10 @@ static int zram_bvec_write(struct zram *zram, struct bio_vec *bvec, u32 index,
 	}
 
 	if (unlikely(ret)) {
+<<<<<<< HEAD
+=======
+		atomic64_inc(&zram->stats.failed_compression);
+>>>>>>> update/master
 		pr_err("Compression failed! err=%d\n", ret);
 		goto out;
 	}
@@ -971,6 +1007,14 @@ ZRAM_ATTR_RO(invalid_io);
 ZRAM_ATTR_RO(notify_free);
 ZRAM_ATTR_RO(zero_pages);
 ZRAM_ATTR_RO(compr_data_size);
+<<<<<<< HEAD
+=======
+ZRAM_ATTR_RO(num_decompression);
+ZRAM_ATTR_RO(failed_decompression);
+ZRAM_ATTR_RO(num_compression);
+ZRAM_ATTR_RO(failed_compression);
+
+>>>>>>> update/master
 
 static struct attribute *zram_disk_attrs[] = {
 	&dev_attr_disksize.attr,
@@ -990,6 +1034,13 @@ static struct attribute *zram_disk_attrs[] = {
 	&dev_attr_mem_used_max.attr,
 	&dev_attr_max_comp_streams.attr,
 	&dev_attr_comp_algorithm.attr,
+<<<<<<< HEAD
+=======
+	&dev_attr_num_decompression.attr,
+	&dev_attr_num_compression.attr,
+	&dev_attr_failed_decompression.attr,
+	&dev_attr_failed_compression.attr,
+>>>>>>> update/master
 	NULL,
 };
 

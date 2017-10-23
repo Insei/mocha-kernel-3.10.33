@@ -21,44 +21,41 @@
 #include <linux/delay.h>
 #include <linux/clk.h>
 #include <linux/cpumask.h>
-#include <linux/tegra-powergate.h>
 
 #include <asm/cputype.h>
 #include <asm/smp_plat.h>
 #include <asm/soc.h>
 
-#include "common.h"
-#include "reset.h"
-#include "iomap.h"
+#include <linux/platform/tegra/common.h>
+#include <linux/platform/tegra/reset.h>
+#include "pm-soc.h"
 
-#define PWRGATE_TOGGLE		0x30
-#define PMC_TOGGLE_START	0x100
+static DECLARE_BITMAP(tegra_cpu_power_up_by_fc, CONFIG_NR_CPUS) __read_mostly;
+static struct cpumask *tegra_cpu_power_mask =
+				to_cpumask(tegra_cpu_power_up_by_fc);
+#define tegra_cpu_power_map	(*(cpumask_t *)tegra_cpu_power_mask)
 
-static void __iomem *pmc = IO_ADDRESS(TEGRA_PMC_BASE);
-#define pmc_writel(value, reg)	writel(value, pmc + (reg))
-#define pmc_readl(reg)		readl(pmc + (reg))
+static void __init tegra_smp_prepare_cpus(unsigned int max_cpus)
+{
+	/* Always mark the boot CPU as initially powered up */
+	cpumask_set_cpu(0, tegra_cpu_power_mask);
+}
 
-#ifdef CONFIG_ARCH_TEGRA_21x_SOC
+void (*tegra_boot_secondary_cpu)(int cpu);
+
 static int tegra_boot_secondary(unsigned int cpu, struct task_struct *idle)
 {
-	u32 reg;
+	BUG_ON(cpu == raw_smp_processor_id());
 
-	BUG_ON(cpu == smp_processor_id());
-
-	cpu = cpu_logical_map(cpu);
-
-	reg = PMC_TOGGLE_START | TEGRA_CPU_POWERGATE_ID(cpu);
-	pmc_writel(reg, PWRGATE_TOGGLE);
+	if (tegra_boot_secondary_cpu) {
+		cpu = cpu_logical_map(cpu);
+		tegra_boot_secondary_cpu(cpu);
+	}
 
 	return 0;
 }
-#endif
 
 struct smp_operations tegra_smp_ops __initdata = {
-#ifdef CONFIG_ARCH_TEGRA_21x_SOC
+	.smp_prepare_cpus	= tegra_smp_prepare_cpus,
 	.smp_boot_secondary	= tegra_boot_secondary,
-#endif
-#ifdef CONFIG_HOTPLUG_CPU
-	.cpu_die		= tegra_cpu_die,
-#endif
 };

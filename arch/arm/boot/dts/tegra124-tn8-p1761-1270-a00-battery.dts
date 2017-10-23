@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #include "tegra124-tn8-p1761-1270-a00.dts"
 #include "tegra124-platforms/tegra124-tn8-sysedp-e1780-1100-a02.dtsi"
 #include "tegra124-platforms/tegra124-tn8-usb-devices.dtsi"
@@ -16,4 +17,12 @@
 			};
 		};
 	};
+=======
+/*
+ * Need this file to avoid OTA issue.
+ */
+#include "tegra124-tn8-p1761-1270-a00.dts"
+/ {
+	nvidia,dtsfilename = __FILE__;
+>>>>>>> update/master
 };

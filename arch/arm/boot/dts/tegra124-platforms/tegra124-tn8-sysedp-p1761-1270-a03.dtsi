@@ -47,5 +47,9 @@
 		power_supply = "battery";
 		r_const = <40000>;
 		vsys_min = <3000000>;
+<<<<<<< HEAD
+=======
+		status = "disabled";
+>>>>>>> update/master
 	};
 };

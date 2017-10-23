@@ -3,7 +3,7 @@
  *
  * Tegra Graphics Host Driver Entrypoint
  *
- * Copyright (c) 2010-2014, NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2010-2015, NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -23,23 +23,60 @@
 
 #include <linux/cdev.h>
 #include <linux/nvhost.h>
+#include <linux/nvhost_ioctl.h>
 
 #include "nvhost_syncpt.h"
+#include "nvhost_channel.h"
 #include "nvhost_intr.h"
 
 #define TRACE_MAX_LENGTH	128U
 #define IFACE_NAME		"nvhost"
 
+struct nvhost_chip_support;
 struct nvhost_channel;
 struct mem_mgr;
 
+extern long linsim_cl;
+
+/*
+ * Policy determines how do we store the syncpts,
+ * i.e. either per channel (in struct nvhost_channel)
+ * or per channel instance (in struct nvhost_channel_userctx)
+ */
+enum nvhost_syncpt_policy {
+	SYNCPT_PER_CHANNEL = 0,
+	SYNCPT_PER_CHANNEL_INSTANCE,
+};
+
+/*
+ * Policy determines when to map HW channel to device,
+ * i.e. either on channel device node open time
+ * or on work submission time
+ */
+enum nvhost_channel_policy {
+	MAP_CHANNEL_ON_OPEN = 0,
+	MAP_CHANNEL_ON_SUBMIT,
+};
+
 struct host1x_device_info {
+	/* Channel info */
 	int		nb_channels;	/* host1x: num channels supported */
-	int		nb_pts; 	/* host1x: num syncpoints supported */
-	int		nb_bases;	/* host1x: num syncpoints supported */
-	u64		client_managed; /* host1x: client managed syncpts */
+	int		ch_base;	/* host1x: channel base */
+	int		ch_limit;	/* host1x: channel limit */
+	enum nvhost_channel_policy channel_policy; /* host1x: channel policy */
+
+	/* Syncpoint info */
+	int		nb_hw_pts;	/* host1x: num syncpoints supported
+					   in h/w */
+	int		nb_pts;		/* host1x: num syncpoints supported
+					   in s/w where nb_pts <= nb_hw_pts */
+	int		pts_base;	/* host1x: syncpoint base */
+	int		pts_limit;	/* host1x: syncpoint limit */
+	enum nvhost_syncpt_policy syncpt_policy; /* host1x: syncpoint policy */
 	int		nb_mlocks;	/* host1x: number of mlocks */
-	const char	**syncpt_names;	/* names of sync points */
+	int		(*initialize_chip_support)(struct nvhost_master *,
+						struct nvhost_chip_support *);
+	int		nb_actmons;
 };
 
 struct nvhost_master {
@@ -53,12 +90,25 @@ struct nvhost_master {
 	struct platform_device *dev;
 	atomic_t clientid;
 	struct host1x_device_info info;
+	struct nvhost_characteristics nvhost_char;
 	struct kobject *caps_kobj;
 	struct nvhost_capability_node *caps_nodes;
 	struct mutex timeout_mutex;
+<<<<<<< HEAD
 };
+=======
+>>>>>>> update/master
 
-extern struct nvhost_master *nvhost;
+	struct nvhost_channel **chlist;	/* channel list */
+	struct mutex chlist_mutex;	/* mutex for channel list */
+	unsigned long allocated_channels[2];
+	struct mutex priority_lock;	/* mutex for priority update */
+
+	/* nvhost vm specific structures */
+	struct list_head static_mappings_list;
+	struct list_head vm_list;
+	struct mutex vm_mutex;
+};
 
 void nvhost_debug_init(struct nvhost_master *master);
 void nvhost_device_debug_init(struct platform_device *dev);
@@ -68,10 +118,11 @@ void nvhost_debug_dump(struct nvhost_master *master);
 int nvhost_host1x_finalize_poweron(struct platform_device *dev);
 int nvhost_host1x_prepare_poweroff(struct platform_device *dev);
 
-struct nvhost_channel *nvhost_alloc_channel(struct platform_device *dev);
-void nvhost_free_channel(struct nvhost_channel *ch);
+void nvhost_set_chanops(struct nvhost_channel *ch);
 
-extern pid_t nvhost_debug_null_kickoff_pid;
+int nvhost_gather_filter_enabled(struct nvhost_syncpt *sp);
+
+int nvhost_update_characteristics(struct platform_device *dev);
 
 static inline void *nvhost_get_private_data(struct platform_device *_dev)
 {
@@ -108,7 +159,5 @@ static inline struct platform_device *nvhost_get_parent(
 	return (_dev->dev.parent && _dev->dev.parent != &platform_bus)
 		? to_platform_device(_dev->dev.parent) : NULL;
 }
-
-void nvhost_host1x_update_clk(struct platform_device *pdev);
 
 #endif

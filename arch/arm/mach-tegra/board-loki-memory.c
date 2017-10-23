@@ -21,7 +21,7 @@
 #include "board.h"
 #include "board-loki.h"
 #include "tegra-board-id.h"
-#include "tegra12_emc.h"
+#include <linux/platform/tegra/tegra12_emc.h>
 #include "devices.h"
 
 static struct tegra12_emc_table loki_b00_sku0_emc_table[] = {
@@ -18115,6 +18115,7 @@ static struct tegra12_emc_pdata loki_ffd_a00_sku0_emc_pdata = {
 	.description = "loki_ffd_a00_sku0_emc_tables",
 	.tables = loki_ffd_a00_sku0_emc_table,
 	.num_tables = ARRAY_SIZE(loki_ffd_a00_sku0_emc_table),
+<<<<<<< HEAD
 };
 
 static struct tegra12_emc_pdata loki_ffd_a00_sku100_emc_pdata = {
@@ -18129,6 +18130,22 @@ static struct tegra12_emc_pdata loki_ffd_c00_sku0_emc_pdata = {
 	.num_tables = ARRAY_SIZE(loki_ffd_c00_sku0_emc_table),
 };
 
+=======
+};
+
+static struct tegra12_emc_pdata loki_ffd_a00_sku100_emc_pdata = {
+	.description = "loki_ffd_a00_sku100_emc_tables",
+	.tables = loki_ffd_a00_sku100_emc_table,
+	.num_tables = ARRAY_SIZE(loki_ffd_a00_sku100_emc_table),
+};
+
+static struct tegra12_emc_pdata loki_ffd_c00_sku0_emc_pdata = {
+	.description = "loki_ffd_c00_sku0_emc_tables",
+	.tables = loki_ffd_c00_sku0_emc_table,
+	.num_tables = ARRAY_SIZE(loki_ffd_c00_sku0_emc_table),
+};
+
+>>>>>>> update/master
 static struct tegra12_emc_pdata loki_ffd_c00_sku100_emc_pdata = {
 	.description = "loki_ffd_c00_sku100_emc_tables",
 	.tables = loki_ffd_c00_sku100_emc_table,
@@ -18158,6 +18175,7 @@ int __init loki_emc_init(void)
 				break;
 			case BOARD_SKU_100:
 			default:
+<<<<<<< HEAD
 				WARN(1,
 				    "EMC for this loki sku not supported: %u\n",
 				    bi.sku);
@@ -18165,6 +18183,14 @@ int __init loki_emc_init(void)
 			}
 		} else if (bi.board_id == BOARD_E2549) {
 			pr_info("Loading Thor 1.95 EMC table:0x%08x\n", bi.sku);
+=======
+				WARN(1, "EMC for this loki sku not supported: %u\n",
+						bi.sku);
+				return -EINVAL;
+			}
+		} else if (bi.board_id == BOARD_E2549) {
+			pr_info("Loading Thor 1.95 EMC table: 0x%08x\n", bi.sku);
+>>>>>>> update/master
 			tegra_emc_device.dev.platform_data =
 				&thor_195_b00_emc_pdata;
 		} else if (bi.board_id == BOARD_P2530 &&
@@ -18182,6 +18208,10 @@ int __init loki_emc_init(void)
 					bi.sku);
 				tegra_emc_device.dev.platform_data =
 					&loki_ffd_a00_sku100_emc_pdata;
+<<<<<<< HEAD
+=======
+				break;
+>>>>>>> update/master
 			default:
 				WARN(1, "EMC for this loki sku not supported: %u\n",
 						bi.sku);
@@ -18192,6 +18222,7 @@ int __init loki_emc_init(void)
 			case BOARD_SKU_FOSTER:
 			case BOARD_SKU_0:
 				pr_info("Loading Loki FFD C00 sku0 EMC table: 0x%08x\n",
+<<<<<<< HEAD
 					bi.sku);
 				tegra_emc_device.dev.platform_data =
 					&loki_ffd_c00_sku0_emc_pdata;
@@ -18200,6 +18231,16 @@ int __init loki_emc_init(void)
 				pr_info("Loading Loki FFD C00 sku100 EMC table: 0x%08x\n",
 					bi.sku);
 				tegra_emc_device.dev.platform_data =
+=======
+					bi.sku);
+				tegra_emc_device.dev.platform_data =
+					&loki_ffd_c00_sku0_emc_pdata;
+				break;
+			case BOARD_SKU_100:
+				pr_info("Loading Loki FFD C00 sku100 EMC table: 0x%08x\n",
+					bi.sku);
+				tegra_emc_device.dev.platform_data =
+>>>>>>> update/master
 					&loki_ffd_c00_sku100_emc_pdata;
 				break;
 			default:
@@ -18216,10 +18257,16 @@ int __init loki_emc_init(void)
 					bi.board_id);
 			return -EINVAL;
 		}
+<<<<<<< HEAD
 
 		platform_device_register(&tegra_emc_device);
 	}
 
+=======
+
+		platform_device_register(&tegra_emc_device);
+	}
+>>>>>>> update/master
 	tegra12_emc_init();
 	return 0;
 }

@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/dc/dsi_regs.h
  *
- * Copyright (c) 2011-2013, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2011-2014, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -85,6 +85,7 @@ enum {
 
 #define DSI_CONTROL 0x10
 #define   DSI_CONTROL_DBG_ENABLE(x)			(((x) & 0x1) << 31)
+#define   DSI_CONTROL_DBG_ENABLE_MASK		(DSI_CONTROL_DBG_ENABLE(1))
 enum {
 	CONTINUOUS,
 	TX_ONLY,
@@ -132,6 +133,7 @@ enum {
 #define DSI_INIT_SEQ_DATA_5 0x20
 #define DSI_INIT_SEQ_DATA_6 0x21
 #define DSI_INIT_SEQ_DATA_7 0x22
+#define DSI_INIT_SEQ_DATA_15 0x5f
 
 #define DSI_PKT_SEQ_0_LO 0x23
 #define   DSI_PKT_SEQ_0_LO_SEQ_0_FORCE_LP(x)	(((x) & 0x1) << 30)

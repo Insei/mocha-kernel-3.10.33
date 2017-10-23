@@ -22,6 +22,7 @@
 
 #include <linux/gfp.h>
 #include <asm/unaligned.h>
+#include <linux/usb/otg.h>
 
 #include "xhci.h"
 
@@ -467,10 +468,13 @@ static void xhci_hub_report_link_state(u32 *status, u32 status_reg)
 	u32 pls = status_reg & PORT_PLS_MASK;
 
 	/* resume state is a xHCI internal state.
-	 * Do not report it to usb core.
+	 * Do not report it to usb core, instead, pretend to be U3,
+	 * thus usb core knows it's not ready for transfer
 	 */
-	if (pls == XDEV_RESUME)
+	if (pls == XDEV_RESUME) {
+		*status |= USB_SS_PORT_LS_U3;
 		return;
+	}
 
 	/* When the CAS bit is set then warm reset
 	 * should be performed on port
@@ -548,6 +552,7 @@ int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 	u16 link_state = 0;
 	u16 wake_mask = 0;
 	u16 timeout = 0;
+	u16 test_selector = 0;
 
 	max_ports = xhci_get_ports(hcd, &port_array);
 	bus_state = &xhci->bus_state[hcd_index(hcd)];
@@ -713,6 +718,8 @@ int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 			wake_mask = wIndex & 0xff00;
 		/* The MSB of wIndex is the U1/U2 timeout */
 		timeout = (wIndex & 0xff00) >> 8;
+		if (wValue == USB_PORT_FEAT_TEST)
+			test_selector = (wIndex & 0xff00) >> 8;
 		wIndex &= 0xff;
 		if (!wIndex || wIndex > max_ports)
 			goto error;
@@ -759,6 +766,25 @@ int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 			spin_lock_irqsave(&xhci->lock, flags);
 
 			xhci_set_link_state(xhci, port_array, wIndex, XDEV_U3);
+
+#ifdef CONFIG_USB_OTG
+			/* Now port state is U3/suspend state
+			 * call start_hnp
+			 * first notify the otg driver
+			 */
+			xhci_dbg(xhci, "otg_port = %d, b_hnp_enable=%d\n",
+				hcd->self.otg_port, hcd->self.b_hnp_enable);
+
+			if (hcd->self.otg_port == (wIndex + 1)) {
+				/* A-Host is suspending signal to B-device
+				 * if HNP is enabled to start hnp & switch roles
+				 */
+				if (hcd->phy)
+					usb_phy_set_suspend(hcd->phy, 1);
+				if (hcd->self.b_hnp_enable)
+					otg_start_hnp(xhci->phy->otg);
+			}
+#endif
 
 			spin_unlock_irqrestore(&xhci->lock, flags);
 			msleep(10); /* wait device to enter */
@@ -886,6 +912,27 @@ int xhci_hub_control(struct usb_hcd *hcd, u16 typeReq, u16 wValue,
 			temp = xhci_readl(xhci, port_array[wIndex] + 1);
 			temp &= ~PORT_U2_TIMEOUT_MASK;
 			temp |= PORT_U2_TIMEOUT(timeout);
+			xhci_writel(xhci, temp, port_array[wIndex] + 1);
+			break;
+		/* XHCI 4.19.6 */
+		case USB_PORT_FEAT_TEST:
+			/*
+			 * Test modes are only supported
+			 * on USB 2.0 protocol Root Hub ports,
+			 */
+			if (hcd->speed != HCD_USB2)
+				goto error;
+
+			if (!test_selector || test_selector > 5)
+				goto error;
+
+			if (xhci_halt(xhci))
+				goto error;
+
+			/* Start test mode in PORTPMSC */
+			temp = xhci_readl(xhci, port_array[wIndex] + 1);
+			temp = xhci_port_state_to_neutral(temp);
+			temp |= test_selector << 28;
 			xhci_writel(xhci, temp, port_array[wIndex] + 1);
 			break;
 		default:
@@ -1051,10 +1098,10 @@ int xhci_bus_suspend(struct usb_hcd *hcd)
 	spin_lock_irqsave(&xhci->lock, flags);
 
 	if (hcd->self.root_hub->do_remote_wakeup) {
-		if (bus_state->resuming_ports) {
+		if (bus_state->resuming_ports ||	/* USB2 */
+		    bus_state->port_remote_wakeup) {	/* USB3 */
 			spin_unlock_irqrestore(&xhci->lock, flags);
-			xhci_dbg(xhci, "suspend failed because "
-						"a port is resuming\n");
+			xhci_dbg(xhci, "suspend failed because a port is resuming\n");
 			return -EBUSY;
 		}
 	}
@@ -1199,16 +1246,8 @@ int xhci_bus_resume(struct usb_hcd *hcd)
 					xhci, port_index + 1);
 			if (slot_id)
 				xhci_ring_device(xhci, slot_id);
-		} else{
+		} else
 			xhci_writel(xhci, temp, port_array[port_index]);
-			/* FIXME: Remove below 20ms delay when we have correct
-			* solution for error message
-			* "xhci_bus_suspend failed -16"
-			*/
-			spin_unlock_irqrestore(&xhci->lock, flags);
-			msleep(20);
-			spin_lock_irqsave(&xhci->lock, flags);
-		}
 
 		if (hcd->speed != HCD_USB3) {
 			/* disable remote wake up for USB 2.0 */

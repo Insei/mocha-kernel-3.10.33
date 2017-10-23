@@ -3,7 +3,7 @@
  *
  * NVIDIA Tegra specific power events.
  *
- * Copyright (c) 2010-2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2010-2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@
 
 #include <linux/ktime.h>
 #include <linux/tracepoint.h>
+#include <linux/sched.h>
 
 #ifndef _NV_PWR_EVENT_AVOID_DOUBLE_DEFINING
 #define _NV_PWR_EVENT_AVOID_DOUBLE_DEFINING
@@ -73,7 +74,7 @@ TRACE_EVENT(nvcpu_cluster,
 		  (unsigned long)__entry->target)
 );
 
-#ifdef CONFIG_CLK_SRC_TEGRA_TIMER
+#if defined(CONFIG_CLK_SRC_TEGRA_TIMER) || defined(CONFIG_ARCH_TEGRA_21x_SOC)
 extern u32 notrace tegra_read_usec_raw(void);
 #else
 #undef tegra_read_usec_raw
@@ -124,6 +125,39 @@ TRACE_EVENT(nvmc_clk_stop,
 		  (unsigned long)__entry->sleep,
 		  (unsigned long)__entry->state)
 );
+
+TRACE_EVENT(tegra_rtc_set_alarm,
+
+	TP_PROTO(unsigned long now, unsigned long target),
+
+	TP_ARGS(now, target),
+
+	TP_STRUCT__entry(
+		__field(unsigned long, now)
+		__field(unsigned long, target)
+	),
+
+	TP_fast_assign(
+		__entry->now = now;
+		__entry->target = target;
+	),
+
+	TP_printk("now %lu, target %lu\n", __entry->now, __entry->target)
+);
+
+#define trace_nvcpu_clusterswitch(state, cluster_now, cluster_tgt)	\
+	do {								\
+		if (is_idle_task(current))				\
+			trace_nvcpu_cluster_rcuidle((state),		\
+						    (cluster_now),	\
+						    (cluster_tgt));	\
+		else							\
+			trace_nvcpu_cluster((state),			\
+					    (cluster_now),		\
+					    (cluster_tgt));		\
+									\
+	} while (0)
+
 #endif /* _TRACE_NVPOWER_H */
 
 /* This part must be outside protection */

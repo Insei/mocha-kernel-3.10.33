@@ -67,6 +67,8 @@ struct pca954x {
 	u8 last_chan;		/* last register value */
 	struct regulator *vcc_reg;
 	struct regulator *pullup_reg;
+	struct regulator *lp_reg;
+	const char *lp_reg_name;
 };
 
 struct chip_desc {
@@ -222,7 +224,9 @@ static int pca954x_probe(struct i2c_client *client,
 	struct pca954x_platform_data *pdata = client->dev.platform_data;
 	int num, force, class;
 	struct pca954x *data;
+	bool fskip = false;
 	int ret;
+	int force_bus = 0;
 
 	if (!i2c_check_functionality(adap, I2C_FUNC_SMBUS_BYTE))
 		return -ENODEV;
@@ -233,6 +237,45 @@ static int pca954x_probe(struct i2c_client *client,
 
 	i2c_set_clientdata(client, data);
 
+	if (client->dev.of_node) {
+		fskip = of_property_read_bool(client->dev.of_node,
+				"skip_mux_detect");
+		if (fskip)
+			dev_info(&client->dev, "device detect skipped.\n");
+
+		ret = of_property_read_u32(client->dev.of_node,
+			"force_bus_start", &force_bus);
+		if (ret > 0) {
+			dev_info(&client->dev, "%s: could not read force bus number\n",
+					__func__);
+		} else {
+			if (force_bus > 0) {
+				dev_info(&client->dev, "%s: forcing device bus number, start %i.\n",
+					__func__, force_bus);
+			}
+		}
+		ret = of_property_read_string(client->dev.of_node, "vcc_lp",
+			&data->lp_reg_name);
+		if (ret) {
+			data->lp_reg_name = NULL;
+			dev_err(&client->dev, "vcc_lp not found %d\n", ret);
+		}
+	}
+
+	data->lp_reg = devm_regulator_get(&client->dev, data->lp_reg_name);
+	if (IS_ERR(data->lp_reg)) {
+		dev_info(&client->dev, "lp_reg get fail\n");
+		data->lp_reg = NULL;
+	}
+
+	if (data->lp_reg) {
+		ret = regulator_enable(data->lp_reg);
+		if (ret) {
+			dev_err(&client->dev, "%s: lp_reg failed to enable\n",
+				__func__);
+		}
+	}
+
 	/* Get regulator pointer for pca954x vcc */
 	data->vcc_reg = devm_regulator_get(&client->dev, "vcc");
 	if (PTR_ERR(data->vcc_reg) == -EPROBE_DEFER)
@@ -240,7 +283,7 @@ static int pca954x_probe(struct i2c_client *client,
 	else if (IS_ERR(data->vcc_reg)) {
 		ret = PTR_ERR(data->vcc_reg);
 		dev_err(&client->dev, "vcc regualtor get failed, %d\n", ret);
-		return ret;
+		data->vcc_reg = NULL;
 	}
 
 	/* Get regulator pointer for pca954x vcc-pullup */
@@ -249,6 +292,9 @@ static int pca954x_probe(struct i2c_client *client,
 		dev_info(&client->dev, "vcc-pullup regulator not found\n");
 		data->pullup_reg = NULL;
 	}
+
+	if (fskip)
+		goto pca954x_probe_skip_detect;
 
 	/* Increase ref count for pca954x vcc */
 	if (data->vcc_reg) {
@@ -290,6 +336,7 @@ static int pca954x_probe(struct i2c_client *client,
 	if (data->pullup_reg)
 		regulator_disable(data->pullup_reg);
 
+pca954x_probe_skip_detect:
 	data->type = id->driver_data;
 	data->last_chan = 0;		   /* force the first selection */
 
@@ -299,6 +346,10 @@ static int pca954x_probe(struct i2c_client *client,
 
 		force = 0;			  /* dynamic adap number */
 		class = 0;			  /* no class by default */
+
+		if (force_bus)
+			force = force_bus + num;
+
 		if (pdata) {
 			if (num < pdata->num_modes) {
 				/* force static number */
@@ -310,6 +361,7 @@ static int pca954x_probe(struct i2c_client *client,
 				/* discard unconfigured channels */
 				break;
 		}
+
 		if (client->dev.of_node)
 			deselect_on_exit = true;
 
@@ -371,7 +423,17 @@ static struct i2c_driver pca954x_driver = {
 	.id_table	= pca954x_id,
 };
 
-module_i2c_driver(pca954x_driver);
+static int __init pca954x_init(void)
+{
+	return i2c_add_driver(&pca954x_driver);
+}
+fs_initcall(pca954x_init);
+
+static void __exit pca954x_exit(void)
+{
+	i2c_del_driver(&pca954x_driver);
+}
+module_exit(pca954x_exit);
 
 MODULE_AUTHOR("Rodolfo Giometti <giometti@linux.it>");
 MODULE_DESCRIPTION("PCA954x I2C mux/switch driver");

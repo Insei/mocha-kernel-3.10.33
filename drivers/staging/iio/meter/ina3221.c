@@ -1,7 +1,7 @@
 /*
  * ina3221.c - driver for TI INA3221
  *
- * Copyright (c) 2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * Based on hwmon driver:
  * 		drivers/hwmon/ina3221.c
@@ -87,6 +87,7 @@
 enum {
 	CHANNEL_NAME = 0,
 	CRIT_CURRENT_LIMIT,
+	WARN_CURRENT_LIMIT,
 	RUNNING_MODE,
 	VBUS_VOLTAGE_CURRENT,
 };
@@ -96,6 +97,24 @@ enum mode {
 	FORCED_TRIGGERED = 1,
 	CONTINUOUS = 2,
 	FORCED_CONTINUOUS = 3,
+<<<<<<< HEAD
+=======
+};
+
+#define IS_TRIGGERED(x) (!((x) & 2))
+#define IS_CONTINUOUS(x) ((x) & 2)
+
+struct shuntv_conditional_offset {
+	s32 shuntv_start;
+	s32 shuntv_end;
+	s32 offset;
+};
+
+struct shunt_volt_offset {
+	s32 offset;
+	struct shuntv_conditional_offset *cond_offset;
+	s32 cond_offset_size;
+>>>>>>> update/master
 };
 
 #define IS_TRIGGERED(x) (!((x) & 2))
@@ -106,11 +125,13 @@ struct ina3221_chan_pdata {
 	u32 warn_conf_limits;
 	u32 crit_conf_limits;
 	u32 shunt_resistor;
+	struct shunt_volt_offset *shuntv_offset;
 };
 
 struct ina3221_platform_data {
 	u16 cont_conf_data;
 	u16 trig_conf_data;
+	bool enable_forced_continuous;
 	struct ina3221_chan_pdata cpdata[INA3221_NUMBER_OF_RAILS];
 };
 
@@ -157,12 +178,41 @@ static inline int busv_register_to_mv(u16 reg)
 }
 
 /* convert shunt voltage register value to current (in mA) */
-static int shuntv_register_to_ma(u16 reg, int resistance)
+static int shuntv_register_to_ma(u16 reg, int resistance,
+	struct shunt_volt_offset *shuntv_offset)
 {
 	int uv, ma;
+	int offset = 0;
+	struct shuntv_conditional_offset *cond_offset;
+	int i;
 
 	uv = (s16)reg;
-	uv = ((uv >> 3) * 40); /* LSB (4th bit) is 40uV */
+
+	if (uv < 0)
+		uv = ((((uv * -1) >> 3) * 40) * -1);
+	else
+		uv = ((uv >> 3) * 40); /* LSB (4th bit) is 40uV */
+
+	if (shuntv_offset != NULL) {
+		offset = shuntv_offset->offset;
+		cond_offset = shuntv_offset->cond_offset;
+
+		for (i = 0; i < shuntv_offset->cond_offset_size; i++) {
+			if (uv >= cond_offset->shuntv_start &&
+					uv <= cond_offset->shuntv_end) {
+				offset = cond_offset->offset;
+				break;
+			}
+
+			cond_offset++;
+		}
+
+		/* apply shunt volt offset */
+		if (uv < 0)
+			uv += offset;
+		else
+			uv -= offset;
+	}
 	/*
 	 * calculate uv/resistance with rounding knowing that C99 truncates
 	 * towards zero
@@ -269,23 +319,35 @@ static int ina3221_get_mode(struct ina3221_chip *chip, char *buf)
 	int v;
 
 	mutex_lock(&chip->mutex);
+<<<<<<< HEAD
+=======
+	if (chip->shutdown_complete) {
+		mutex_unlock(&chip->mutex);
+		return -EIO;
+	}
+
+>>>>>>> update/master
 	v = (IS_TRIGGERED(chip->mode)) ? 0 : 1;
 	mutex_unlock(&chip->mutex);
-	return sprintf(buf, "%d\n", v);
+	return snprintf(buf, PAGE_SIZE, "%d\n", v);
 }
 
-static int ina3221_set_mode(struct ina3221_chip *chip,
-		const char *buf, size_t count)
+static int ina3221_set_mode_val(struct ina3221_chip *chip, long val)
 {
 	int cpufreq;
 	int cpus;
-	long val;
 	int ret = 0;
 
-	if (kstrtol(buf, 10, &val) < 0)
-		return -EINVAL;
-
 	mutex_lock(&chip->mutex);
+<<<<<<< HEAD
+=======
+
+	if (chip->shutdown_complete) {
+		mutex_unlock(&chip->mutex);
+		return -EIO;
+	}
+
+>>>>>>> update/master
 	if (val > 0) {
 		ret = __locked_power_up_ina3221(chip,
 				chip->pdata->cont_conf_data);
@@ -310,6 +372,19 @@ static int ina3221_set_mode(struct ina3221_chip *chip,
 		}
 	}
 	mutex_unlock(&chip->mutex);
+	return ret;
+}
+
+static int ina3221_set_mode(struct ina3221_chip *chip,
+		const char *buf, size_t count)
+{
+	long val;
+	int ret = 0;
+
+	if (kstrtol(buf, 10, &val) < 0)
+		return -EINVAL;
+
+	ret = ina3221_set_mode_val(chip, val);
 	return ret ? ret : count;
 }
 
@@ -320,6 +395,11 @@ static int ina3221_get_channel_voltage(struct ina3221_chip *chip,
 	int ret;
 
 	mutex_lock(&chip->mutex);
+
+	if (chip->shutdown_complete) {
+		mutex_unlock(&chip->mutex);
+		return -EIO;
+	}
 
 	ret = __locked_do_conversion(chip, NULL, &vbus, channel);
 	if (ret < 0) {
@@ -341,6 +421,11 @@ static int ina3221_get_channel_current(struct ina3221_chip *chip,
 
 	mutex_lock(&chip->mutex);
 
+	if (chip->shutdown_complete) {
+		mutex_unlock(&chip->mutex);
+		return -EIO;
+	}
+
 	/* return 0 if INA is off */
 	if (trigger && (IS_TRIGGERED(chip->mode))) {
 		*current_ma = 0;
@@ -354,7 +439,8 @@ static int ina3221_get_channel_current(struct ina3221_chip *chip,
 		goto exit;
 	}
 	*current_ma = shuntv_register_to_ma(vsh,
-			 chip->pdata->cpdata[channel].shunt_resistor);
+			 chip->pdata->cpdata[channel].shunt_resistor,
+				chip->pdata->cpdata[channel].shuntv_offset);
 exit:
 	mutex_unlock(&chip->mutex);
 	return ret;
@@ -369,6 +455,14 @@ static int ina3221_get_channel_power(struct ina3221_chip *chip,
 
 	mutex_lock(&chip->mutex);
 
+<<<<<<< HEAD
+=======
+	if (chip->shutdown_complete) {
+		mutex_unlock(&chip->mutex);
+		return -EIO;
+	}
+
+>>>>>>> update/master
 	if (trigger && (IS_TRIGGERED(chip->mode))) {
 		*power_mw = 0;
 		goto exit;
@@ -382,7 +476,8 @@ static int ina3221_get_channel_power(struct ina3221_chip *chip,
 	}
 
 	current_ma = shuntv_register_to_ma(vsh,
-			chip->pdata->cpdata[channel].shunt_resistor);
+			chip->pdata->cpdata[channel].shunt_resistor,
+				chip->pdata->cpdata[channel].shuntv_offset);
 	voltage_mv = busv_register_to_mv(vbus);
 	*power_mw = (voltage_mv * current_ma) / 1000;
 exit:
@@ -398,6 +493,11 @@ static int ina3221_get_channel_vbus_voltage_current(struct ina3221_chip *chip,
 
 	mutex_lock(&chip->mutex);
 
+	if (chip->shutdown_complete) {
+		mutex_unlock(&chip->mutex);
+		return -EIO;
+	}
+
 	ret = __locked_do_conversion(chip, &vsh, &vbus, channel);
 	if (ret < 0) {
 		dev_err(chip->dev, "Read on channel %d failed: %d\n",
@@ -406,7 +506,8 @@ static int ina3221_get_channel_vbus_voltage_current(struct ina3221_chip *chip,
 	}
 
 	*current_ma = shuntv_register_to_ma(vsh,
-			chip->pdata->cpdata[channel].shunt_resistor);
+			chip->pdata->cpdata[channel].shunt_resistor,
+				chip->pdata->cpdata[channel].shuntv_offset);
 	*voltage_mv = busv_register_to_mv(vbus);
 exit:
 	mutex_unlock(&chip->mutex);
@@ -471,6 +572,12 @@ static int ina3221_set_channel_critical(struct ina3221_chip *chip,
 	int ret;
 
 	mutex_lock(&chip->mutex);
+
+	if (chip->shutdown_complete) {
+		mutex_unlock(&chip->mutex);
+		return -EIO;
+	}
+
 	cpdata->crit_conf_limits = curr_limit;
 	ret = __locked_set_crit_alert_register(chip, channel);
 	mutex_unlock(&chip->mutex);
@@ -486,6 +593,11 @@ static int ina3221_get_channel_critical(struct ina3221_chip *chip,
 
 	mutex_lock(&chip->mutex);
 
+	if (chip->shutdown_complete) {
+		mutex_unlock(&chip->mutex);
+		return -EIO;
+	}
+
 	/* getting voltage readings in micro volts*/
 	ret = i2c_smbus_read_word_data(chip->client, crit_reg_addr);
 	if (ret < 0) {
@@ -495,7 +607,57 @@ static int ina3221_get_channel_critical(struct ina3221_chip *chip,
 	}
 
 	*curr_limit = shuntv_register_to_ma(be16_to_cpu(ret),
-			cpdata->shunt_resistor);
+			cpdata->shunt_resistor, cpdata->shuntv_offset);
+	ret = 0;
+exit:
+	mutex_unlock(&chip->mutex);
+	return ret;
+}
+
+static int ina3221_set_channel_warning(struct ina3221_chip *chip,
+	int channel, int curr_limit)
+{
+	struct ina3221_chan_pdata *cpdata = &chip->pdata->cpdata[channel];
+	int ret;
+
+	mutex_lock(&chip->mutex);
+
+	if (chip->shutdown_complete) {
+		mutex_unlock(&chip->mutex);
+		return -EIO;
+	}
+
+	cpdata->warn_conf_limits = curr_limit;
+	ret = __locked_set_warn_alert_register(chip, channel);
+	mutex_unlock(&chip->mutex);
+	return ret;
+}
+
+static int ina3221_get_channel_warning(struct ina3221_chip *chip,
+	int channel, int *curr_limit)
+{
+	struct ina3221_chan_pdata *cpdata = &chip->pdata->cpdata[channel];
+	u32 warn_reg_addr = INA3221_WARN(channel);
+	int ret;
+
+	mutex_lock(&chip->mutex);
+
+	if (chip->shutdown_complete) {
+		mutex_unlock(&chip->mutex);
+		return -EIO;
+	}
+
+	/* get warning shunt voltage threshold in micro volts. */
+	ret = i2c_smbus_read_word_data(chip->client, warn_reg_addr);
+	if (ret < 0) {
+		dev_err(chip->dev, "Channel %d warn register read failed: %d\n",
+			channel, ret);
+		goto exit;
+	}
+
+	/* convert shunt voltage to current in mA */
+	*curr_limit = shuntv_register_to_ma(be16_to_cpu(ret),
+			cpdata->shunt_resistor, cpdata->shuntv_offset);
 	ret = 0;
 exit:
 	mutex_unlock(&chip->mutex);
@@ -570,7 +732,7 @@ static int ina3221_cpufreq_notify(struct notifier_block *nb,
 		return 0;
 
 	mutex_lock(&chip->mutex);
-	if (chip->is_suspended)
+	if (chip->is_suspended || chip->shutdown_complete)
 		goto exit;
 
 	cpufreq = ((struct cpufreq_freqs *)hcpu)->new;
@@ -598,15 +760,23 @@ static int ina3221_hotplug_notify(struct notifier_block *nb,
 
 	if (event == CPU_ONLINE || event == CPU_DEAD) {
 		mutex_lock(&chip->mutex);
+		if (chip->is_suspended) {
+			mutex_unlock(&chip->mutex);
+			return 0;
+		}
+		if (chip->shutdown_complete) {
+			mutex_unlock(&chip->mutex);
+			return -EIO;
+		}
 		cpufreq = cpufreq_quick_get(0);
 		cpus = num_online_cpus();
 		dev_vdbg(chip->dev, "hotplug notified cpufreq:%d cpus:%d\n",
 				cpufreq, cpus);
 		ret = __locked_ina3221_switch_mode(chip, cpus, cpufreq);
-		mutex_unlock(&chip->mutex);
 
 		if (ret < 0)
 			dev_err(chip->dev, "INA switch mode failed: %d\n", ret);
+		mutex_unlock(&chip->mutex);
 	}
 	return ret;
 }
@@ -671,13 +841,20 @@ static ssize_t ina3221_show_channel(struct device *dev,
 
 	switch (mode) {
 	case CHANNEL_NAME:
-		return sprintf(buf, "%s\n",
-			chip->pdata->cpdata[channel].rail_name);
+		return snprintf(buf, PAGE_SIZE, "%s\n",
+				chip->pdata->cpdata[channel].rail_name);
 
 	case CRIT_CURRENT_LIMIT:
 		ret = ina3221_get_channel_critical(chip, channel, &current_ma);
 		if (!ret)
-			return sprintf(buf, "%d ma\n", current_ma);
+			return snprintf(buf, PAGE_SIZE, "%d ma\n", current_ma);
+		return ret;
+
+	case WARN_CURRENT_LIMIT:
+		ret = ina3221_get_channel_warning(chip, channel, &current_ma);
+		if (!ret)
+			return snprintf(buf, PAGE_SIZE, "%d ma\n", current_ma);
+
 		return ret;
 
 	case RUNNING_MODE:
@@ -687,7 +864,8 @@ static ssize_t ina3221_show_channel(struct device *dev,
 		ret = ina3221_get_channel_vbus_voltage_current(chip,
 					channel, &current_ma, &voltage_mv);
 		if (!ret)
-			return sprintf(buf, "%d %d\n", voltage_mv, current_ma);
+			return snprintf(buf, PAGE_SIZE, "%d %d\n",
+					voltage_mv, current_ma);
 		return ret;
 
 	default:
@@ -721,6 +899,17 @@ static ssize_t ina3221_set_channel(struct device *dev,
 		current_ma = (int) val;
 		ret = ina3221_set_channel_critical(chip, channel, current_ma);
 		return ret < 0 ? ret : len;
+<<<<<<< HEAD
+=======
+
+	case WARN_CURRENT_LIMIT:
+		if (kstrtol(buf, 10, &val) < 0)
+			return -EINVAL;
+
+		current_ma = (int) val;
+		ret = ina3221_set_channel_warning(chip, channel, current_ma);
+		return ret < 0 ? ret : len;
+>>>>>>> update/master
 
 	case RUNNING_MODE:
 		return ina3221_set_mode(chip, buf, len);
@@ -748,6 +937,16 @@ static IIO_DEVICE_ATTR(crit_current_limit_2, S_IRUGO | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(CRIT_CURRENT_LIMIT, 2));
 
+static IIO_DEVICE_ATTR(warn_current_limit_0, S_IRUGO | S_IWUSR,
+		ina3221_show_channel, ina3221_set_channel,
+		PACK_MODE_CHAN(WARN_CURRENT_LIMIT, 0));
+static IIO_DEVICE_ATTR(warn_current_limit_1, S_IRUGO | S_IWUSR,
+		ina3221_show_channel, ina3221_set_channel,
+		PACK_MODE_CHAN(WARN_CURRENT_LIMIT, 1));
+static IIO_DEVICE_ATTR(warn_current_limit_2, S_IRUGO | S_IWUSR,
+		ina3221_show_channel, ina3221_set_channel,
+		PACK_MODE_CHAN(WARN_CURRENT_LIMIT, 2));
+
 static IIO_DEVICE_ATTR(ui_input_0, S_IRUGO | S_IWUSR,
 		ina3221_show_channel, ina3221_set_channel,
 		PACK_MODE_CHAN(VBUS_VOLTAGE_CURRENT, 0));
@@ -769,6 +968,9 @@ static struct attribute *ina3221_attributes[] = {
 	&iio_dev_attr_crit_current_limit_0.dev_attr.attr,
 	&iio_dev_attr_crit_current_limit_1.dev_attr.attr,
 	&iio_dev_attr_crit_current_limit_2.dev_attr.attr,
+	&iio_dev_attr_warn_current_limit_0.dev_attr.attr,
+	&iio_dev_attr_warn_current_limit_1.dev_attr.attr,
+	&iio_dev_attr_warn_current_limit_2.dev_attr.attr,
 	&iio_dev_attr_ui_input_0.dev_attr.attr,
 	&iio_dev_attr_ui_input_1.dev_attr.attr,
 	&iio_dev_attr_ui_input_2.dev_attr.attr,
@@ -809,6 +1011,76 @@ static const struct iio_info ina3221_info = {
 	.read_raw = &ina3221_read_raw,
 };
 
+
+static struct shunt_volt_offset *ina3221_get_shuntv_offset
+	(struct i2c_client *client, struct device_node *channel_np)
+{
+
+	const __be32 *prop;
+	struct device_node *shuntv_np;
+	struct device_node *shuntv_cond_np;
+	struct shunt_volt_offset *shuntv_offset = NULL;
+	struct shuntv_conditional_offset *shuntv_cond_offset;
+	s32 shuntv_start, shuntv_end, offset;
+	int ret;
+
+	prop = of_get_property(channel_np, "shunt-volt-offset-uv", NULL);
+	if (prop != NULL) {
+		shuntv_np = of_find_node_by_phandle(be32_to_cpup(prop));
+		if (shuntv_np == NULL) {
+			dev_err(&client->dev, "could not find shunt volt offset node\n");
+			return NULL;
+		}
+
+	shuntv_offset = devm_kzalloc(&client->dev, sizeof(*shuntv_offset),
+						GFP_KERNEL);
+
+	ret = of_property_read_s32(shuntv_np, "offset", &offset);
+	if (!ret)
+		shuntv_offset->offset = offset;
+
+	shuntv_offset->cond_offset_size = of_get_child_count(shuntv_np);
+	if (shuntv_offset->cond_offset_size) {
+		shuntv_cond_offset = (struct shuntv_conditional_offset *)
+			devm_kzalloc(&client->dev,
+			sizeof(struct shuntv_conditional_offset)
+			* shuntv_offset->cond_offset_size, GFP_KERNEL);
+		shuntv_offset->cond_offset = shuntv_cond_offset;
+
+		for_each_child_of_node(shuntv_np, shuntv_cond_np) {
+			ret = of_property_read_s32(shuntv_cond_np,
+					"shunt_volt_start", &shuntv_start);
+			if (ret) {
+				dev_err(&client->dev, "property shunt_volt_start not found!\n");
+				goto skip_node;
+			}
+
+			ret = of_property_read_s32(shuntv_cond_np,
+					"shunt_volt_end", &shuntv_end);
+			if (ret) {
+				dev_err(&client->dev, "property shunt_volt_end not found!\n");
+				goto skip_node;
+			}
+
+			ret = of_property_read_s32(shuntv_cond_np,
+					"offset", &offset);
+			if (ret) {
+				dev_err(&client->dev, "property offset not found!\n");
+				goto skip_node;
+			}
+
+			shuntv_cond_offset->shuntv_start = shuntv_start;
+			shuntv_cond_offset->shuntv_end = shuntv_end;
+			shuntv_cond_offset->offset = offset;
+skip_node:
+			shuntv_cond_offset++;
+			}
+		}
+	}
+
+	return shuntv_offset;
+}
+
 static struct ina3221_platform_data *ina3221_get_platform_data_dt(
 	struct i2c_client *client)
 {
@@ -839,6 +1111,9 @@ static struct ina3221_platform_data *ina3221_get_platform_data_dt(
 	ret = of_property_read_u32(np, "ti,trigger-config", &pval);
 	if (!ret)
 		pdata->trig_conf_data = (u16)pval;
+
+	pdata->enable_forced_continuous = of_property_read_bool(np,
+				"ti,enable-forced-continuous");
 
 	for_each_child_of_node(np, child) {
 		ret = of_property_read_u32(child, "reg", &reg);
@@ -874,6 +1149,9 @@ static struct ina3221_platform_data *ina3221_get_platform_data_dt(
 				&pval);
 		if (!ret)
 			pdata->cpdata[reg].shunt_resistor = pval;
+
+		pdata->cpdata[reg].shuntv_offset =
+			ina3221_get_shuntv_offset(client, child);
 
 		valid_channel++;
 	}
@@ -913,7 +1191,10 @@ static int ina3221_probe(struct i2c_client *client,
 	chip->pdata = pdata;
 	mutex_init(&chip->mutex);
 
-	chip->mode = TRIGGERED;
+	if (pdata->enable_forced_continuous)
+		chip->mode = FORCED_CONTINUOUS;
+	else
+		chip->mode = TRIGGERED;
 	chip->shutdown_complete = 0;
 	chip->is_suspended = 0;
 
@@ -951,11 +1232,20 @@ static int ina3221_probe(struct i2c_client *client,
 		/*Not an error condition, could let the probe continue*/
 	}
 
-	/* set ina3221 to power down mode */
-	ret = __locked_power_down_ina3221(chip);
-	if (ret < 0) {
-		dev_err(&client->dev, "INA power down failed: %d\n", ret);
-		goto exit_pd;
+	if (chip->mode == FORCED_CONTINUOUS) {
+		ret = ina3221_set_mode_val(chip, FORCED_CONTINUOUS);
+		if (ret < 0) {
+			dev_err(&client->dev,
+				"INA forced continuous failed: %d\n", ret);
+			goto exit_pd;
+		}
+	} else {
+		ret = __locked_power_down_ina3221(chip);
+		if (ret < 0) {
+			dev_err(&client->dev,
+				"INA power down failed: %d\n", ret);
+			goto exit_pd;
+		}
 	}
 	return 0;
 
@@ -998,10 +1288,12 @@ static int ina3221_suspend(struct device *dev)
 	int ret = 0;
 
 	mutex_lock(&chip->mutex);
-	ret = __locked_power_down_ina3221(chip);
-	if (ret < 0) {
-		dev_err(dev, "INA can't be turned off: 0x%x\n", ret);
-		goto error;
+	if (chip->mode != FORCED_CONTINUOUS) {
+		ret = __locked_power_down_ina3221(chip);
+		if (ret < 0) {
+			dev_err(dev, "INA can't be turned off: 0x%x\n", ret);
+			goto error;
+		}
 	}
 	if (chip->mode == CONTINUOUS)
 		chip->mode = TRIGGERED;

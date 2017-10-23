@@ -3,7 +3,7 @@
  *
  * Tegra Graphics Host Automatic Clock Management
  *
- * Copyright (c) 2010-2014, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2010-2015, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -29,16 +29,12 @@
 #include <linux/pm_runtime.h>
 #include <linux/nvhost.h>
 
-extern const struct dev_pm_ops nvhost_module_pm_ops;
-
 /* Sets clocks and powergating state for a module */
-int nvhost_module_init(struct platform_device *ndev);
+int nvhost_clk_get(struct platform_device *dev, char *name, struct clk **clk);
 void nvhost_module_deinit(struct platform_device *dev);
-int nvhost_module_suspend(struct device *dev);
-int nvhost_module_resume(struct device *dev);
 
 void nvhost_module_busy_noresume(struct platform_device *dev);
-void nvhost_module_reset(struct platform_device *dev);
+void nvhost_module_reset(struct platform_device *dev, bool reboot);
 int nvhost_module_busy(struct platform_device *dev);
 void nvhost_module_disable_poweroff(struct platform_device *dev);
 void nvhost_module_enable_poweroff(struct platform_device *dev);
@@ -51,9 +47,7 @@ int nvhost_module_get_rate(struct platform_device *dev,
 		unsigned long *rate,
 		int index);
 int nvhost_module_set_rate(struct platform_device *dev, void *priv,
-		unsigned long rate, int index, int bBW);
-int nvhost_module_set_devfreq_rate(struct platform_device *dev, int index,
-		unsigned long rate);
+		unsigned long constraint, int index, unsigned long attr);
 
 static inline bool nvhost_module_powered(struct platform_device *dev)
 {
@@ -66,11 +60,15 @@ static inline void nvhost_module_idle(struct platform_device *dev)
 }
 
 /* common runtime pm and power domain APIs */
-int nvhost_module_add_domain(struct generic_pm_domain *domain,
-	struct platform_device *pdev);
 int nvhost_module_enable_clk(struct device *dev);
 int nvhost_module_disable_clk(struct device *dev);
-int nvhost_module_prepare_poweroff(struct device *dev);
-int nvhost_module_finalize_poweron(struct device *dev);
 
+#ifdef CONFIG_PM_GENERIC_DOMAINS_OF
+int nvhost_domain_init(struct of_device_id *matches);
+#else
+static inline int nvhost_domain_init(struct of_device_id *matches)
+{
+	return 0;
+}
+#endif
 #endif

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -28,6 +28,10 @@
 #include <linux/pm.h>
 #include <linux/jiffies.h>
 #include <linux/interrupt.h>
+<<<<<<< HEAD
+=======
+#include "../../../arch/arm/mach-tegra/board.h"
+>>>>>>> update/master
 
 #define LC709203F_THERMISTOR_B		0x06
 #define LC709203F_INITIAL_RSOC		0x07
@@ -166,7 +170,10 @@ static int lc709203f_update_soc_voltage(struct lc709203f_chip *chip)
 
 	return 0;
 }
+<<<<<<< HEAD
 
+=======
+>>>>>>> update/master
 static void lc709203f_work(struct work_struct *work)
 {
 	struct lc709203f_chip *chip;
@@ -234,6 +241,7 @@ static int lc709203f_get_temperature(struct lc709203f_chip *chip)
 }
 
 static enum power_supply_property lc709203f_battery_props[] = {
+	POWER_SUPPLY_PROP_TEMP,
 	POWER_SUPPLY_PROP_TECHNOLOGY,
 	POWER_SUPPLY_PROP_STATUS,
 	POWER_SUPPLY_PROP_VOLTAGE_NOW,
@@ -241,7 +249,11 @@ static enum power_supply_property lc709203f_battery_props[] = {
 	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_PRESENT,
 	POWER_SUPPLY_PROP_CAPACITY_LEVEL,
+<<<<<<< HEAD
 	POWER_SUPPLY_PROP_TEMP,
+=======
+	POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT,
+>>>>>>> update/master
 	POWER_SUPPLY_PROP_CURRENT_NOW,
 };
 
@@ -252,7 +264,11 @@ static int lc709203f_get_property(struct power_supply *psy,
 	struct lc709203f_chip *chip = container_of(psy,
 				struct lc709203f_chip, battery);
 	int temperature;
+<<<<<<< HEAD
 	int curr_ma;
+=======
+	int curr_ma = 0;
+>>>>>>> update/master
 	int ret = 0;
 
 	mutex_lock(&chip->mutex);
@@ -271,13 +287,13 @@ static int lc709203f_get_property(struct power_supply *psy,
 		val->intval = chip->soc;
 		if (chip->soc == 15)
 			dev_warn(&chip->client->dev,
-			"\nSystem Running low on battery - 15 percent\n");
+			"System Running low on battery - 15 percent\n");
 		if (chip->soc == 10)
 			dev_warn(&chip->client->dev,
-			"\nSystem Running low on battery - 10 percent\n");
+			"System Running low on battery - 10 percent\n");
 		if (chip->soc == 5)
 			dev_warn(&chip->client->dev,
-			"\nSystem Running low on battery - 5 percent\n");
+			"System Running low on battery - 5 percent\n");
 		break;
 	case POWER_SUPPLY_PROP_HEALTH:
 		val->intval = chip->health;
@@ -289,6 +305,7 @@ static int lc709203f_get_property(struct power_supply *psy,
 		val->intval = chip->capacity_level;
 		break;
 	case POWER_SUPPLY_PROP_TEMP:
+	case POWER_SUPPLY_PROP_TEMP_INFO:
 		temperature = lc709203f_get_temperature(chip);
 		/*
 		   Temp ready by device is deci-kelvin
@@ -297,6 +314,18 @@ static int lc709203f_get_property(struct power_supply *psy,
 		*/
 		val->intval = temperature - 2732;
 		break;
+<<<<<<< HEAD
+=======
+	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT:
+		val->intval = 0;
+		curr_ma = battery_gauge_get_input_current_limit(
+					chip->bg_dev);
+		if (curr_ma > 0)
+			val->intval = curr_ma * 1000;
+		else
+			ret = curr_ma;
+		break;
+>>>>>>> update/master
 	case POWER_SUPPLY_PROP_CURRENT_NOW:
 		val->intval = 0;
 		ret = battery_gauge_get_battery_current(chip->bg_dev, &curr_ma);
@@ -393,45 +422,75 @@ static void of_lc709203f_parse_platform_data(struct i2c_client *client,
 {
 	char const *pstr;
 	struct device_node *np = client->dev.of_node;
+	struct device_node *child = NULL;
 	u32 pval;
 	int ret;
+	int battery_id = tegra_get_board_battery_id();
 
+<<<<<<< HEAD
 	ret = of_property_read_u32(np, "onsemi,initial-rsoc", &pval);
 	if (!ret)
 		pdata->initial_rsoc = pval;
+=======
+	dev_info(&client->dev, "Battery_id %d\n", battery_id);
+>>>>>>> update/master
 
-	ret = of_property_read_u32(np, "onsemi,appli-adjustment", &pval);
-	if (!ret)
-		pdata->appli_adjustment = pval;
+	if (battery_id == 0)
+		child = of_get_child_by_name(np, "battery0");
+	else if (battery_id == 1)
+		child = of_get_child_by_name(np, "battery1");
+
+	pval = 0;
+	ret = of_property_read_u32(child, "onsemi,initial-rsoc", &pval);
+	if (ret < 0)
+		ret = of_property_read_u32(np, "onsemi,initial-rsoc", &pval);
+	pdata->initial_rsoc = pval;
+
+	pval = 0;
+	ret = of_property_read_u32(child, "onsemi,appli-adjustment", &pval);
+	if (ret < 0)
+		ret = of_property_read_u32(np, "onsemi,appli-adjustment", &pval);
+	pdata->appli_adjustment = pval;
 
 	pdata->tz_name = NULL;
-	ret = of_property_read_string(np, "onsemi,tz-name", &pstr);
-	if (!ret)
-		pdata->tz_name = pstr;
+	pstr = NULL;
+	ret = of_property_read_string(child, "onsemi,tz-name", &pstr);
+	if (ret < 0)
+		ret = of_property_read_string(np, "onsemi,tz-name", &pstr);
+	pdata->tz_name = pstr;
 
-	ret = of_property_read_u32(np, "onsemi,thermistor-beta", &pval);
-	if (!ret) {
+	pval = 0;
+	ret = of_property_read_u32(child, "onsemi,thermistor-beta", &pval);
+	if (ret < 0)
+		ret = of_property_read_u32(np, "onsemi,thermistor-beta", &pval);
+	if (!ret)
 		pdata->thermistor_beta = pval;
-	} else {
+	else {
 		if (!pdata->tz_name)
 			dev_warn(&client->dev,
-				"Thermistor beta not provided\n");
+			"Thermistor beta not provided\n");
 	}
 
-	ret = of_property_read_u32(np, "onsemi,thermistor-adjustment", &pval);
-	if (!ret)
-		pdata->therm_adjustment = pval;
+	pval = 0;
+	ret = of_property_read_u32(child, "onsemi,thermistor-adjustment", &pval);
+	if (ret < 0)
+		ret = of_property_read_u32(np, "onsemi,thermistor-adjustment", &pval);
+	pdata->therm_adjustment = pval;
 
 	ret = of_property_read_u32(np, "onsemi,kernel-threshold-soc", &pval);
 	if (!ret)
 		pdata->threshold_soc = pval;
 
-	ret = of_property_read_u32(np, "onsemi,kernel-maximum-soc", &pval);
+	pval = 0;
+	ret = of_property_read_u32(child, "onsemi,kernel-maximum-soc", &pval);
+	if (ret < 0)
+		ret = of_property_read_u32(np, "onsemi,kernel-maximum-soc", &pval);
 	if (!ret)
 		pdata->maximum_soc = pval;
 	else
 		pdata->maximum_soc = 100;
 
+<<<<<<< HEAD
 	ret = of_property_read_u32(np, "onsemi,alert-low-rsoc", &pval);
 	if (!ret)
 		pdata->alert_low_rsoc = pval;
@@ -439,6 +498,19 @@ static void of_lc709203f_parse_platform_data(struct i2c_client *client,
 	ret = of_property_read_u32(np, "onsemi,alert-low-voltage", &pval);
 	if (!ret)
 		pdata->alert_low_voltage = pval;
+=======
+	pval = 0;
+	ret = of_property_read_u32(child, "onsemi,alert-low-rsoc", &pval);
+	if (ret < 0)
+		ret = of_property_read_u32(np, "onsemi,alert-low-rsoc", &pval);
+	pdata->alert_low_rsoc = pval;
+
+	pval = 0;
+	ret = of_property_read_u32(child, "onsemi,alert-low-voltage", &pval);
+	if (ret < 0)
+		ret = of_property_read_u32(np, "onsemi,alert-low-voltage", &pval);
+	pdata->alert_low_voltage = pval;
+>>>>>>> update/master
 
 	pdata->support_battery_current = of_property_read_bool(np,
 						"io-channel-names");
@@ -615,6 +687,12 @@ skip_thermistor_config:
 	chip->lasttime_status		= POWER_SUPPLY_STATUS_DISCHARGING;
 	chip->charge_complete		= 0;
 
+<<<<<<< HEAD
+=======
+	if (chip->pdata->tz_name)
+		lc709203f_battery_props[0] = POWER_SUPPLY_PROP_TEMP_INFO;
+
+>>>>>>> update/master
 	/* Remove current property if it is not supported */
 	if (!chip->pdata->support_battery_current)
 		chip->battery.num_properties--;
@@ -718,6 +796,10 @@ static int lc709203f_resume(struct device *dev)
 
 	mutex_lock(&chip->mutex);
 	lc709203f_update_soc_voltage(chip);
+<<<<<<< HEAD
+=======
+	power_supply_changed(&chip->battery);
+>>>>>>> update/master
 	mutex_unlock(&chip->mutex);
 	battery_gauge_report_battery_soc(chip->bg_dev, chip->soc);
 

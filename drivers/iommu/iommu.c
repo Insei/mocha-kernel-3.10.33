@@ -527,23 +527,39 @@ static int iommu_bus_notifier(struct notifier_block *nb,
 			      unsigned long action, void *data)
 {
 	struct device *dev = data;
-	struct iommu_ops *ops = dev->bus->iommu_ops;
+	struct iommu_ops *ops;
 	struct iommu_group *group;
 	unsigned long group_action = 0;
+
+	if (!dev || !dev->bus|| !dev->bus->iommu_ops)
+		return 0;
+
+	ops = dev->bus->iommu_ops;
 
 	/*
 	 * ADD/DEL call into iommu driver ops if provided, which may
 	 * result in ADD/DEL notifiers to group->notifier
 	 */
-	if (action == BUS_NOTIFY_ADD_DEVICE) {
+	switch (action) {
+	case BUS_NOTIFY_ADD_DEVICE:
 		if (ops->add_device)
 			return ops->add_device(dev);
-	} else if (action == BUS_NOTIFY_DEL_DEVICE) {
+		break;
+	case BUS_NOTIFY_DEL_DEVICE:
 		if (ops->remove_device && dev->iommu_group) {
 			ops->remove_device(dev);
 			return 0;
 		}
-	}
+		break;
+	case BUS_NOTIFY_BOUND_DRIVER:
+		if (ops->bound_driver)
+			ops->bound_driver(dev);
+		break;
+	case BUS_NOTIFY_UNBIND_DRIVER:
+		if (ops->unbind_driver)
+			ops->unbind_driver(dev);
+		break;
+	};
 
 	/*
 	 * Remaining BUS_NOTIFYs get filtered and republished to the
@@ -619,6 +635,15 @@ bool iommu_present(struct bus_type *bus)
 }
 EXPORT_SYMBOL_GPL(iommu_present);
 
+bool iommu_capable(struct bus_type *bus, enum iommu_cap cap)
+{
+	if (!bus->iommu_ops || !bus->iommu_ops->capable)
+		return false;
+
+	return bus->iommu_ops->capable(cap);
+}
+EXPORT_SYMBOL_GPL(iommu_capable);
+
 /**
  * iommu_set_fault_handler() - set a fault handler for an iommu domain
  * @domain: iommu domain
@@ -677,6 +702,16 @@ void iommu_domain_free(struct iommu_domain *domain)
 	kfree(domain);
 }
 EXPORT_SYMBOL_GPL(iommu_domain_free);
+
+int iommu_get_hwid(struct iommu_domain *domain, struct device *dev,
+		   unsigned int id)
+{
+	if (unlikely(domain->ops->get_hwid == NULL))
+		return -ENODEV;
+
+	return domain->ops->get_hwid(domain, dev, id);
+}
+EXPORT_SYMBOL_GPL(iommu_get_hwid);
 
 int iommu_attach_device(struct iommu_domain *domain, struct device *dev)
 {
@@ -743,16 +778,6 @@ phys_addr_t iommu_iova_to_phys(struct iommu_domain *domain, dma_addr_t iova)
 	return domain->ops->iova_to_phys(domain, iova);
 }
 EXPORT_SYMBOL_GPL(iommu_iova_to_phys);
-
-int iommu_domain_has_cap(struct iommu_domain *domain,
-			 unsigned long cap)
-{
-	if (unlikely(domain->ops->domain_has_cap == NULL))
-		return 0;
-
-	return domain->ops->domain_has_cap(domain, cap);
-}
-EXPORT_SYMBOL_GPL(iommu_domain_has_cap);
 
 int iommu_map(struct iommu_domain *domain, unsigned long iova,
 	      phys_addr_t paddr, size_t size, unsigned long prot)

@@ -29,16 +29,15 @@
 #include <linux/platform_data/mmc-sdhci-tegra.h>
 #include <linux/mfd/max77660/max77660-core.h>
 #include <linux/tegra-fuse.h>
+#include <linux/clk/tegra.h>
 
 #include <asm/mach-types.h>
 #include <mach/irqs.h>
-#include <mach/gpio-tegra.h>
 
 #include "gpio-names.h"
 #include "board.h"
 #include "board-loki.h"
 #include "iomap.h"
-#include "dvfs.h"
 #include "tegra-board-id.h"
 
 #define LOKI_WLAN_RST	TEGRA_GPIO_PR3
@@ -157,6 +156,7 @@ static struct tegra_sdhci_platform_data tegra_sdhci_platform_data0 = {
 	.uhs_mask = MMC_UHS_MASK_DDR50 | MMC_UHS_MASK_SDR50,
 	.calib_3v3_offsets = 0x7676,
 	.calib_1v8_offsets = 0x7676,
+	.max_clk_limit = 204000000,
 };
 
 static struct tegra_sdhci_platform_data tegra_sdhci_platform_data2 = {
@@ -169,6 +169,7 @@ static struct tegra_sdhci_platform_data tegra_sdhci_platform_data2 = {
 	.max_clk_limit = 204000000,
 	.calib_3v3_offsets = 0x7676,
 	.calib_1v8_offsets = 0x7676,
+	.enb_ext_loopback = 1,
 };
 
 static struct tegra_sdhci_platform_data tegra_sdhci_platform_data3 = {
@@ -178,6 +179,10 @@ static struct tegra_sdhci_platform_data tegra_sdhci_platform_data3 = {
 	.is_8bit = 1,
 	.tap_delay = 0x4,
 	.trim_delay = 0x4,
+<<<<<<< HEAD
+=======
+	.is_ddr_trim_delay = true,
+>>>>>>> update/master
 	.ddr_trim_delay = 0x0,
 	.mmc_data = {
 		.built_in = 1,
@@ -441,15 +446,23 @@ static int __init loki_wifi_init(void)
 #ifdef CONFIG_TEGRA_PREPOWER_WIFI
 static int __init loki_wifi_prepower(void)
 {
+<<<<<<< HEAD
 	if (!of_machine_is_compatible("nvidia,loki") &&
 		!of_machine_is_compatible("nvidia,foster"))
+=======
+
+	if ((!of_machine_is_compatible("nvidia,loki")) &&
+		(!of_machine_is_compatible("nvidia,t132loki")) &&
+		(!of_machine_is_compatible("nvidia,foster")))
+>>>>>>> update/master
 		return 0;
+
 	loki_wifi_power(1);
 
 	return 0;
 }
 
-subsys_initcall_sync(loki_wifi_prepower);
+fs_initcall(loki_wifi_prepower);
 #endif
 
 int __init loki_sdhci_init(void)
@@ -472,14 +485,14 @@ int __init loki_sdhci_init(void)
 	}
 
 	nominal_core_mv =
-		tegra_dvfs_rail_get_nominal_millivolts(tegra_core_rail);
+		tegra_dvfs_get_core_nominal_millivolts();
 	if (nominal_core_mv) {
 		tegra_sdhci_platform_data0.nominal_vcore_mv = nominal_core_mv;
 		tegra_sdhci_platform_data2.nominal_vcore_mv = nominal_core_mv;
 		tegra_sdhci_platform_data3.nominal_vcore_mv = nominal_core_mv;
 	}
 	min_vcore_override_mv =
-		tegra_dvfs_rail_get_override_floor(tegra_core_rail);
+		tegra_dvfs_get_core_override_floor();
 	if (min_vcore_override_mv) {
 		tegra_sdhci_platform_data0.min_vcore_override_mv =
 			min_vcore_override_mv;
@@ -488,20 +501,22 @@ int __init loki_sdhci_init(void)
 		tegra_sdhci_platform_data3.min_vcore_override_mv =
 			min_vcore_override_mv;
 	}
-	boot_vcore_mv = tegra_dvfs_rail_get_boot_level(tegra_core_rail);
+	boot_vcore_mv = tegra_dvfs_get_core_boot_level();
 	if (boot_vcore_mv) {
 		tegra_sdhci_platform_data0.boot_vcore_mv = boot_vcore_mv;
 		tegra_sdhci_platform_data2.boot_vcore_mv = boot_vcore_mv;
 		tegra_sdhci_platform_data3.boot_vcore_mv = boot_vcore_mv;
 	}
 
-	tegra_sdhci_platform_data0.max_clk_limit = 136000000;
-
 	speedo = tegra_fuse_readl(FUSE_SOC_SPEEDO_0);
 	tegra_sdhci_platform_data0.cpu_speedo = speedo;
 	tegra_sdhci_platform_data2.cpu_speedo = speedo;
 	tegra_sdhci_platform_data3.cpu_speedo = speedo;
 
+	/*
+	 * To enable pm domain disable_clock_gate and
+	 * enable_pm_domain should be set to one
+	 */
 
 	platform_device_register(&tegra_sdhci_device3);
 #ifdef CONFIG_ARCH_TEGRA_13x_SOC

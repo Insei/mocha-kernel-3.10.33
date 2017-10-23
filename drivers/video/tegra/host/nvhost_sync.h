@@ -1,7 +1,7 @@
 /*
  * Tegra Graphics Host Syncpoint Integration to linux/sync Framework
  *
- * Copyright (c) 2013, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2013-2015, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -35,6 +35,7 @@ struct nvhost_sync_timeline *nvhost_sync_timeline_create(
 		struct nvhost_syncpt *sp,
 		int id);
 
+<<<<<<< HEAD
 void nvhost_sync_pt_signal(struct nvhost_sync_pt *pt);
 
 int nvhost_sync_create_fence(
@@ -49,6 +50,9 @@ struct nvhost_sync_pt *to_nvhost_sync_pt(struct sync_pt *pt);
 u32 nvhost_sync_pt_id(struct nvhost_sync_pt *pt);
 u32 nvhost_sync_pt_thresh(struct nvhost_sync_pt *pt);
 int nvhost_sync_fence_set_name(int fence_fd, const char *name);
+=======
+void nvhost_sync_pt_signal(struct nvhost_sync_pt *pt, u64 timestamp);
+>>>>>>> update/master
 
 #else
 static inline struct nvhost_sync_timeline *nvhost_sync_timeline_create(
@@ -58,11 +62,13 @@ static inline struct nvhost_sync_timeline *nvhost_sync_timeline_create(
 	return NULL;
 }
 
-static inline void nvhost_sync_pt_signal(struct nvhost_sync_pt *pt)
+static inline void nvhost_sync_pt_signal(struct nvhost_sync_pt *pt,
+					 u64 timestamp)
 {
 	return;
 }
 
+<<<<<<< HEAD
 static inline int nvhost_sync_create_fence(
 		struct nvhost_syncpt *sp,
 		struct nvhost_ctrl_sync_fence_info *pts,
@@ -103,6 +109,8 @@ static inline int nvhost_sync_fence_set_name(int fence_fd, const char *name)
 	return -EINVAL;
 }
 
+=======
+>>>>>>> update/master
 #endif
 
 #endif /* __KERNEL __ */

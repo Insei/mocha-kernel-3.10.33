@@ -1,7 +1,7 @@
 /*
- * Tegra Graphics Host Actmon support for T124
+ * Tegra Graphics Host Actmon support for T124 and T210
  *
- * Copyright (c) 2013, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2016, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -25,19 +25,66 @@
 #include "dev.h"
 #include "chip_support.h"
 #include "host1x/host1x_actmon.h"
+#include "nvhost_scale.h"
 
-void actmon_writel(struct host1x_actmon *actmon, u32 val, u32 reg)
+static void host1x_actmon_process_isr(u32 hintstat, void *priv);
+
+void static actmon_writel(struct host1x_actmon *actmon, u32 val, u32 reg)
 {
 	nvhost_dbg(dbg_reg, " r=0x%x v=0x%x", reg, val);
 	writel(val, actmon->regs + reg);
 }
 
-u32 actmon_readl(struct host1x_actmon *actmon, u32 reg)
+u32 static actmon_readl(struct host1x_actmon *actmon, u32 reg)
 {
 	u32 val = readl(actmon->regs + reg);
 	nvhost_dbg(dbg_reg, " r=0x%x v=0x%x", reg, val);
 	return val;
 }
+
+static void host1x_actmon_event_fn(struct host1x_actmon *actmon,
+	enum wmark_type_e type)
+{
+	struct platform_device *pdev = actmon->pdev;
+	struct nvhost_device_data *engine_pdata = platform_get_drvdata(pdev);
+
+	/* ensure that the device remains powered */
+	nvhost_module_busy_noresume(pdev);
+	if (pm_runtime_active(&pdev->dev)) {
+		/* first, handle scaling */
+		nvhost_scale_actmon_irq(pdev, type);
+
+		/* then, rewire the actmon IRQ */
+		nvhost_intr_enable_host_irq(&nvhost_get_host(pdev)->intr,
+					    engine_pdata->actmon_irq,
+					    host1x_actmon_process_isr,
+					    actmon);
+	}
+	nvhost_module_idle(pdev);
+}
+
+static void host1x_actmon_process_isr(u32 hintstat, void *priv)
+{
+	struct host1x_actmon *actmon = priv;
+	struct platform_device *host_pdev = actmon->host->dev;
+	struct nvhost_device_data *engine_pdata =
+		platform_get_drvdata(actmon->pdev);
+	long val;
+
+	/* first, disable the interrupt */
+	nvhost_intr_disable_host_irq(&nvhost_get_host(host_pdev)->intr,
+				     engine_pdata->actmon_irq);
+
+	/* get the event type */
+	val = actmon_readl(actmon, actmon_intr_status_r());
+	actmon_writel(actmon, val, actmon_intr_status_r());
+
+	if (actmon_intr_status_intr_status_avg_above_v(val))
+		host1x_actmon_event_fn(actmon, ACTMON_INTR_ABOVE_WMARK);
+	else if (actmon_intr_status_intr_status_avg_below_v(val))
+		host1x_actmon_event_fn(actmon, ACTMON_INTR_BELOW_WMARK);
+}
+
 /*
  * actmon_update_sample_period_safe(host)
  *
@@ -46,15 +93,27 @@ u32 actmon_readl(struct host1x_actmon *actmon, u32 reg)
  *
  */
 
+#ifdef NVHOST_T210_ACTMON
 static void actmon_update_sample_period_safe(struct host1x_actmon *actmon)
 {
 	long freq_mhz, clks_per_sample;
-	u32 val;
+	u32 val = actmon_readl(actmon, actmon_sample_ctrl_r());
 
 	/* We use MHz and us instead of Hz and s due to numerical limitations */
 	freq_mhz = clk_get_rate(actmon->clk) / 1000000;
-	clks_per_sample = freq_mhz * actmon->usecs_per_sample;
-	actmon->clks_per_sample = clks_per_sample;
+
+	if ((freq_mhz * actmon->usecs_per_sample) / 256 > 255) {
+		val |= actmon_sample_ctrl_tick_range_f(1);
+		actmon->divider = 65536;
+	} else {
+		val &= ~actmon_sample_ctrl_tick_range_f(1);
+		actmon->divider = 256;
+	}
+
+	clks_per_sample = (freq_mhz * actmon->usecs_per_sample) /
+		actmon->divider;
+	actmon->clks_per_sample = clks_per_sample + 1;
+	actmon_writel(actmon, val, actmon_sample_ctrl_r());
 
 	val = actmon_readl(actmon, actmon_ctrl_r());
 	val &= ~actmon_ctrl_sample_period_m();
@@ -64,29 +123,62 @@ static void actmon_update_sample_period_safe(struct host1x_actmon *actmon)
 	/* AVG value depends on sample period => clear it */
 	actmon_writel(actmon, 0, actmon_init_avg_r());
 }
+#else
+static void actmon_update_sample_period_safe(struct host1x_actmon *actmon)
+{
+	long freq_mhz, clks_per_sample;
+	u32 val;
+
+	/* We use MHz and us instead of Hz and s due to numerical limitations */
+	freq_mhz = clk_get_rate(actmon->clk) / 1000000;
+	clks_per_sample = freq_mhz * actmon->usecs_per_sample;
+	actmon->clks_per_sample = clks_per_sample;
+	actmon->divider = 1;
+
+	val = actmon_readl(actmon, actmon_ctrl_r());
+	val &= ~actmon_ctrl_sample_period_m();
+	val |= actmon_ctrl_sample_period_f(clks_per_sample);
+	actmon_writel(actmon, val, actmon_ctrl_r());
+
+	/* AVG value depends on sample period => clear it */
+	actmon_writel(actmon, 0, actmon_init_avg_r());
+}
+#endif
+
+static  void __iomem *host1x_actmon_get_regs(struct host1x_actmon *actmon)
+{
+	struct nvhost_device_data *pdata =
+		platform_get_drvdata(actmon->pdev);
+
+	return  nvhost_get_host(actmon->pdev)->aperture + pdata->actmon_regs;
+}
 
 static int host1x_actmon_init(struct host1x_actmon *actmon)
 {
-	struct platform_device *pdev = actmon->host->dev;
-	struct nvhost_device_data *pdata =
-		(struct nvhost_device_data *)platform_get_drvdata(pdev);
+	struct platform_device *host_pdev = actmon->host->dev;
+	struct nvhost_device_data *host_pdata =
+		platform_get_drvdata(host_pdev);
+	struct nvhost_device_data *engine_pdata =
+		platform_get_drvdata(actmon->pdev);
+
 	u32 val;
 
 	if (actmon->init == ACTMON_READY)
 		return 0;
 
 	if (actmon->init == ACTMON_OFF) {
-		actmon->usecs_per_sample = 10;
-		actmon->above_wmark = 0;
-		actmon->below_wmark = 0;
-		actmon->k = 1;
+		if (tegra_get_chipid() == TEGRA_CHIPID_TEGRA21) {
+			actmon->usecs_per_sample = 80;
+			actmon->k = 4;
+		} else {
+			actmon->usecs_per_sample = 20;
+			actmon->k = 5;
+		}
 	}
 
-	actmon->clk = pdata->clk[1];
+	actmon->clk = host_pdata->clk[1];
 	if (!actmon->clk)
 		return -ENODEV;
-
-	nvhost_module_busy(actmon->host->dev);
 
 	/* Clear average and control registers */
 	actmon_writel(actmon, 0, actmon_init_avg_r());
@@ -104,7 +196,10 @@ static int host1x_actmon_init(struct host1x_actmon *actmon)
 	val |= actmon_ctrl_actmon_enable_f(1);
 	actmon_writel(actmon, val, actmon_ctrl_r());
 
-	nvhost_module_idle(actmon->host->dev);
+	nvhost_intr_enable_host_irq(&nvhost_get_host(host_pdev)->intr,
+				    engine_pdata->actmon_irq,
+				    host1x_actmon_process_isr,
+				    actmon);
 
 	actmon->init = ACTMON_READY;
 
@@ -113,26 +208,34 @@ static int host1x_actmon_init(struct host1x_actmon *actmon)
 
 static void host1x_actmon_deinit(struct host1x_actmon *actmon)
 {
+	struct platform_device *host_pdev = actmon->host->dev;
+	struct nvhost_device_data *engine_pdata =
+		platform_get_drvdata(actmon->pdev);
+
 	if (actmon->init != ACTMON_READY)
 		return;
 
-	actmon->init = ACTMON_SLEEP;
-
-	/* Disable actmon and clear interrupt status */
-	nvhost_module_busy(actmon->host->dev);
 	actmon_writel(actmon, 0, actmon_ctrl_r());
 	actmon_writel(actmon, 0xffffffff, actmon_intr_status_r());
-	nvhost_module_idle(actmon->host->dev);
+	nvhost_intr_disable_host_irq(&nvhost_get_host(host_pdev)->intr,
+				     engine_pdata->actmon_irq);
+
+	actmon->init = ACTMON_SLEEP;
 }
 
 static int host1x_actmon_avg(struct host1x_actmon *actmon, u32 *val)
 {
+	int err;
+
 	if (actmon->init != ACTMON_READY) {
 		*val = 0;
 		return 0;
 	}
 
-	nvhost_module_busy(actmon->host->dev);
+	err = nvhost_module_busy(actmon->host->dev);
+	if (err)
+		return err;
+
 	*val = actmon_readl(actmon, actmon_avg_count_r());
 	nvhost_module_idle(actmon->host->dev);
 	rmb();
@@ -143,32 +246,42 @@ static int host1x_actmon_avg(struct host1x_actmon *actmon, u32 *val)
 static int host1x_actmon_avg_norm(struct host1x_actmon *actmon, u32 *avg)
 {
 	long val;
+	int err;
 
-	if (!(actmon->init == ACTMON_READY && actmon->clks_per_sample > 0)) {
+	if (!(actmon->init == ACTMON_READY && actmon->clks_per_sample > 0 &&
+	    actmon->divider)) {
 		*avg = 0;
 		return 0;
 	}
 
 	/* Read load from hardware */
-	nvhost_module_busy(actmon->host->dev);
+	err = nvhost_module_busy(actmon->host->dev);
+	if (err)
+		return err;
+
 	val = actmon_readl(actmon, actmon_avg_count_r());
 	nvhost_module_idle(actmon->host->dev);
 	rmb();
 
-	*avg = (val * 1000) / actmon->clks_per_sample;
+	*avg = (val * 1000) / (actmon->clks_per_sample * actmon->divider);
 
 	return 0;
 }
 
 static int host1x_actmon_count(struct host1x_actmon *actmon, u32 *val)
 {
+	int err;
+
 	if (actmon->init != ACTMON_READY) {
 		*val = 0;
 		return 0;
 	}
 
 	/* Read load from hardware */
-	nvhost_module_busy(actmon->host->dev);
+	err = nvhost_module_busy(actmon->host->dev);
+	if (err)
+		return err;
+
 	*val = actmon_readl(actmon, actmon_count_r());
 	nvhost_module_idle(actmon->host->dev);
 	rmb();
@@ -179,40 +292,88 @@ static int host1x_actmon_count(struct host1x_actmon *actmon, u32 *val)
 static int host1x_actmon_count_norm(struct host1x_actmon *actmon, u32 *avg)
 {
 	long val;
+	int err;
 
-	if (actmon->init != ACTMON_READY) {
+	if (!(actmon->init == ACTMON_READY && actmon->clks_per_sample > 0 &&
+	    actmon->divider)) {
 		*avg = 0;
 		return 0;
 	}
 
 	/* Read load from hardware */
-	nvhost_module_busy(actmon->host->dev);
+	err = nvhost_module_busy(actmon->host->dev);
+	if (err)
+		return err;
+
 	val = actmon_readl(actmon, actmon_count_r());
 	nvhost_module_idle(actmon->host->dev);
 	rmb();
 
-	*avg = (val * 1000) / actmon->clks_per_sample;
+	*avg = (val * 1000) / (actmon->clks_per_sample * actmon->divider);
 
 	return 0;
 }
 
-static int host1x_actmon_above_wmark_count(struct host1x_actmon *actmon)
+static int host1x_set_high_wmark(struct host1x_actmon *actmon, u32 val_scaled)
 {
-	return actmon->above_wmark;
+	u32 val = (val_scaled < 1000) ?
+		((val_scaled * actmon->clks_per_sample * actmon->divider) /
+		1000) : actmon->clks_per_sample * actmon->divider;
+	if (actmon->init != ACTMON_READY)
+		return 0;
+
+	/* write new watermark */
+	actmon_writel(actmon, val, actmon_avg_upper_wmark_r());
+
+	/* enable or disable watermark depending on the values */
+	val = actmon_readl(actmon, actmon_ctrl_r());
+	if (val_scaled < 1000)
+		val |= actmon_ctrl_avg_above_wmark_en_f(1);
+	else
+		val &= ~actmon_ctrl_avg_above_wmark_en_f(1);
+	actmon_writel(actmon, val, actmon_ctrl_r());
+
+	return 0;
 }
 
-static int host1x_actmon_below_wmark_count(struct host1x_actmon *actmon)
+static int host1x_set_low_wmark(struct host1x_actmon *actmon, u32 val_scaled)
 {
-	return actmon->below_wmark;
+	u32 val = (val_scaled < 1000) ?
+		((val_scaled * actmon->clks_per_sample * actmon->divider) /
+		1000) : actmon->clks_per_sample * actmon->divider;
+
+	if (actmon->init != ACTMON_READY)
+		return 0;
+
+	/* write new watermark */
+	actmon_writel(actmon, val, actmon_avg_lower_wmark_r());
+
+	/* enable or disable watermark depending on the values */
+	val = actmon_readl(actmon, actmon_ctrl_r());
+	if (val_scaled)
+		val |= actmon_ctrl_avg_below_wmark_en_f(1);
+	else
+		val &= ~actmon_ctrl_avg_below_wmark_en_f(1);
+	actmon_writel(actmon, val, actmon_ctrl_r());
+
+	return 0;
 }
 
 static void host1x_actmon_update_sample_period(struct host1x_actmon *actmon)
 {
+	struct platform_device *pdev = actmon->host->dev;
+	int err;
+
 	/* No sense to update actmon if actmon is inactive */
 	if (actmon->init != ACTMON_READY)
 		return;
 
-	nvhost_module_busy(actmon->host->dev);
+	err = nvhost_module_busy(actmon->host->dev);
+	if (err) {
+		nvhost_warn(&pdev->dev, "failed to power on host1x. sample period update failed");
+		return;
+	}
+
 	actmon_update_sample_period_safe(actmon);
 	nvhost_module_idle(actmon->host->dev);
 }
@@ -226,11 +387,18 @@ static void host1x_actmon_set_sample_period_norm(struct host1x_actmon *actmon,
 
 static void host1x_actmon_set_k(struct host1x_actmon *actmon, u32 k)
 {
+	struct platform_device *pdev = actmon->host->dev;
 	long val;
+	int err;
 
 	actmon->k = k;
 
-	nvhost_module_busy(actmon->host->dev);
+	err = nvhost_module_busy(actmon->host->dev);
+	if (err) {
+		nvhost_warn(&pdev->dev, "failed to power on host1x. sample period update failed");
+		return;
+	}
+
 	val = actmon_readl(actmon, actmon_ctrl_r());
 	val &= ~(actmon_ctrl_k_val_m());
 	val |= actmon_ctrl_k_val_f(actmon->k);
@@ -253,288 +421,20 @@ static long host1x_actmon_get_sample_period_norm(struct host1x_actmon *actmon)
 	return actmon->usecs_per_sample;
 }
 
-static int actmon_below_wmark_show(struct seq_file *s, void *unused)
-{
-	struct host1x_actmon *actmon = s->private;
-	seq_printf(s, "%d\n", host1x_actmon_below_wmark_count(actmon));
-	return 0;
-}
-
-static int actmon_below_wmark_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, actmon_below_wmark_show, inode->i_private);
-}
-
-static const struct file_operations actmon_below_wmark_fops = {
-	.open		= actmon_below_wmark_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
-
-static int actmon_above_wmark_show(struct seq_file *s, void *unused)
-{
-	struct host1x_actmon *actmon = s->private;
-	seq_printf(s, "%d\n", host1x_actmon_above_wmark_count(actmon));
-	return 0;
-}
-
-static int actmon_above_wmark_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, actmon_above_wmark_show, inode->i_private);
-}
-
-static const struct file_operations actmon_above_wmark_fops = {
-	.open		= actmon_above_wmark_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
-
-static int actmon_avg_show(struct seq_file *s, void *unused)
-{
-	struct host1x_actmon *actmon = s->private;
-	u32 avg;
-	int err;
-
-	err = host1x_actmon_avg(actmon, &avg);
-	if (!err)
-		seq_printf(s, "%d\n", avg);
-	return err;
-}
-
-static int actmon_avg_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, actmon_avg_show, inode->i_private);
-}
-
-static const struct file_operations actmon_avg_fops = {
-	.open		= actmon_avg_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
-
-static int actmon_avg_norm_show(struct seq_file *s, void *unused)
-{
-	struct host1x_actmon *actmon = s->private;
-	u32 avg;
-	int err;
-
-	err = host1x_actmon_avg_norm(actmon, &avg);
-	if (!err)
-		seq_printf(s, "%d\n", avg);
-	return err;
-}
-
-static int actmon_avg_norm_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, actmon_avg_norm_show, inode->i_private);
-}
-
-static const struct file_operations actmon_avg_norm_fops = {
-	.open		= actmon_avg_norm_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
-
-static int actmon_count_show(struct seq_file *s, void *unused)
-{
-	struct host1x_actmon *actmon = s->private;
-	u32 avg;
-	int err;
-
-	err = host1x_actmon_count(actmon, &avg);
-	if (!err)
-		seq_printf(s, "%d\n", avg);
-	return err;
-}
-
-static int actmon_count_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, actmon_count_show, inode->i_private);
-}
-
-static const struct file_operations actmon_count_fops = {
-	.open		= actmon_count_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
-
-static int actmon_count_norm_show(struct seq_file *s, void *unused)
-{
-	struct host1x_actmon *actmon = s->private;
-	u32 avg;
-	int err;
-
-	err = host1x_actmon_count_norm(actmon, &avg);
-	if (!err)
-		seq_printf(s, "%d\n", avg);
-	return err;
-}
-
-static int actmon_count_norm_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, actmon_count_norm_show, inode->i_private);
-}
-
-static const struct file_operations actmon_count_norm_fops = {
-	.open		= actmon_count_norm_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
-
-static int actmon_sample_period_show(struct seq_file *s, void *unused)
-{
-	struct host1x_actmon *actmon = s->private;
-	long period = host1x_actmon_get_sample_period(actmon);
-	seq_printf(s, "%ld\n", period);
-	return 0;
-}
-
-static int actmon_sample_period_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, actmon_sample_period_show, inode->i_private);
-}
-
-static const struct file_operations actmon_sample_period_fops = {
-	.open		= actmon_sample_period_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
-
-static int actmon_sample_period_norm_show(struct seq_file *s, void *unused)
-{
-	struct host1x_actmon *actmon = s->private;
-	long period = host1x_actmon_get_sample_period_norm(actmon);
-	seq_printf(s, "%ld\n", period);
-	return 0;
-}
-
-static int actmon_sample_period_norm_open(struct inode *inode,
-						struct file *file)
-{
-	return single_open(file, actmon_sample_period_norm_show,
-		inode->i_private);
-}
-
-static ssize_t actmon_sample_period_norm_write(struct file *file,
-				const char __user *user_buf,
-				size_t count, loff_t *ppos)
-{
-	struct seq_file *s = file->private_data;
-	struct host1x_actmon *actmon = s->private;
-	char buffer[40];
-	int buf_size;
-	unsigned long period;
-
-	memset(buffer, 0, sizeof(buffer));
-	buf_size = min(count, (sizeof(buffer)-1));
-
-	if (copy_from_user(buffer, user_buf, buf_size))
-		return -EFAULT;
-
-	if (kstrtoul(buffer, 10, &period))
-		return -EINVAL;
-
-	host1x_actmon_set_sample_period_norm(actmon, period);
-
-	return count;
-}
-
-static const struct file_operations actmon_sample_period_norm_fops = {
-	.open		= actmon_sample_period_norm_open,
-	.read		= seq_read,
-	.write          = actmon_sample_period_norm_write,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
-
-static int actmon_k_show(struct seq_file *s, void *unused)
-{
-	struct host1x_actmon *actmon = s->private;
-	long period = host1x_actmon_get_k(actmon);
-	seq_printf(s, "%ld\n", period);
-	return 0;
-}
-
-static int actmon_k_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, actmon_k_show, inode->i_private);
-}
-
-static ssize_t actmon_k_write(struct file *file,
-				const char __user *user_buf,
-				size_t count, loff_t *ppos)
-{
-	struct seq_file *s = file->private_data;
-	struct host1x_actmon *actmon = s->private;
-	char buffer[40];
-	int buf_size;
-	unsigned long k;
-
-	memset(buffer, 0, sizeof(buffer));
-	buf_size = min(count, (sizeof(buffer)-1));
-
-	if (copy_from_user(buffer, user_buf, buf_size))
-		return -EFAULT;
-
-	if (kstrtoul(buffer, 10, &k))
-		return -EINVAL;
-
-	host1x_actmon_set_k(actmon, k);
-
-	return count;
-}
-
-static const struct file_operations actmon_k_fops = {
-	.open		= actmon_k_open,
-	.read		= seq_read,
-	.write          = actmon_k_write,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
-
-static void host1x_actmon_debug_init(struct host1x_actmon *actmon,
-				     struct dentry *de)
-{
-	BUG_ON(!actmon);
-	debugfs_create_file("actmon_k", S_IRUGO, de,
-			actmon, &actmon_k_fops);
-	debugfs_create_file("actmon_sample_period", S_IRUGO, de,
-			actmon, &actmon_sample_period_fops);
-	debugfs_create_file("actmon_sample_period_norm", S_IRUGO, de,
-			actmon, &actmon_sample_period_norm_fops);
-	debugfs_create_file("actmon_avg_norm", S_IRUGO, de,
-			actmon, &actmon_avg_norm_fops);
-	debugfs_create_file("actmon_avg", S_IRUGO, de,
-			actmon, &actmon_avg_fops);
-	debugfs_create_file("actmon_count", S_IRUGO, de,
-			actmon, &actmon_count_fops);
-	debugfs_create_file("actmon_count_norm", S_IRUGO, de,
-			actmon, &actmon_count_norm_fops);
-	debugfs_create_file("actmon_above_wmark", S_IRUGO, de,
-			actmon, &actmon_above_wmark_fops);
-	debugfs_create_file("actmon_below_wmark", S_IRUGO, de,
-			actmon, &actmon_below_wmark_fops);
-}
-
 static const struct nvhost_actmon_ops host1x_actmon_ops = {
+	.get_actmon_regs = host1x_actmon_get_regs,
 	.init = host1x_actmon_init,
 	.deinit = host1x_actmon_deinit,
 	.read_avg = host1x_actmon_avg,
-	.above_wmark_count = host1x_actmon_above_wmark_count,
-	.below_wmark_count = host1x_actmon_below_wmark_count,
 	.read_avg_norm = host1x_actmon_avg_norm,
+	.read_count = host1x_actmon_count,
+	.read_count_norm = host1x_actmon_count_norm,
 	.update_sample_period = host1x_actmon_update_sample_period,
 	.set_sample_period_norm = host1x_actmon_set_sample_period_norm,
 	.get_sample_period_norm = host1x_actmon_get_sample_period_norm,
 	.get_sample_period = host1x_actmon_get_sample_period,
 	.get_k = host1x_actmon_get_k,
 	.set_k = host1x_actmon_set_k,
-	.debug_init = host1x_actmon_debug_init,
+	.set_high_wmark = host1x_set_high_wmark,
+	.set_low_wmark = host1x_set_low_wmark,
 };

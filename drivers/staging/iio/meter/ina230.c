@@ -1,7 +1,7 @@
 /*
  * ina230.c - driver for TI INA230
  *
- * Copyright (c) 2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014- 2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * Based on hwmon driver:
  * 		drivers/hwmon/ina230.c
@@ -34,7 +34,7 @@
 #include <linux/of.h>
 #include <linux/sysfs.h>
 #include <linux/slab.h>
-
+#include <linux/delay.h>
 
 /* ina230 (/ ina226)register offsets */
 #define INA230_CONFIG	0
@@ -54,7 +54,7 @@ SOL|SUL|BOL|BUL|POL|CVR|-   -   -   -   -  |AFF|CVF|OVF|APO|LEN
 #define INA230_MASK_SOL		(1 << 15)
 #define INA230_MASK_SUL		(1 << 14)
 #define INA230_MASK_CVF		(1 << 3)
-#define INA230_MAX_CONVERSION_TRIALS	50
+#define INA230_MAX_CONVERSION_TRIALS	1000
 
 /*
 Config register for ina230 (/ ina226):
@@ -74,6 +74,7 @@ enum {
 	CHANNEL_NAME = 0,
 	CURRENT_THRESHOLD,
 	ALERT_FLAG,
+	VBUS_VOLTAGE_CURRENT,
 };
 
 struct ina230_platform_data {
@@ -246,6 +247,31 @@ static void __locked_ina230_evaluate_state(struct ina230_chip *chip)
 	}
 }
 
+static int  __locked_wait_for_conversion(struct ina230_chip *chip)
+{
+	int ret, conversion, trials = 0;
+
+	/* wait till conversion ready bit is set */
+	do {
+		ret = be16_to_cpu(i2c_smbus_read_word_data(chip->client,
+							INA230_MASK));
+		if (ret < 0) {
+			dev_err(chip->dev, "MASK read failed: %d\n", ret);
+			return ret;
+		}
+		conversion = ret & INA230_MASK_CVF;
+		if (!conversion)
+			msleep(1);
+	} while ((!conversion) && (++trials < INA230_MAX_CONVERSION_TRIALS));
+
+	if (trials == INA230_MAX_CONVERSION_TRIALS) {
+		dev_err(chip->dev, "maximum retries exceeded\n");
+		return -EAGAIN;
+	}
+
+	return 0;
+}
+
 static void ina230_evaluate_state(struct ina230_chip *chip)
 {
 	mutex_lock(&chip->mutex);
@@ -257,7 +283,6 @@ static int ina230_get_bus_voltage(struct ina230_chip *chip, int *volt_mv)
 {
 	int ret;
 	int voltage_mv;
-
 	mutex_lock(&chip->mutex);
 	ret = ina230_ensure_enabled_start(chip);
 	if (ret < 0) {
@@ -265,6 +290,11 @@ static int ina230_get_bus_voltage(struct ina230_chip *chip, int *volt_mv)
 		return ret;
 	}
 
+	ret = __locked_wait_for_conversion(chip);
+	if (ret < 0) {
+		mutex_unlock(&chip->mutex);
+		return ret;
+	}
 	/* getting voltage readings in milli volts*/
 	voltage_mv = (s16)be16_to_cpu(i2c_smbus_read_word_data(chip->client,
 						  INA230_VOLTAGE));
@@ -284,7 +314,6 @@ static int ina230_get_shunt_voltage(struct ina230_chip *chip, int *volt_uv)
 {
 	int voltage_uv;
 	int ret;
-
 	mutex_lock(&chip->mutex);
 	ret = ina230_ensure_enabled_start(chip);
 	if (ret < 0) {
@@ -292,6 +321,11 @@ static int ina230_get_shunt_voltage(struct ina230_chip *chip, int *volt_uv)
 		return ret;
 	}
 
+	ret = __locked_wait_for_conversion(chip);
+	if (ret < 0) {
+		mutex_unlock(&chip->mutex);
+		return ret;
+	}
 	voltage_uv = (s16)be16_to_cpu(i2c_smbus_read_word_data(chip->client,
 						  INA230_SHUNT));
 
@@ -299,29 +333,6 @@ static int ina230_get_shunt_voltage(struct ina230_chip *chip, int *volt_uv)
 	mutex_unlock(&chip->mutex);
 
 	*volt_uv = shuntv_register_to_uv(voltage_uv);
-	return 0;
-}
-
-static int  __locked_wait_for_conversion(struct ina230_chip *chip)
-{
-	int ret, conversion, trials = 0;
-
-	/* wait till conversion ready bit is set */
-	do {
-		ret = be16_to_cpu(i2c_smbus_read_word_data(chip->client,
-							INA230_MASK));
-		if (ret < 0) {
-			dev_err(chip->dev, "MASK read failed: %d\n", ret);
-			return ret;
-		}
-		conversion = ret & INA230_MASK_CVF;
-	} while ((!conversion) && (++trials < INA230_MAX_CONVERSION_TRIALS));
-
-	if (trials == INA230_MAX_CONVERSION_TRIALS) {
-		dev_err(chip->dev, "maximum retries exceeded\n");
-		return -EAGAIN;
-	}
-
 	return 0;
 }
 
@@ -480,6 +491,53 @@ static int ina230_get_shunt_power(struct ina230_chip *chip, int *power_mw)
 	return 0;
 }
 
+static int ina230_get_vbus_voltage_current(struct ina230_chip *chip,
+					   int *current_ma, int *voltage_mv)
+{
+	int ret = 0, val;
+	int ma;
+
+	mutex_lock(&chip->mutex);
+	/* ensure that triggered mode will be used */
+	chip->running = 0;
+	ret = ina230_ensure_enabled_start(chip);
+	if (ret < 0)
+		goto out;
+
+	ret = __locked_wait_for_conversion(chip);
+	if (ret)
+		goto out;
+
+	val = i2c_smbus_read_word_data(chip->client, INA230_VOLTAGE);
+	if (val < 0) {
+		ret = val;
+		goto out;
+	}
+	*voltage_mv = busv_register_to_mv(be16_to_cpu(val));
+
+	if (chip->pdata->resistor) {
+		val = i2c_smbus_read_word_data(chip->client, INA230_SHUNT);
+		if (val < 0) {
+			ret = val;
+			goto out;
+		}
+		ma = shuntv_register_to_uv((s16)be16_to_cpu(val));
+		ma = DIV_ROUND_CLOSEST(ma, chip->pdata->resistor);
+		if (chip->pdata->shunt_polarity_inverted)
+			ma *= -1;
+		*current_ma = ma;
+	} else {
+		*current_ma = 0;
+	}
+out:
+	/* restart continuous current monitoring, if enabled */
+	if (chip->pdata->current_threshold)
+		__locked_ina230_evaluate_state(chip);
+	mutex_unlock(&chip->mutex);
+	return ret;
+}
+
+
 static int ina230_set_current_threshold(struct ina230_chip *chip,
 		int current_ma)
 {
@@ -521,7 +579,7 @@ static int ina230_show_alert_flag(struct ina230_chip *chip, char *buf)
 	mutex_unlock(&chip->mutex);
 
 	alert_flag = (alert_flag >> 4) & 0x1;
-	return sprintf(buf, "%d\n", alert_flag);
+	return snprintf(buf, PAGE_SIZE, "%d\n", alert_flag);
 }
 
 static int ina230_hotplug_notify(struct notifier_block *nb,
@@ -603,16 +661,29 @@ static ssize_t ina230_show_channel(struct device *dev,
 	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct ina230_chip *chip = iio_priv(indio_dev);
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
+	int current_ma = 0;
+	int voltage_mv = 0;
+	int ret;
 
 	switch (this_attr->address) {
 	case CHANNEL_NAME:
-		return sprintf(buf, "%s\n", chip->pdata->rail_name);
+		return snprintf(buf, PAGE_SIZE, "%s\n",
+				chip->pdata->rail_name);
 
 	case CURRENT_THRESHOLD:
-		return sprintf(buf, "%d mA\n", chip->pdata->current_threshold);
+		return snprintf(buf, PAGE_SIZE, "%d mA\n",
+				chip->pdata->current_threshold);
 
 	case ALERT_FLAG:
 		return ina230_show_alert_flag(chip, buf);
+
+	case VBUS_VOLTAGE_CURRENT:
+		ret = ina230_get_vbus_voltage_current(chip, &current_ma,
+						      &voltage_mv);
+		if (!ret)
+			return snprintf(buf, PAGE_SIZE, "%d %d\n",
+					voltage_mv, current_ma);
+		return ret;
 
 	default:
 		break;
@@ -656,11 +727,16 @@ static IIO_DEVICE_ATTR(current_threshold, S_IRUGO | S_IWUSR,
 static IIO_DEVICE_ATTR(alert_flag, S_IRUGO,
 		ina230_show_channel, NULL, ALERT_FLAG);
 
+static IIO_DEVICE_ATTR(ui_input, S_IRUSR|S_IRGRP,
+		       ina230_show_channel, NULL,
+		       VBUS_VOLTAGE_CURRENT);
+
 
 static struct attribute *ina230_attributes[] = {
 	&iio_dev_attr_rail_name.dev_attr.attr,
 	&iio_dev_attr_current_threshold.dev_attr.attr,
 	&iio_dev_attr_alert_flag.dev_attr.attr,
+	&iio_dev_attr_ui_input.dev_attr.attr,
 	NULL,
 };
 
@@ -838,12 +914,18 @@ static int ina230_probe(struct i2c_client *client,
 		goto exit;
 	}
 
-	/* set ina230 to power down mode */
-	ret = i2c_smbus_write_word_data(client, INA230_CONFIG,
-			__constant_cpu_to_be16(INA230_POWER_DOWN));
-	if (ret < 0) {
-		dev_err(&client->dev, "INA power down failed: %d\n", ret);
-		goto exit;
+	/* Power it on once current_threshold defined, or power it down */
+	if (pdata->current_threshold) {
+		ina230_evaluate_state(chip);
+	} else {
+		/* set ina230 to power down mode */
+		ret = i2c_smbus_write_word_data(client, INA230_CONFIG,
+				__constant_cpu_to_be16(INA230_POWER_DOWN));
+		if (ret < 0) {
+			dev_err(&client->dev, "INA power down failed: %d\n",
+				ret);
+			goto exit;
+		}
 	}
 
 	return 0;

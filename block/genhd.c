@@ -420,9 +420,19 @@ int blk_alloc_devt(struct hd_struct *part, dev_t *devt)
 	}
 
 	/* allocate ext devt */
+<<<<<<< HEAD
 	mutex_lock(&ext_devt_mutex);
 	idx = idr_alloc(&ext_devt_idr, part, 0, NR_EXT_DEVT, GFP_KERNEL);
 	mutex_unlock(&ext_devt_mutex);
+=======
+	idr_preload(GFP_KERNEL);
+
+	spin_lock_bh(&ext_devt_lock);
+	idx = idr_alloc(&ext_devt_idr, part, 0, NR_EXT_DEVT, GFP_NOWAIT);
+	spin_unlock_bh(&ext_devt_lock);
+
+	idr_preload_end();
+>>>>>>> update/master
 	if (idx < 0)
 		return idx == -ENOSPC ? -EBUSY : idx;
 
@@ -447,9 +457,15 @@ void blk_free_devt(dev_t devt)
 		return;
 
 	if (MAJOR(devt) == BLOCK_EXT_MAJOR) {
+<<<<<<< HEAD
 		mutex_lock(&ext_devt_mutex);
 		idr_remove(&ext_devt_idr, blk_mangle_minor(MINOR(devt)));
 		mutex_unlock(&ext_devt_mutex);
+=======
+		spin_lock_bh(&ext_devt_lock);
+		idr_remove(&ext_devt_idr, blk_mangle_minor(MINOR(devt)));
+		spin_unlock_bh(&ext_devt_lock);
+>>>>>>> update/master
 	}
 }
 
@@ -690,13 +706,21 @@ struct gendisk *get_gendisk(dev_t devt, int *partno)
 	} else {
 		struct hd_struct *part;
 
+<<<<<<< HEAD
 		mutex_lock(&ext_devt_mutex);
+=======
+		spin_lock_bh(&ext_devt_lock);
+>>>>>>> update/master
 		part = idr_find(&ext_devt_idr, blk_mangle_minor(MINOR(devt)));
 		if (part && get_disk(part_to_disk(part))) {
 			*partno = part->partno;
 			disk = part_to_disk(part);
 		}
+<<<<<<< HEAD
 		mutex_unlock(&ext_devt_mutex);
+=======
+		spin_unlock_bh(&ext_devt_lock);
+>>>>>>> update/master
 	}
 
 	return disk;
@@ -828,6 +852,7 @@ static void disk_seqf_stop(struct seq_file *seqf, void *v)
 	if (iter) {
 		class_dev_iter_exit(iter);
 		kfree(iter);
+		seqf->private = NULL;
 	}
 }
 
@@ -852,7 +877,8 @@ static int show_partition(struct seq_file *seqf, void *v)
 	if (!get_capacity(sgp) || (!disk_max_parts(sgp) &&
 				   (sgp->flags & GENHD_FL_REMOVABLE)))
 		return 0;
-	if (sgp->flags & GENHD_FL_SUPPRESS_PARTITION_INFO)
+	if (sgp->flags & GENHD_FL_SUPPRESS_PARTITION_INFO ||
+		sgp->flags & GENHD_FL_NO_PART_SCAN)
 		return 0;
 
 	/* show the full disk and all non-0 size partitions of it */
@@ -1069,9 +1095,16 @@ int disk_expand_part_tbl(struct gendisk *disk, int partno)
 	struct disk_part_tbl *old_ptbl = disk->part_tbl;
 	struct disk_part_tbl *new_ptbl;
 	int len = old_ptbl ? old_ptbl->len : 0;
-	int target = partno + 1;
+	int i, target;
 	size_t size;
-	int i;
+
+	/*
+	 * check for int overflow, since we can get here from blkpg_ioctl()
+	 * with a user passed 'partno'.
+	 */
+	target = partno + 1;
+	if (target < 0)
+		return -EINVAL;
 
 	/* disk_max_parts() is zero during initialization, ignore if so */
 	if (disk_max_parts(disk) && target > disk_max_parts(disk))

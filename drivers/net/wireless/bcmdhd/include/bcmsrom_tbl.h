@@ -1,15 +1,24 @@
 /*
  * Table that encodes the srom formats for PCI/PCIe NICs.
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
  *
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+ * 
+>>>>>>> update/master
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
  * under the terms of the GNU General Public License version 2 (the "GPL"),
  * available at http://www.broadcom.com/licenses/GPLv2.php, with the
  * following added to such license:
+<<<<<<< HEAD
  *
+=======
+ * 
+>>>>>>> update/master
  *      As a special exception, the copyright holders of this software give you
  * permission to link this software with independent modules, and to copy and
  * distribute the resulting executable under terms of your choice, provided that
@@ -17,12 +26,20 @@
  * the license of that module.  An independent module is a module which is not
  * derived from this software.  The special exception does not apply to any
  * modifications of the software.
+<<<<<<< HEAD
  *
+=======
+ * 
+>>>>>>> update/master
  *      Notwithstanding the above, under no circumstances may you combine this
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
+<<<<<<< HEAD
  * $Id: bcmsrom_tbl.h 427005 2013-10-02 00:15:10Z $
+=======
+ * $Id: bcmsrom_tbl.h 471127 2014-04-17 23:24:23Z $
+>>>>>>> update/master
  */
 
 #ifndef	_bcmsrom_tbl_h_
@@ -30,6 +47,10 @@
 
 #include "sbpcmcia.h"
 #include "wlioctl.h"
+<<<<<<< HEAD
+=======
+#include <bcmsrom_fmt.h>
+>>>>>>> update/master
 
 typedef struct {
 	const char *name;
@@ -74,7 +95,11 @@ static const sromvar_t pci_sromvars[] = {
 	{"devid",	0xffffff00,	SRFL_PRHEX, SROM_DEVID_PCIE, 0xffff},
 #else
 	{"devid",	0xffffff00,	SRFL_PRHEX|SRFL_NOVAR,	PCI_F0DEVID,	0xffff},
+<<<<<<< HEAD
 #endif
+=======
+#endif 
+>>>>>>> update/master
 	{"boardrev",	0x0000000e,	SRFL_PRHEX,	SROM_AABREV,		SROM_BR_MASK},
 	{"boardrev",	0x000000f0,	SRFL_PRHEX,	SROM4_BREV,		0xffff},
 	{"boardrev",	0xffffff00,	SRFL_PRHEX,	SROM8_BREV,		0xffff},
@@ -539,7 +564,11 @@ static const sromvar_t pci_sromvars[] = {
 	{"subband5gver",	0xfffff800, 	SRFL_PRHEX,	SROM11_SUBBAND5GVER, 	0xffff},
 	{"paparambwver",	0xfffff800, 	0,		SROM11_MCSLR5GLPO, 	0xf000},
 	/* Special PA Params for 4350 5G Band, 40/80 MHz BW Ant #0 */
+<<<<<<< HEAD
 	{"pa5gbw4080a0", 0xfffff800, SRFL_PRHEX | SRFL_ARRAY, SROM11_PATH2 + SROM11_5GB0_PA, 0xffff},
+=======
+	{"pa5gbw4080a0", 0xfffff800, SRFL_PRHEX | SRFL_ARRAY, SROM11_PATH2 +SROM11_5GB0_PA, 0xffff},
+>>>>>>> update/master
 	{"", 0xfffff800,	SRFL_PRHEX | SRFL_ARRAY, SROM11_PATH2 + SROM11_5GB0_PA + 1, 0xffff},
 	{"", 0xfffff800,	SRFL_PRHEX | SRFL_ARRAY, SROM11_PATH2 + SROM11_5GB0_PA + 2, 0xffff},
 	{"", 0xfffff800,	SRFL_PRHEX | SRFL_ARRAY, SROM11_PATH2 + SROM11_5GB1_PA,     0xffff},
@@ -889,7 +918,12 @@ static const cis_tuple_t cis_hnbuvars[] = {
 	{HNBU_AA,		0xffffffff, 3, "1aa2g 1aa5g"},
 	{HNBU_AA,		0xffffffff, 3, "1aa0 1aa1"}, /* backward compatibility */
 	{HNBU_AG,		0xffffffff, 5, "1ag0 1ag1 1ag2 1ag3"},
+<<<<<<< HEAD
 	{HNBU_BOARDFLAGS,	0xffffffff, 13, "4boardflags 4boardflags2 4boardflags3"},
+=======
+	{HNBU_BOARDFLAGS,	0xffffffff, 21, "4boardflags 4boardflags2 4boardflags3 "
+	"4boardflags4 4boardflags5 "},
+>>>>>>> update/master
 	{HNBU_LEDS,		0xffffffff, 17, "1ledbh0 1ledbh1 1ledbh2 1ledbh3 1ledbh4 1ledbh5 "
 	"1ledbh6 1ledbh7 1ledbh8 1ledbh9 1ledbh10 1ledbh11 1ledbh12 1ledbh13 1ledbh14 1ledbh15"},
 	{HNBU_CCODE,		0xffffffff, 4, "2ccode 1cctl"},
@@ -948,17 +982,30 @@ static const cis_tuple_t cis_hnbuvars[] = {
 	{OTP_RAW,		0xffffffff, 0, ""},	/* special case */
 	{HNBU_OFDMPO5G,		0xffffffff, 13, "4ofdm5gpo 4ofdm5glpo 4ofdm5ghpo"},
 	{HNBU_USBEPNUM,		0xffffffff, 3, "2usbepnum"},
+<<<<<<< HEAD
 	{HNBU_CCKBW202GPO,	0xffffffff, 5, "2cckbw202gpo 2cckbw20ul2gpo"},
 	{HNBU_LEGOFDMBW202GPO,	0xffffffff, 9, "4legofdmbw202gpo 4legofdmbw20ul2gpo"},
 	{HNBU_LEGOFDMBW205GPO,	0xffffffff, 25, "4legofdmbw205glpo 4legofdmbw20ul5glpo "
 	"4legofdmbw205gmpo 4legofdmbw20ul5gmpo 4legofdmbw205ghpo 4legofdmbw20ul5ghpo"},
 	{HNBU_MCS2GPO,	0xffffffff, 13,	"4mcsbw202gpo 4mcsbw20ul2gpo 4mcsbw402gpo"},
+=======
+	{HNBU_CCKBW202GPO,	0xffffffff, 7, "2cckbw202gpo 2cckbw20ul2gpo 2cckbw20in802gpo"},
+	{HNBU_LEGOFDMBW202GPO,	0xffffffff, 9, "4legofdmbw202gpo 4legofdmbw20ul2gpo"},
+	{HNBU_LEGOFDMBW205GPO,	0xffffffff, 25, "4legofdmbw205glpo 4legofdmbw20ul5glpo "
+	"4legofdmbw205gmpo 4legofdmbw20ul5gmpo 4legofdmbw205ghpo 4legofdmbw20ul5ghpo"},
+	{HNBU_MCS2GPO,	0xffffffff, 17,	"4mcsbw202gpo 4mcsbw20ul2gpo 4mcsbw402gpo 4mcsbw802gpo"},
+>>>>>>> update/master
 	{HNBU_MCS5GLPO,	0xffffffff, 13,	"4mcsbw205glpo 4mcsbw20ul5glpo 4mcsbw405glpo"},
 	{HNBU_MCS5GMPO,	0xffffffff, 13,	"4mcsbw205gmpo 4mcsbw20ul5gmpo 4mcsbw405gmpo"},
 	{HNBU_MCS5GHPO,	0xffffffff, 13,	"4mcsbw205ghpo 4mcsbw20ul5ghpo 4mcsbw405ghpo"},
 	{HNBU_MCS32PO,	0xffffffff, 3,	"2mcs32po"},
+<<<<<<< HEAD
 	{HNBU_LEG40DUPPO, 	0xffffffff, 3,	"2legofdm40duppo"},
 	{HNBU_TEMPTHRESH, 	0xffffffff, 7,	"1tempthresh 0temps_period 0temps_hysteresis "
+=======
+	{HNBU_LEG40DUPPO,	0xffffffff, 3,	"2legofdm40duppo"},
+	{HNBU_TEMPTHRESH,	0xffffffff, 7,	"1tempthresh 0temps_period 0temps_hysteresis "
+>>>>>>> update/master
 	"1tempoffset 1tempsense_slope 0tempcorrx 0tempsense_option "
 	"1phycal_tempdelta"}, /* special case */
 	{HNBU_MUXENAB,		0xffffffff, 2,	"1muxenab"},
@@ -972,6 +1019,7 @@ static const cis_tuple_t cis_hnbuvars[] = {
 	{HNBU_MEAS_PWR,		0xfffff800, 5,	"1measpower 1measpower1 1measpower2 2rawtempsense"},
 	{HNBU_PDOFF,		0xfffff800, 13,	"2pdoffset40ma0 2pdoffset40ma1 2pdoffset40ma2 "
 	"2pdoffset80ma0 2pdoffset80ma1 2pdoffset80ma2"},
+<<<<<<< HEAD
 	{HNBU_ACPPR_2GPO,	0xfffff800, 5,	"2dot11agofdmhrbw202gpo 2ofdmlrbw202gpo"},
 	{HNBU_ACPPR_5GPO,	0xfffff800, 31,	"4mcsbw805glpo 4mcsbw1605glpo 4mcsbw805gmpo "
 	"4mcsbw1605gmpo 4mcsbw805ghpo 4mcsbw1605ghpo 2mcslr5glpo 2mcslr5gmpo 2mcslr5ghpo"},
@@ -980,11 +1028,37 @@ static const cis_tuple_t cis_hnbuvars[] = {
 	"2sb40and80hr5ghpo 2sb20in40lrpo 2sb20in80and160lr5glpo 2sb40and80lr5glpo "
 	"2sb20in80and160lr5gmpo 2sb40and80lr5gmpo 2sb20in80and160lr5ghpo 2sb40and80lr5ghpo "
 	"2dot11agduphrpo 2dot11agduplrpo"},
+=======
+	{HNBU_ACPPR_2GPO,	0xfffff800, 13,	"2dot11agofdmhrbw202gpo 2ofdmlrbw202gpo "
+	"2sb20in40dot11agofdm2gpo 2sb20in80dot11agofdm2gpo 2sb20in40ofdmlrbw202gpo "
+	"2sb20in80ofdmlrbw202gpo"},
+	{HNBU_ACPPR_5GPO,	0xfffff800, 59,	"4mcsbw805glpo 4mcsbw1605glpo 4mcsbw805gmpo "
+	"4mcsbw1605gmpo 4mcsbw805ghpo 4mcsbw1605ghpo 2mcslr5glpo 2mcslr5gmpo 2mcslr5ghpo "
+	"4mcsbw80p805glpo 4mcsbw80p805gmpo 4mcsbw80p805ghpo 4mcsbw80p805gx1po 2mcslr5gx1po "
+	"2mcslr5g80p80po 4mcsbw805gx1po 4mcsbw1605gx1po"},
+	{HNBU_MCS5Gx1PO,	0xfffff800, 9,	"4mcsbw205gx1po 4mcsbw405gx1po"},
+	{HNBU_ACPPR_SBPO,	0xfffff800, 49,	"2sb20in40hrpo 2sb20in80and160hr5glpo "
+	"2sb40and80hr5glpo 2sb20in80and160hr5gmpo 2sb40and80hr5gmpo 2sb20in80and160hr5ghpo "
+	"2sb40and80hr5ghpo 2sb20in40lrpo 2sb20in80and160lr5glpo 2sb40and80lr5glpo "
+	"2sb20in80and160lr5gmpo 2sb40and80lr5gmpo 2sb20in80and160lr5ghpo 2sb40and80lr5ghpo "
+	"4dot11agduphrpo 4dot11agduplrpo 2sb20in40and80hrpo 2sb20in40and80lrpo "
+	"2sb20in80and160hr5gx1po 2sb20in80and160lr5gx1po 2sb40and80hr5gx1po 2sb40and80lr5gx1po "
+	},
+	{HNBU_ACPPR_SB8080_PO, 0xfffff800, 23, "2sb2040and80in80p80hr5glpo "
+	"2sb2040and80in80p80lr5glpo 2sb2040and80in80p80hr5gmpo "
+	"2sb2040and80in80p80lr5gmpo 2sb2040and80in80p80hr5ghpo 2sb2040and80in80p80lr5ghpo "
+	"2sb2040and80in80p80hr5gx1po 2sb2040and80in80p80lr5gx1po 2sb20in80p80hr5gpo "
+	"2sb20in80p80lr5gpo 2dot11agduppo"},
+>>>>>>> update/master
 	{HNBU_NOISELVL,		0xfffff800, 16, "1noiselvl2ga0 1noiselvl2ga1 1noiselvl2ga2 "
 	"1*4noiselvl5ga0 1*4noiselvl5ga1 1*4noiselvl5ga2"},
 	{HNBU_RXGAIN_ERR,	0xfffff800, 16, "1rxgainerr2ga0 1rxgainerr2ga1 1rxgainerr2ga2 "
 	"1*4rxgainerr5ga0 1*4rxgainerr5ga1 1*4rxgainerr5ga2"},
 	{HNBU_AGBGA,		0xfffff800, 7, "1agbg0 1agbg1 1agbg2 1aga0 1aga1 1aga2"},
+<<<<<<< HEAD
+=======
+	{HNBU_USBDESC_COMPOSITE, 0xffffffff, 3, "2usbdesc_composite"},
+>>>>>>> update/master
 	{HNBU_UUID, 		0xffffffff, 17,	"16uuid"},
 	{HNBU_WOWLGPIO,		0xffffffff, 2,  "1wowl_gpio"},
 	{HNBU_ACRXGAINS_C0,	0xfffff800, 5, "0rxgains5gtrelnabypa0 0rxgains5gtrisoa0 "

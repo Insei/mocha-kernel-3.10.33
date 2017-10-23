@@ -1,7 +1,7 @@
 /*
  * arch/arm/mach-tegra/board-panel.h
  *
- * Copyright (c) 2012-2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2012-2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -20,6 +20,7 @@
 #define __MACH_TEGRA_BOARD_PANEL_H
 
 #include <linux/platform_device.h>
+#include <linux/pwm_backlight.h>
 #include <mach/dc.h>
 #include "tegra-board-id.h"
 
@@ -36,8 +37,13 @@ struct tegra_panel {
 
 enum {
 	TEGRA_GPIO_RESET,
+	TEGRA_GPIO_PANEL_EN,
+	TEGRA_GPIO_PANEL_EN_1,
 	TEGRA_GPIO_BL_ENABLE,
 	TEGRA_GPIO_PWM,
+	TEGRA_GPIO_BRIDGE_EN_0,
+	TEGRA_GPIO_BRIDGE_EN_1,
+	TEGRA_GPIO_BRIDGE_REFCLK_EN,
 	TEGRA_N_GPIO_PANEL, /* add new gpio above this entry */
 };
 
@@ -47,25 +53,50 @@ struct tegra_panel_of {
 	bool panel_gpio_populated;
 };
 static struct tegra_panel_of __maybe_unused panel_of = {
-	.panel_gpio = {-1, -1, -1},
+	/* TEGRA_N_GPIO_PANEL counts of gpio should be
+	 * initialized to TEGRA_GPIO_INVALID */
+	.panel_gpio = {-1, -1, -1, -1, -1, -1, -1},
 };
-
 struct tegra_panel_ops {
 	int (*enable)(struct device *);
 	int (*postpoweron)(struct device *);
 	int (*prepoweroff)(void);
-	int (*disable)(void);
+	int (*disable)(struct device *);
 	int (*hotplug_init)(struct device *);
 	int (*postsuspend)(void);
 	void (*hotplug_report)(bool);
+	struct pwm_bl_data_dt_ops *pwm_bl_ops;
 };
+
+struct generic_bl_data_dt_ops {
+	int (*notify)(struct device *dev, int brightness);
+};
+
 extern struct tegra_panel_ops dsi_p_wuxga_10_1_ops;
 extern struct tegra_panel_ops dsi_lgd_wxga_7_0_ops;
 extern struct tegra_panel_ops dsi_s_wqxga_10_1_ops;
+extern struct tegra_panel_ops dsi_s_wuxga_7_0_ops;
+extern struct tegra_panel_ops dsi_s_wuxga_8_0_ops;
+extern struct tegra_panel_ops dsi_a_1200_1920_8_0_ops;
+extern struct tegra_panel_ops dsi_a_1200_800_8_0_ops;
+extern struct tegra_panel_ops edp_a_1080p_14_0_ops;
+extern struct tegra_panel_ops edp_i_1080p_11_6_ops;
+extern struct tegra_panel_ops lvds_c_1366_14_ops;
+extern struct tegra_panel_ops dsi_a_1080p_14_0_ops;
+extern struct tegra_panel_ops dsi_j_1440_810_5_8_ops;
+extern struct tegra_panel_ops dsi_j_720p_5_ops;
+extern struct tegra_panel_ops dsi_l_720p_5_loki_ops;
+extern struct tegra_panel_ops edp_s_uhdtv_15_6_ops;
+extern struct tegra_panel_ops dsi_o_720p_6_0_ops;
+extern struct tegra_panel_ops dsi_o_720p_6_0_01_ops;
 
-extern struct tegra_panel dsi_l_720p_5;
-extern struct tegra_panel dsi_j_720p_4_7;
-extern struct tegra_panel dsi_s_1080p_5;
+extern struct tegra_panel_ops *fixed_primary_panel_ops;
+extern struct tegra_panel_ops *fixed_secondary_panel_ops;
+extern const char *fixed_primary_panel_compatible;
+extern const char *fixed_secondary_panel_compatible;
+
+extern struct pwm_bl_data_dt_ops *fixed_pwm_bl_ops;
+
 extern struct tegra_panel dsi_p_wuxga_10_1;
 extern struct tegra_panel dsi_a_1080p_11_6;
 extern struct tegra_panel dsi_s_wqxga_10_1;
@@ -94,6 +125,15 @@ int tegra_panel_gpio_get_dt(const char *comp_str,
 
 int tegra_panel_reset(struct tegra_panel_of *panel, unsigned int delay_ms);
 
-int tegra_init_hdmi(struct platform_device *pdev,
-			struct platform_device *phost1x);
+int tegra_disp_defer_vcore_override(void);
+
+void tegra_set_fixed_panel_ops(bool is_primary,
+			struct tegra_panel_ops *p_ops, char *panel_node);
+
+void tegra_set_fixed_pwm_bl_ops(struct pwm_bl_data_dt_ops *p_ops);
+
+void tegra_pwm_bl_ops_register(struct device *dev);
+
+void ti_lp855x_bl_ops_register(struct device *dev);
+
 #endif /* __MACH_TEGRA_BOARD_PANEL_H */

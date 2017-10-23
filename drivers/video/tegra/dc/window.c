@@ -3,7 +3,7 @@
  *
  * Copyright (C) 2010 Google, Inc.
  *
- * Copyright (c) 2010-2014, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2010-2017, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -19,6 +19,7 @@
 #include <linux/types.h>
 #include <linux/moduleparam.h>
 #include <linux/export.h>
+#include <linux/delay.h>
 #include <mach/dc.h>
 #include <mach/hardware.h>
 #include <trace/events/display.h>
@@ -27,7 +28,7 @@
 #include "dc_config.h"
 #include "dc_priv.h"
 
-static int no_vsync;
+int no_vsync;
 
 module_param_named(no_vsync, no_vsync, int, S_IRUGO | S_IWUSR);
 
@@ -49,6 +50,10 @@ static bool tegra_dc_windows_are_clean(struct tegra_dc_win *windows[],
 	return true;
 }
 
+<<<<<<< HEAD
+=======
+#ifndef CONFIG_TEGRA_NVDISPLAY
+>>>>>>> update/master
 static int get_topmost_window(u32 *depths, unsigned long *wins, int win_num)
 {
 	int idx, best = -1;
@@ -248,6 +253,42 @@ static void tegra_dc_blend_sequential(struct tegra_dc *dc,
 					WIN_ALPHA_1BIT_WEIGHT0(0) |
 					WIN_ALPHA_1BIT_WEIGHT1(0xff),
 					DC_WINBUF_BLEND_ALPHA_1BIT);
+		} else if (blend->flags[idx] & TEGRA_WIN_FLAG_BLEND_ADD) {
+#if defined(CONFIG_TEGRA_DC_BLENDER_DEPTH)
+			tegra_dc_writel(dc,
+					WIN_K1(0xff) |
+					WIN_K2(0xff) |
+					WIN_BLEND_ENABLE |
+					WIN_DEPTH(dc->blend.z[idx]),
+					DC_WINBUF_BLEND_LAYER_CONTROL);
+#else
+			tegra_dc_writel(dc,
+					WIN_K1(0xff) |
+					WIN_K2(0xff) |
+					WIN_BLEND_ENABLE,
+					DC_WINBUF_BLEND_LAYER_CONTROL);
+#endif
+
+			tegra_dc_writel(dc,
+			/* note: WIN_BLEND_FACT_SRC_COLOR_MATCH_SEL_ONE is not
+			 * supported. Use K1 set to one instead. */
+			WIN_BLEND_FACT_SRC_COLOR_MATCH_SEL_K1 |
+			WIN_BLEND_FACT_DST_COLOR_MATCH_SEL_ONE|
+			WIN_BLEND_FACT_SRC_ALPHA_MATCH_SEL_ZERO |
+			WIN_BLEND_FACT_DST_ALPHA_MATCH_SEL_ZERO,
+			DC_WINBUF_BLEND_MATCH_SELECT);
+
+			tegra_dc_writel(dc,
+			WIN_BLEND_FACT_SRC_COLOR_NOMATCH_SEL_ZERO |
+			WIN_BLEND_FACT_DST_COLOR_NOMATCH_SEL_ZERO |
+			WIN_BLEND_FACT_SRC_ALPHA_NOMATCH_SEL_ZERO |
+			WIN_BLEND_FACT_DST_ALPHA_NOMATCH_SEL_ZERO,
+			DC_WINBUF_BLEND_NOMATCH_SELECT);
+
+			tegra_dc_writel(dc,
+					WIN_ALPHA_1BIT_WEIGHT0(0) |
+					WIN_ALPHA_1BIT_WEIGHT1(0xff),
+					DC_WINBUF_BLEND_ALPHA_1BIT);
 		} else {
 #if defined(CONFIG_TEGRA_DC_BLENDER_DEPTH)
 			tegra_dc_writel(dc,
@@ -263,6 +304,7 @@ static void tegra_dc_blend_sequential(struct tegra_dc *dc,
 	}
 	tegra_dc_io_end(dc);
 }
+#endif	/* TEGRA_NVDISPLAY */
 
 /* does not support syncing windows on multiple dcs in one call */
 int tegra_dc_sync_windows(struct tegra_dc_win *windows[], int n)
@@ -419,16 +461,155 @@ static inline void tegra_dc_update_scaling(struct tegra_dc *dc,
 	}
 }
 
-/* Does not support updating windows on multiple dcs in one call.
- * Requires a matching sync_windows to avoid leaking ref-count on clocks. */
-int tegra_dc_update_windows(struct tegra_dc_win *windows[], int n)
+#if !defined(CONFIG_TEGRA_NVDISPLAY)
+static bool update_is_hsync_safe(struct tegra_dc_win *cur_win,
+				 struct tegra_dc_win *new_win)
 {
-	struct tegra_dc *dc;
+	return ((cur_win->fmt == new_win->fmt) &&
+		(cur_win->flags == new_win->flags) &&
+		(dfixed_trunc(cur_win->x) == dfixed_trunc(new_win->x)) &&
+		(dfixed_trunc(cur_win->y) == dfixed_trunc(new_win->y)) &&
+		(dfixed_trunc(cur_win->w) == dfixed_trunc(new_win->w)) &&
+		(dfixed_trunc(cur_win->h) == dfixed_trunc(new_win->h)) &&
+		(cur_win->out_x == new_win->out_x) &&
+		(cur_win->out_y == new_win->out_y) &&
+		(cur_win->out_w == new_win->out_w) &&
+		(cur_win->out_h == new_win->out_h) &&
+		(cur_win->z == new_win->z) &&
+		(!memcmp(&cur_win->csc, &new_win->csc,
+			sizeof(struct tegra_dc_csc))));
+}
+#endif
+
+void tegra_dc_win_partial_update(struct tegra_dc *dc, struct tegra_dc_win *win,
+	unsigned int xoff, unsigned int yoff, unsigned int width,
+	unsigned int height)
+{
+	if (!win->out_w || !win->out_h ||
+		(win->out_x >= (xoff + width)) ||
+		(win->out_y >= (yoff + height)) ||
+		(xoff >= (win->out_x + win->out_w)) ||
+		(yoff >= (win->out_y + win->out_h))) {
+		tegra_dc_writel(dc, 0, DC_WIN_WIN_OPTIONS);
+		return;
+	} else {
+		u64 tmp_64;
+		fixed20_12 fixed_tmp;
+		unsigned int xoff_2;
+		unsigned int yoff_2;
+		unsigned int width_2;
+		unsigned int height_2;
+
+		xoff_2 = (win->out_x < xoff) ? xoff : win->out_x;
+		yoff_2 = (win->out_y < yoff) ? yoff : win->out_y;
+		width_2 = ((win->out_x + win->out_w) > (xoff + width)) ?
+			(xoff + width - xoff_2) :
+			(win->out_x + win->out_w - xoff_2);
+		height_2 = ((win->out_y + win->out_h) > (yoff + height)) ?
+			(yoff + height - yoff_2) :
+			(win->out_y + win->out_h - yoff_2);
+
+		tmp_64 = (u64)(xoff_2 - win->out_x) * win->w.full;
+		do_div(tmp_64, win->out_w);
+		fixed_tmp.full = (u32)tmp_64;
+		win->x.full += dfixed_floor(fixed_tmp);
+
+		tmp_64 = (u64)(yoff_2 - win->out_y) * win->h.full;
+		do_div(tmp_64, win->out_h);
+		fixed_tmp.full = (u32)tmp_64;
+		win->y.full += dfixed_floor(fixed_tmp);
+
+		tmp_64 = (u64)(width_2) * win->w.full;
+		do_div(tmp_64, win->out_w);
+		fixed_tmp.full = (u32)tmp_64;
+		win->w.full = dfixed_floor(fixed_tmp);
+
+		tmp_64 = (u64)(height_2) * win->h.full;
+		do_div(tmp_64, win->out_h);
+		fixed_tmp.full = (u32)tmp_64;
+		win->h.full = dfixed_floor(fixed_tmp);
+
+		/* Move the partial region to the up-left corner
+		 * so dc can only scan out this region. */
+		win->out_x = xoff_2 - xoff;
+		win->out_y = yoff_2 - yoff;
+		win->out_w = width_2;
+		win->out_h = height_2;
+
+		/* Update shadow registers */
+		memcpy(&dc->shadow_windows[win->idx], win,
+			sizeof(struct tegra_dc_win));
+	}
+}
+
+static void tegra_dc_vrr_flip_time(struct tegra_dc *dc)
+{
+	struct timespec time_now;
+	struct tegra_vrr *vrr  = dc->out->vrr;
+
+	if (!vrr || !vrr->capability)
+		return;
+
+	if (vrr->enable) {
+		vrr->lastenable = 1;
+		getnstimeofday(&time_now);
+		vrr->curr_flip_us = (s64)time_now.tv_sec * 1000000 +
+				time_now.tv_nsec / 1000;
+		vrr->flip = 1;
+	}
+	else {
+		vrr->curr_flip_us = 0;
+		vrr->last_flip_us = 0;
+	}
+}
+
+static void tegra_dc_vrr_cancel_vfp(struct tegra_dc *dc)
+{
+	struct tegra_vrr *vrr  = dc->out->vrr;
+
+	if (!vrr || !vrr->capability)
+		return;
+
+	if (vrr->enable) {
+		if (dc->out->type == TEGRA_DC_OUT_DSI)
+			tegra_dc_set_act_vfp(dc, vrr->vfp_shrink);
+		else
+			tegra_dc_set_act_vfp(dc, dc->mode.v_front_porch);
+	}
+	else {
+		if (dc->out->type == TEGRA_DC_OUT_DSI) {
+			if (vrr->lastenable && vrr->dcb <= vrr->db_tolerance) {
+				tegra_dc_set_act_vfp(dc,
+						dc->mode.v_front_porch);
+				vrr->lastenable = 0;
+				vrr->frame_type = 0;
+				vrr->last_frame_us = 0;
+				vrr->flip_interval_us = 0;
+				vrr->frame_count = 0;
+				vrr->flip_count = 0;
+				vrr->vfp_shrink = vrr->v_front_porch_min;
+				vrr->vfp_extend = vrr->v_front_porch_max;
+			}
+		} else
+			tegra_dc_set_act_vfp(dc, dc->mode.v_front_porch);
+	}
+}
+
+
+#if !defined(CONFIG_TEGRA_NVDISPLAY)
+/* Program registers for each window. struct tegra_dc_win --> Assembly registers
+ */
+static int _tegra_dc_program_windows(struct tegra_dc *dc,
+	struct tegra_dc_win *windows[], int n, u16 *dirty_rect,
+	bool wait_for_vblank)
+{
 	unsigned long update_mask = GENERAL_ACT_REQ;
+	unsigned long act_control = 0;
 	unsigned long win_options;
 	bool update_blend_par = false;
 	bool update_blend_seq = false;
 	int i;
+<<<<<<< HEAD
 
 	dc = windows[0]->dc;
 	trace_update_windows(dc);
@@ -457,20 +638,44 @@ int tegra_dc_update_windows(struct tegra_dc_win *windows[], int n)
 		if (dc->out->flags & TEGRA_DC_OUT_ONE_SHOT_MODE) {
 			tegra_dc_put(dc);
 			mutex_unlock(&dc->one_shot_lock);
+=======
+	bool do_partial_update = false;
+	unsigned int xoff;
+	unsigned int yoff;
+	unsigned int width;
+	unsigned int height;
+	u32 val;
+
+	if (dirty_rect) {
+		xoff = dirty_rect[0];
+		yoff = dirty_rect[1];
+		width = dirty_rect[2];
+		height = dirty_rect[3];
+		do_partial_update = !dc->out_ops->partial_update(dc,
+			&xoff, &yoff, &width, &height);
+
+		if (do_partial_update) {
+			tegra_dc_writel(dc, width | (height << 16),
+				DC_DISP_DISP_ACTIVE);
+
+			dc->disp_active_dirty = true;
+>>>>>>> update/master
 		}
-		return -EFAULT;
 	}
 
-	tegra_dc_io_start(dc);
-	if (dc->out_ops && dc->out_ops->hold)
-		dc->out_ops->hold(dc);
+	/* If any of the window updates requires vsync to program the window
+	   update safely, vsync all windows in this flip.  Safety overrides both
+	   the requested wait_for_vblank, and also the no_vsync global. */
+	for (i = 0; i < n; i++) {
+		struct tegra_dc_win *win = windows[i];
+		if ((!wait_for_vblank &&
+		    !update_is_hsync_safe(&dc->shadow_windows[win->idx],
+					  win)) || do_partial_update)
+			wait_for_vblank = 1;
 
-	if (no_vsync)
-		tegra_dc_writel(dc, WRITE_MUX_ACTIVE | READ_MUX_ACTIVE,
-			DC_CMD_STATE_ACCESS);
-	else
-		tegra_dc_writel(dc, WRITE_MUX_ASSEMBLY | READ_MUX_ASSEMBLY,
-			DC_CMD_STATE_ACCESS);
+		memcpy(&dc->shadow_windows[win->idx], win,
+		       sizeof(struct tegra_dc_win));
+	}
 
 	for (i = 0; i < n; i++) {
 		struct tegra_dc_win *win = windows[i];
@@ -498,9 +703,44 @@ int tegra_dc_update_windows(struct tegra_dc_win *windows[], int n)
 			update_mask |= WIN_A_ACT_REQ << win->idx;
 
 		if (!WIN_IS_ENABLED(win)) {
+		#define RGB_TO_YUV420_8BPC_BLACK_PIX 0x00801010
+		#define RGB_TO_YUV420_10BPC_BLACK_PIX 0x00000000
+		#define RGB_TO_YUV422_10BPC_BLACK_PIX 0x00001080
+		#define RGB_TO_YUV444_8BPC_BLACK_PIX 0x00801080
+
 			dc_win->dirty = no_vsync ? 0 : 1;
 			tegra_dc_writel(dc, 0, DC_WIN_WIN_OPTIONS);
+			if (dc->yuv_bypass) {
+				switch(dc->mode.vmode & FB_VMODE_YUV_MASK) {
+				case FB_VMODE_Y420 | FB_VMODE_Y24:
+				case FB_VMODE_Y420_ONLY | FB_VMODE_Y24:
+					tegra_dc_writel(dc,
+						RGB_TO_YUV420_8BPC_BLACK_PIX,
+						DC_DISP_BLEND_BACKGROUND_COLOR);
+					break;
+				case FB_VMODE_Y420 | FB_VMODE_Y30:
+				case FB_VMODE_Y420_ONLY | FB_VMODE_Y30:
+					tegra_dc_writel(dc,
+						RGB_TO_YUV420_10BPC_BLACK_PIX,
+						DC_DISP_BLEND_BACKGROUND_COLOR);
+					break;
+				case FB_VMODE_Y422 | FB_VMODE_Y36:
+					tegra_dc_writel(dc,
+						RGB_TO_YUV422_10BPC_BLACK_PIX,
+						DC_DISP_BLEND_BACKGROUND_COLOR);
+					break;
+				case FB_VMODE_Y444 | FB_VMODE_Y24:
+					tegra_dc_writel(dc,
+						RGB_TO_YUV444_8BPC_BLACK_PIX,
+						DC_DISP_BLEND_BACKGROUND_COLOR);
+					break;
+				}
+			}
 			continue;
+
+		#undef RGB_TO_YUV444_8BPC_BLACK_PIX
+		#undef RGB_TO_YUV422_10BPC_BLACK_PIX
+		#undef RGB_TO_YUV420_8BPC_BLACK_PIX
 		}
 
 		filter_h = win_use_h_filter(dc, win);
@@ -518,20 +758,53 @@ int tegra_dc_update_windows(struct tegra_dc_win *windows[], int n)
 			else
 				update_blend_par = true;
 		}
-		if ((win->flags & TEGRA_WIN_BLEND_FLAGS_MASK) !=
-			dc->blend.flags[win->idx]) {
-			dc->blend.flags[win->idx] =
-				win->flags & TEGRA_WIN_BLEND_FLAGS_MASK;
-			if (tegra_dc_feature_is_gen2_blender(dc, win->idx))
-				update_blend_seq = true;
-			else
-				update_blend_par = true;
-		}
 
+		tegra_dc_writel(dc, WINDOW_A_SELECT << win->idx,
+				DC_CMD_DISPLAY_WINDOW_HEADER);
+
+		update_mask |= WIN_A_ACT_REQ << win->idx;
+
+		if (wait_for_vblank)
+			act_control &= ~WIN_ACT_CNTR_SEL_HCOUNTER(win->idx);
+		else
+			act_control |= WIN_ACT_CNTR_SEL_HCOUNTER(win->idx);
+
+#if defined(CONFIG_TEGRA_DC_CDE)
+		if (win->cde.cde_addr) {
+			tegra_dc_writel(dc, ENABLESURFACE0,
+				DC_WINBUF_CDE_CONTROL);
+			tegra_dc_writel(dc, tegra_dc_reg_l32(win->cde.cde_addr),
+				DC_WINBUF_CDE_COMPTAG_BASE_0);
+			tegra_dc_writel(dc, tegra_dc_reg_h32(win->cde.cde_addr),
+				DC_WINBUF_CDE_COMPTAG_BASEHI_0);
+
+			tegra_dc_writel(dc, win->cde.zbc_color,
+				DC_WINBUF_CDE_ZBC_COLOR_0);
+
+			tegra_dc_writel(dc, win->cde.offset_x |
+				((u32)win->cde.offset_y << 16),
+				DC_WINBUF_CDE_SURFACE_OFFSET_0);
+			tegra_dc_writel(dc, win->cde.ctb_entry,
+				DC_WINBUF_CDE_CTB_ENTRY_0);
+			if (tegra_get_chipid() == TEGRA_CHIPID_TEGRA21
+				&& ((tegra_revision == TEGRA_REVISION_A01) ||
+					(tegra_revision == TEGRA_REVISION_A01q)))
+				tegra_dc_writel(dc, 0, DC_WINBUF_CDE_CG_SW_OVR);
+		} else {
+			tegra_dc_writel(dc, 0, DC_WINBUF_CDE_CONTROL);
+			tegra_dc_writel(dc, 0x00000001,
+				DC_WINBUF_CDE_CG_SW_OVR);
+		}
+#endif
 		tegra_dc_writel(dc, tegra_dc_fmt(win->fmt),
 			DC_WIN_COLOR_DEPTH);
 		tegra_dc_writel(dc, tegra_dc_fmt_byteorder(win->fmt),
 			DC_WIN_BYTE_SWAP);
+
+
+		if (do_partial_update)
+			tegra_dc_win_partial_update(dc, win, xoff, yoff,
+				width, height);
 
 		tegra_dc_writel(dc,
 			V_POSITION(win->out_y) | H_POSITION(win->out_x),
@@ -609,6 +882,7 @@ int tegra_dc_update_windows(struct tegra_dc_win *windows[], int n)
 			tegra_dc_writel(dc, tegra_dc_reg_h32(win->phys_addr_u),
 				DC_WINBUF_START_ADDR_HI_U);
 #endif
+
 			tegra_dc_writel(dc,
 					LINE_STRIDE(win->stride) |
 					UV_LINE_STRIDE(win->stride_uv),
@@ -792,9 +1066,15 @@ int tegra_dc_update_windows(struct tegra_dc_win *windows[], int n)
 			dc_win->csc_dirty = false;
 		}
 
+<<<<<<< HEAD
+=======
+		if (dc->yuv_bypass)
+			win_options &= ~CP_ENABLE;
+
+>>>>>>> update/master
 		tegra_dc_writel(dc, win_options, DC_WIN_WIN_OPTIONS);
 
-		dc_win->dirty = no_vsync ? 0 : 1;
+		dc_win->dirty = 1;
 
 		trace_window_update(dc, win);
 	}
@@ -806,21 +1086,33 @@ int tegra_dc_update_windows(struct tegra_dc_win *windows[], int n)
 			tegra_dc_blend_sequential(dc, &dc->blend);
 
 		for_each_set_bit(i, &dc->valid_windows, DC_N_WINDOWS) {
-			if (!no_vsync)
-				dc->windows[i].dirty = 1;
+			struct tegra_dc_win *win = tegra_dc_get_window(dc, i);
+			win->dirty = 1;
 			update_mask |= WIN_A_ACT_REQ << i;
 		}
 	}
 
 	tegra_dc_set_dynamic_emc(dc);
 
+#if defined(CONFIG_ARCH_TEGRA_11x_SOC) || defined(CONFIG_ARCH_TEGRA_12x_SOC) \
+	|| defined(CONFIG_ARCH_TEGRA_14x_SOC) \
+	|| defined(CONFIG_ARCH_TEGRA_21x_SOC)
+	/* prevent FIFO from taking in stale data after a reset */
+	tegra_dc_writel(dc, MEMFETCH_RESET, DC_WINBUF_MEMFETCH_CONTROL);
+#endif
+
+	/* WIN_x_UPDATE is the same as WIN_x_ACT_REQ << 8 */
 	tegra_dc_writel(dc, update_mask << 8, DC_CMD_STATE_CONTROL);
 
 	if (tegra_cpu_is_asim())
 		tegra_dc_writel(dc, FRAME_END_INT | V_BLANK_INT,
 						DC_CMD_INT_STATUS);
 
-	if (!no_vsync) {
+	tegra_dc_writel(dc, act_control, DC_CMD_REG_ACT_CONTROL);
+
+	if (wait_for_vblank) {
+		/* Use the interrupt handler.  ISR will clear the dirty flags
+		   when the flip is completed */
 		set_bit(V_BLANK_FLIP, &dc->vblank_ref_count);
 		tegra_dc_unmask_interrupt(dc,
 			FRAME_END_INT | V_BLANK_INT | ALL_UF_INT());
@@ -828,15 +1120,6 @@ int tegra_dc_update_windows(struct tegra_dc_win *windows[], int n)
 		set_bit(V_PULSE2_FLIP, &dc->vpulse2_ref_count);
 		tegra_dc_unmask_interrupt(dc, V_PULSE2_INT);
 #endif
-	} else {
-		clear_bit(V_BLANK_FLIP, &dc->vblank_ref_count);
-		tegra_dc_mask_interrupt(dc, V_BLANK_INT | ALL_UF_INT());
-#if !defined(CONFIG_ARCH_TEGRA_2x_SOC) && !defined(CONFIG_ARCH_TEGRA_3x_SOC)
-		clear_bit(V_PULSE2_FLIP, &dc->vpulse2_ref_count);
-		tegra_dc_mask_interrupt(dc, V_PULSE2_INT);
-#endif
-		if (!atomic_read(&dc->frame_end_ref))
-			tegra_dc_mask_interrupt(dc, FRAME_END_INT);
 	}
 
 	if (dc->out->flags & TEGRA_DC_OUT_ONE_SHOT_MODE) {
@@ -851,13 +1134,102 @@ int tegra_dc_update_windows(struct tegra_dc_win *windows[], int n)
 	if (dc->out->flags & TEGRA_DC_OUT_ONE_SHOT_MODE)
 		update_mask |= NC_HOST_TRIG;
 
+	val = tegra_dc_readl(dc, DC_DISP_DISP_COLOR_CONTROL);
+	if (!!(val & CMU_ENABLE) != (!dc->yuv_bypass && dc->cmu_enabled)) {
+		val ^= CMU_ENABLE;
+		tegra_dc_writel(dc, val, DC_DISP_DISP_COLOR_CONTROL);
+		update_mask |= GENERAL_ACT_REQ;
+	}
+
 	tegra_dc_writel(dc, update_mask, DC_CMD_STATE_CONTROL);
 
+	if (!wait_for_vblank) {
+		/* Don't use a interrupt handler for the update, but leave
+		   vblank interrupts unmasked since they could be used by other
+		   windows.  One window could flip on HBLANK while others flip
+		   on VBLANK.  Poll HW until this window update is completed
+		   which could block for as long as it takes to display one
+		   scanline. */
+
+		unsigned int winmask = update_mask & WIN_ALL_ACT_REQ;
+		while (tegra_dc_windows_are_dirty(dc, winmask))
+			udelay(1);
+
+		for_each_set_bit(i, &dc->valid_windows, n)
+			tegra_dc_get_window(dc, windows[i]->idx)->dirty = 0;
+	}
+	return 0;
+}
+#endif
+
+/* Does not support updating windows on multiple dcs in one call.
+ * Requires a matching sync_windows to avoid leaking ref-count on clocks.
+ */
+int tegra_dc_update_windows(struct tegra_dc_win *windows[], int n,
+	u16 *dirty_rect, bool wait_for_vblank)
+{
+	struct tegra_dc *dc;
+	int i;
+	int e = 0;
+
+	dc = windows[0]->dc;
+	trace_update_windows(dc);
+
+	/* check that window arguments are valid */
+	for (i = 0; i < n; i++) {
+		struct tegra_dc_win *win = windows[i];
+		struct tegra_dc_win *dc_win =
+			win ? tegra_dc_get_window(dc, win->idx) : NULL;
+		if (WARN_ONCE(!dc_win, "ignoring invalid windows in request"))
+			return -EINVAL;
+	}
+
+	if (dc->out->flags & TEGRA_DC_OUT_ONE_SHOT_MODE) {
+		/* Acquire one_shot_lock to avoid race condition between
+		 * cancellation of old delayed work and schedule of new
+		 * delayed work. */
+		mutex_lock(&dc->one_shot_lock);
+		cancel_delayed_work_sync(&dc->one_shot_work);
+		tegra_dc_get(dc);
+	}
+	mutex_lock(&dc->lock);
+
+	if (!dc->enabled) {
+		e = -EFAULT;
+		goto done;
+	}
+
+	tegra_dc_io_start(dc);
+	if (dc->out_ops && dc->out_ops->hold)
+		dc->out_ops->hold(dc);
+
+	if (no_vsync)
+		wait_for_vblank = 0;
+
+	BUG_ON(!wait_for_vblank && dirty_rect);
+
+#if defined(CONFIG_TEGRA_NVDISPLAY)
+	e = tegra_nvdisp_update_windows(dc, windows, n, dirty_rect,
+		wait_for_vblank);
+#else
+	e = _tegra_dc_program_windows(dc, windows, n, dirty_rect,
+		wait_for_vblank);
+#endif
 	/*
 	 * tegra_dc_put() called at frame end, for one shot.
 	 * out_ops->release called in tegra_dc_sync_windows.
 	 */
 	tegra_dc_io_end(dc);
+
+	BUG_ON(e);
+	if (WARN_ONCE(e, "horrible failure")) /* horrible failure */
+		goto done;
+
+	if (dc->out->type == TEGRA_DC_OUT_DSI)
+		tegra_dc_vrr_flip_time(dc);
+
+	tegra_dc_vrr_cancel_vfp(dc);
+done:
 	mutex_unlock(&dc->lock);
 	if (dc->out->flags & TEGRA_DC_OUT_ONE_SHOT_MODE)
 		mutex_unlock(&dc->one_shot_lock);
@@ -883,17 +1255,18 @@ void tegra_dc_trigger_windows(struct tegra_dc *dc)
 
 	val = tegra_dc_readl(dc, DC_CMD_STATE_CONTROL);
 	for_each_set_bit(i, &dc->valid_windows, DC_N_WINDOWS) {
+		struct tegra_dc_win *win = tegra_dc_get_window(dc, i);
 		if (tegra_platform_is_linsim()) {
 			/* FIXME: this is not needed when
 			   the simulator clears WIN_x_UPDATE
 			   bits as in HW */
 			if (interlace_done) {
-				dc->windows[i].dirty = 0;
+				win->dirty = 0;
 				completed = 1;
 			}
 		} else {
 			if (!(val & (WIN_A_ACT_REQ << i)) && interlace_done) {
-				dc->windows[i].dirty = 0;
+				win->dirty = 0;
 				completed = 1;
 			} else {
 				dirty = 1;

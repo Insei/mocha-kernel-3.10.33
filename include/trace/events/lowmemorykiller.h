@@ -66,3 +66,7 @@ TRACE_EVENT(lowmem_shrink,
 #endif /* _TRACE_TEGRA_LOWMEMORYKILLER */
 
 #include <trace/define_trace.h>
+<<<<<<< HEAD
+=======
+
+>>>>>>> update/master

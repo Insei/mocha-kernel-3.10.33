@@ -28,7 +28,11 @@
 #include <linux/wakelock.h>
 
 #define DEFAULT_CABLE_WAITTIME_MS		500
+<<<<<<< HEAD
 #define EXTCON_XLATE_WAKEUP_TIME		(HZ)
+=======
+#define EXTCON_XLATE_WAKEUP_TIME		1000
+>>>>>>> update/master
 
 struct ecx_io_cable_states {
 	int in_state;
@@ -55,6 +59,10 @@ struct ecx_platform_data {
 	const char **out_cable_names;
 	int n_out_cable;
 	int cable_insert_delay;
+<<<<<<< HEAD
+=======
+	int cable_detect_suspend_delay;
+>>>>>>> update/master
 };
 
 struct extcon_cable_xlate;
@@ -81,6 +89,10 @@ struct extcon_cable_xlate {
 	bool extcon_init_done;
 	int last_cable_in_state;
 	int last_cable_out_state;
+<<<<<<< HEAD
+=======
+	int detect_suspend_jiffies;
+>>>>>>> update/master
 };
 
 static int ecx_extcon_notifier(struct notifier_block *self,
@@ -243,7 +255,12 @@ static int ecx_extcon_notifier(struct notifier_block *self,
 
 	/*Hold wakelock to complete cable detection */
 	if (!wake_lock_active(&ecx->wake_lock))
+<<<<<<< HEAD
 		wake_lock_timeout(&ecx->wake_lock, EXTCON_XLATE_WAKEUP_TIME);
+=======
+		wake_lock_timeout(&ecx->wake_lock,
+					ecx->detect_suspend_jiffies);
+>>>>>>> update/master
 
 	spin_lock_irqsave(&ecx->lock, flags);
 	mod_timer(&ecx->timer, jiffies + ecx->debounce_jiffies);
@@ -276,6 +293,15 @@ static struct ecx_platform_data *ecx_get_pdata_from_dt(
 	else
 		pdata->cable_insert_delay = DEFAULT_CABLE_WAITTIME_MS;
 
+<<<<<<< HEAD
+=======
+	ret = of_property_read_u32(np, "cable-detect-suspend-delay", &pval);
+	if (!ret)
+		pdata->cable_detect_suspend_delay = pval;
+	else
+		pdata->cable_detect_suspend_delay = EXTCON_XLATE_WAKEUP_TIME;
+
+>>>>>>> update/master
 
 	pdata->n_out_cable = of_property_count_strings(np,
 					"output-cable-names");
@@ -416,7 +442,13 @@ static int ecx_probe(struct platform_device *pdev)
 	ecx->edev.name = pdata->name;
 	ecx->edev.dev.parent = &pdev->dev;
 	ecx->debounce_jiffies = msecs_to_jiffies(pdata->cable_insert_delay);
+<<<<<<< HEAD
 	ecx->timer_to_work_jiffies = msecs_to_jiffies(100);
+=======
+	ecx->timer_to_work_jiffies = msecs_to_jiffies(500);
+	ecx->detect_suspend_jiffies =
+			msecs_to_jiffies(pdata->cable_detect_suspend_delay);
+>>>>>>> update/master
 	ecx->edev.supported_cable = pdata->out_cable_names;
 	ecx->pdata = pdata;
 

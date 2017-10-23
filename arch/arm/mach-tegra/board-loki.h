@@ -20,11 +20,9 @@
 #ifndef _MACH_TEGRA_BOARD_LOKI_H
 #define _MACH_TEGRA_BOARD_LOKI_H
 
-#include <mach/gpio-tegra.h>
 #include <mach/irqs.h>
 #include "gpio-names.h"
 
-int loki_pinmux_init(void);
 int loki_panel_init(void);
 int loki_kbc_init(void);
 int loki_sdhci_init(void);
@@ -35,6 +33,7 @@ int loki_edp_init(void);
 int loki_rail_alignment_init(void);
 int loki_soctherm_init(void);
 int loki_emc_init(void);
+void loki_camera_auxdata(void *);
 
 /* Invensense MPU Definitions */
 #define MPU_GYRO_NAME			"mpu6050"
@@ -54,20 +53,6 @@ int loki_emc_init(void);
 #define PCA954x_I2C_BUS1        (PCA954x_I2C_BUS_BASE + 1)
 #define PCA954x_I2C_BUS2        (PCA954x_I2C_BUS_BASE + 2)
 #define PCA954x_I2C_BUS3        (PCA954x_I2C_BUS_BASE + 3)
-
-
-#define PALMAS_TEGRA_GPIO_BASE	TEGRA_NR_GPIOS
-#define PALMAS_TEGRA_IRQ_BASE	TEGRA_NR_IRQS
-#define AS3722_GPIO_BASE	TEGRA_NR_GPIOS
-#define AS3722_GPIO_END	(AS3722_GPIO_BASE + AS3722_NUM_GPIO)
-
-/* PMU_TCA6416 GPIOs */
-#define PMU_TCA6416_GPIO_BASE   (AS3722_GPIO_END)
-#define PMU_TCA6416_GPIO(x)     (PMU_TCA6416_GPIO_BASE + x)
-#define PMU_TCA6416_NR_GPIOS    18
-/* External peripheral act as interrupt controller */
-/* AS3720 IRQs */
-#define AS3722_IRQ_BASE         TEGRA_NR_IRQS
 
 #define CAM_RSTN TEGRA_GPIO_PBB3
 #define CAM_FLASH_STROBE TEGRA_GPIO_PBB4
@@ -145,10 +130,6 @@ GPIO, also the GPIO is same for T114 interposer and T124*/
 #define I2C_TP_IRQ	TEGRA_GPIO_PW3
 
 /* TN8 specific */
-
-int tn8_regulator_init(void);
-int loki_fan_init(void);
-
 enum {
 	P2530_LOKI = 0,
 	E2549 = 1,

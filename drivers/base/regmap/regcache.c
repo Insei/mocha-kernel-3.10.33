@@ -250,6 +250,39 @@ int regcache_write(struct regmap *map,
 	return 0;
 }
 
+static int regcache_default_sync(struct regmap *map, unsigned int min,
+				 unsigned int max)
+{
+	unsigned int reg;
+
+	for (reg = min; reg <= max; reg += map->reg_stride) {
+		unsigned int val;
+		int ret;
+
+		if (regmap_volatile(map, reg) ||
+		    !regmap_writeable(map, reg))
+			continue;
+
+		ret = regcache_read(map, reg, &val);
+		if (ret)
+			return ret;
+
+		/* Is this the hardware default?  If so skip. */
+		ret = regcache_lookup_reg(map, reg);
+		if (ret >= 0 && val == map->reg_defaults[ret].def)
+			continue;
+
+		map->cache_bypass = 1;
+		ret = _regmap_write(map, reg, val);
+		map->cache_bypass = 0;
+		if (ret)
+			return ret;
+		dev_dbg(map->dev, "Synced register %#x, value %#x\n", reg, val);
+	}
+
+	return 0;
+}
+
 /**
  * regcache_sync: Sync the register cache with the hardware.
  *
@@ -268,7 +301,7 @@ int regcache_sync(struct regmap *map)
 	const char *name;
 	unsigned int bypass;
 
-	BUG_ON(!map->cache_ops || !map->cache_ops->sync);
+	BUG_ON(!map->cache_ops);
 
 	map->lock(map->lock_arg);
 	/* Remember the initial bypass state */
@@ -297,7 +330,10 @@ int regcache_sync(struct regmap *map)
 	}
 	map->cache_bypass = 0;
 
-	ret = map->cache_ops->sync(map, 0, map->max_register);
+	if (map->cache_ops->sync)
+		ret = map->cache_ops->sync(map, 0, map->max_register);
+	else
+		ret = regcache_default_sync(map, 0, map->max_register);
 
 	if (ret == 0)
 		map->cache_dirty = false;
@@ -331,7 +367,7 @@ int regcache_sync_region(struct regmap *map, unsigned int min,
 	const char *name;
 	unsigned int bypass;
 
-	BUG_ON(!map->cache_ops || !map->cache_ops->sync);
+	BUG_ON(!map->cache_ops);
 
 	map->lock(map->lock_arg);
 
@@ -346,7 +382,10 @@ int regcache_sync_region(struct regmap *map, unsigned int min,
 	if (!map->cache_dirty)
 		goto out;
 
-	ret = map->cache_ops->sync(map, min, max);
+	if (map->cache_ops->sync)
+		ret = map->cache_ops->sync(map, min, max);
+	else
+		ret = regcache_default_sync(map, min, max);
 
 out:
 	trace_regcache_sync(map->dev, name, "stop region");
@@ -635,10 +674,10 @@ static int regcache_sync_block_raw_flush(struct regmap *map, const void **data,
 	if (*data == NULL)
 		return 0;
 
-	count = cur - base;
+	count = (cur - base) / map->reg_stride;
 
 	dev_dbg(map->dev, "Writing %zu bytes for %d registers from 0x%x-0x%x\n",
-		count * val_bytes, count, base, cur - 1);
+		count * val_bytes, count, base, cur - map->reg_stride);
 
 	map->cache_bypass = 1;
 

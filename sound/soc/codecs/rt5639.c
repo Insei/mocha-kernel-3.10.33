@@ -3,6 +3,7 @@
  *
  * Copyright (c) 2011-2015 REALTEK SEMICONDUCTOR CORP. All rights reserved.
  * Author: Johnny Hsu <johnnyhsu@realtek.com>
+ * Copyright (c) 2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -17,6 +18,7 @@
 #include <linux/i2c.h>
 #include <linux/platform_device.h>
 #include <linux/spi/spi.h>
+#include <linux/of.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -45,6 +47,7 @@
 #define RT5639_SPK_SAFETY_VAL (RT5639_MCLK_DET|RT5639_CLK_GATE_EN)
 /* #define USE_EQ */
 #define VERSION "0.8.5 alsa 1.0.24"
+#define FUTURE_USE 0
 
 struct rt5639_init_reg {
 	u8 reg;
@@ -182,6 +185,7 @@ int rt5639_irq_jd_reg_init(struct snd_soc_codec *codec)
 
 	return 0;
 }
+EXPORT_SYMBOL(rt5639_irq_jd_reg_init);
 
 static int rt5639_reg_init(struct snd_soc_codec *codec)
 {
@@ -233,7 +237,7 @@ static const u16 rt5639_reg[RT5639_VENDOR_ID2 + 1] = {
 	[RT5639_SPO_CLSD_RATIO] = 0x0004,
 	[RT5639_MONO_MIXER] = 0xfc00,
 	[RT5639_OUT_L3_MIXER] = 0x01ff,
- 	[RT5639_OUT_R3_MIXER] = 0x01ff,
+	[RT5639_OUT_R3_MIXER] = 0x01ff,
 	[RT5639_LOUT_MIXER] = 0xf000,
 	[RT5639_PWR_ANLG1] = 0x00c0,
 	[RT5639_I2S1_SDP] = 0x8000,
@@ -271,7 +275,7 @@ static const u16 rt5639_reg[RT5639_VENDOR_ID2 + 1] = {
 	[RT5639_VENDOR_ID2] = 0x6231,
 };
 
-static int rt5639_reset(struct snd_soc_codec *codec)
+int rt5639_reset(struct snd_soc_codec *codec)
 {
 	int ret;
 	int ret_mclk;
@@ -287,6 +291,7 @@ static int rt5639_reset(struct snd_soc_codec *codec)
 	}
 	return ret;
 }
+EXPORT_SYMBOL(rt5639_reset);
 
 /**
  * rt5639_index_write - Write private register.
@@ -751,7 +756,7 @@ int rt5639_conn_mux_path(struct snd_soc_codec *codec,
 	if (update) {
 		snd_soc_dapm_sync(dapm);
 
-		kcontrol = &w->kcontrols[0];
+		kcontrol = (struct snd_kcontrol_new *)&w->kcontrols[0];
 		em = (struct soc_enum *)kcontrol->private_value;
 		for (i = 0; i < em->max; i++)
 			if (!(strcmp(path_name, em->texts[i])))
@@ -1640,7 +1645,7 @@ static int rt5639_set_dmic2_event(struct snd_soc_dapm_widget *w,
 static void hp_amp_power(struct snd_soc_codec *codec, int on)
 {
 	static int hp_amp_power_count;
-	dev_info(codec->dev,
+	dev_dbg(codec->dev,
 		"one bit hp_amp_power on=%d hp_amp_power_count=%d\n",
 		on, hp_amp_power_count);
 
@@ -1876,6 +1881,10 @@ static int rt5639_hp_event(struct snd_soc_dapm_widget *w,
 	return 0;
 }
 
+/* Commenting out rt5639_mono_event  as it is not currently
+ * used, but may be required in future.
+ */
+#if FUTURE_USE
 static int rt5639_mono_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
 {
@@ -1898,6 +1907,7 @@ static int rt5639_mono_event(struct snd_soc_dapm_widget *w,
 
 	return 0;
 }
+#endif
 
 static int rt5639_lout_event(struct snd_soc_dapm_widget *w,
 	struct snd_kcontrol *kcontrol, int event)
@@ -2093,7 +2103,7 @@ static const struct snd_soc_dapm_widget rt5639_dapm_widgets[] = {
 	SND_SOC_DAPM_PGA("IF2 ADC R", SND_SOC_NOPM, 0, 0, NULL, 0),
 	SND_SOC_DAPM_SUPPLY("I2S3", RT5639_PWR_DIG1,
 		RT5639_PWR_I2S3_BIT, 0, NULL, 0),
- 	SND_SOC_DAPM_PGA("IF3 DAC", SND_SOC_NOPM, 0, 0, NULL, 0),
+	SND_SOC_DAPM_PGA("IF3 DAC", SND_SOC_NOPM, 0, 0, NULL, 0),
 	SND_SOC_DAPM_PGA("IF3 DAC L", SND_SOC_NOPM, 0, 0, NULL, 0),
 	SND_SOC_DAPM_PGA("IF3 DAC R", SND_SOC_NOPM, 0, 0, NULL, 0),
 	SND_SOC_DAPM_PGA("IF3 ADC", SND_SOC_NOPM, 0, 0, NULL, 0),
@@ -2585,8 +2595,7 @@ static int get_clk_info(int sclk, int rate)
 static int rt5639_hw_params(struct snd_pcm_substream *substream,
 	struct snd_pcm_hw_params *params, struct snd_soc_dai *dai)
 {
-	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct snd_soc_codec *codec = rtd->codec;
+	struct snd_soc_codec *codec = dai->codec;
 	struct rt5639_priv *rt5639 = snd_soc_codec_get_drvdata(codec);
 	unsigned int val_len = 0, val_clk, mask_clk, dai_sel;
 	int pre_div, bclk_ms, frame_size;
@@ -2635,7 +2644,7 @@ static int rt5639_hw_params(struct snd_pcm_substream *substream,
 		return -EINVAL;
 	}
 	if (dai_sel & RT5639_U_IF1) {
- 		mask_clk = RT5639_I2S_BCLK_MS1_MASK | RT5639_I2S_PD1_MASK;
+		mask_clk = RT5639_I2S_BCLK_MS1_MASK | RT5639_I2S_PD1_MASK;
 		val_clk = bclk_ms << RT5639_I2S_BCLK_MS1_SFT |
 			pre_div << RT5639_I2S_PD1_SFT;
 		rt5639_soc_update_bits(codec, RT5639_I2S1_SDP,
@@ -2951,7 +2960,7 @@ static ssize_t rt5639_index_store(struct device *dev,
 	unsigned int val = 0, addr = 0;
 	int i;
 
-	dev_info(codec->dev, "register \"%s\" count=%d\n", buf, count);
+	dev_info(codec->dev, "register \"%s\" count=%zu\n", buf, count);
 	for (i = 0; i < count; i++) { /*address*/
 		if (*(buf+i) <= '9' && *(buf+i) >= '0')
 			addr = (addr << 4) | (*(buf+i)-'0');
@@ -3023,7 +3032,7 @@ static ssize_t rt5639_codec_store(struct device *dev,
 	unsigned int val = 0, addr = 0;
 	int i;
 
-	dev_info(codec->dev, "register \"%s\" count=%d\n", buf, count);
+	dev_info(codec->dev, "register \"%s\" count=%zu\n", buf, count);
 	for (i = 0; i < count; i++) {/*address*/
 		if (*(buf+i) <= '9' && *(buf+i) >= '0')
 			addr = (addr << 4) | (*(buf+i)-'0');
@@ -3066,7 +3075,11 @@ static ssize_t rt5639_codec_adb_show(struct device *dev,
 	struct i2c_client *client = to_i2c_client(dev);
 	struct rt5639_priv *rt5639 = i2c_get_clientdata(client);
 	struct snd_soc_codec *codec = rt5639->codec;
+<<<<<<< HEAD
 	unsigned int val;
+=======
+	unsigned int val = 0;
+>>>>>>> update/master
 	int cnt = 0, i;
 
 	for (i = 0; i < rt5639->adb_reg_num; i++) {
@@ -3213,7 +3226,11 @@ static int rt5639_set_bias_level(struct snd_soc_codec *codec,
 				RT5639_PWR_BG | RT5639_PWR_VREF2,
 				RT5639_PWR_VREF1 | RT5639_PWR_MB |
 				RT5639_PWR_BG | RT5639_PWR_VREF2);
+<<<<<<< HEAD
 			mdelay(100);
+=======
+			mdelay(50);
+>>>>>>> update/master
 			rt5639_soc_update_bits(codec, RT5639_PWR_ANLG1,
 				RT5639_PWR_FV1 | RT5639_PWR_FV2,
 				RT5639_PWR_FV1 | RT5639_PWR_FV2);
@@ -3332,7 +3349,13 @@ static int rt5639_probe(struct snd_soc_codec *codec)
 			RT5639_JD1_IN4P_MASK | RT5639_JD2_IN4N_MASK,
 			RT5639_JD1_IN4P_EN | RT5639_JD2_IN4N_EN);
 	}
+
 	rt5639_reg_init(codec);
+
+	if (rt5639->sel_jd_source >= 0)
+		rt5639_soc_update_bits(codec, RT5639_JD_CTRL,
+			RT5639_JD_MASK, rt5639->sel_jd_source << RT5639_JD_SFT);
+
 	DC_Calibrate(codec);
 	codec->dapm.bias_level = SND_SOC_BIAS_OFF;
 	rt5639->codec = codec;
@@ -3384,6 +3407,8 @@ static int rt5639_probe(struct snd_soc_codec *codec)
 static int rt5639_remove(struct snd_soc_codec *codec)
 {
 	rt5639_set_bias_level(codec, SND_SOC_BIAS_OFF);
+	regmap_exit(codec->control_data);
+	device_remove_file(codec->dev, &dev_attr_index_reg);
 	return 0;
 }
 
@@ -3492,6 +3517,8 @@ static int rt5639_i2c_probe(struct i2c_client *i2c,
 {
 	struct rt5639_priv *rt5639;
 	int ret;
+	struct device_node *np;
+	int jd_source;
 
 	rt5639 = kzalloc(sizeof(struct rt5639_priv), GFP_KERNEL);
 	if (NULL == rt5639)
@@ -3499,6 +3526,12 @@ static int rt5639_i2c_probe(struct i2c_client *i2c,
 
 	i2c_set_clientdata(i2c, rt5639);
 
+	rt5639->sel_jd_source = -1;
+	if (i2c->dev.of_node) {
+		np = i2c->dev.of_node;
+		if (of_property_read_u32(np, "sel_jd_source", &jd_source) == 0)
+			rt5639->sel_jd_source = jd_source;
+	}
 	ret = snd_soc_register_codec(&i2c->dev, &soc_codec_dev_rt5639,
 			rt5639_dai, ARRAY_SIZE(rt5639_dai));
 	if (ret < 0)

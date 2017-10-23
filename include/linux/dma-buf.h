@@ -110,6 +110,17 @@ struct dma_buf_ops {
 			   void (*)(void *));
 };
 
+/*
+ * Indicate which domain a buffer is mapped to. A domain is a
+ * different concept than a device so that we need this in addition to
+ * dma_buf_attachment.
+ */
+struct dma_buf_mapping {
+	struct dma_iommu_mapping *map;
+	struct sg_table *sgt;
+};
+#define MAX_DOMAIN_NR 8 /* FIXME: dynamically allocate */
+
 /**
  * struct dma_buf - shared buffer object
  * @size: size of the buffer
@@ -131,6 +142,7 @@ struct dma_buf {
 	void *vmap_ptr;
 	const char *exp_name;
 	struct list_head list_node;
+	struct dma_buf_mapping mapping[MAX_DOMAIN_NR]; /* For lazy unmapping */
 	void *priv;
 };
 
@@ -204,4 +216,7 @@ void *dma_buf_vmap(struct dma_buf *);
 void dma_buf_vunmap(struct dma_buf *, void *vaddr);
 int dma_buf_debugfs_create_file(const char *name,
 				int (*write)(struct seq_file *));
+
+bool dmabuf_is_ion(struct dma_buf *dmabuf);
+bool dmabuf_is_nvmap(struct dma_buf *dmabuf);
 #endif /* __DMA_BUF_H__ */

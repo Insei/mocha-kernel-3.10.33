@@ -23,8 +23,12 @@
 #include <linux/debugfs.h>
 #include <linux/cpumask.h>
 #include <linux/kernel.h>
+#include <linux/of_platform.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 
 #include <asm/traps.h>
+#include <asm/cputype.h>
 
 #include <mach/hardware.h>
 
@@ -32,6 +36,8 @@
 
 #define BG_CLR_SHIFT	16
 #define BG_STATUS_SHIFT	32
+
+#define NVG_CHANNEL_PMIC	0
 
 /* 4 instructions to skip upon undef exception */
 #define CREGS_NR_JUMP_OFFSET 16
@@ -105,6 +111,16 @@ enum creg_command {
 	CREG_WRITE
 };
 #endif
+
+static const char * const pmic_names[] = {
+	[UNDEFINED] = "none",
+	[AMS_372x] = "AMS 3722/3720",
+	[TI_TPS_65913_22] = "TI TPS65913 2.2",
+	[OPEN_VR] = "Open VR",
+	[TI_TPS_65913_23] = "TI TPS65913 2.3",
+};
+
+static DEFINE_SPINLOCK(nvg_lock);
 
 bool denver_get_bg_allowed(int cpu)
 {
@@ -347,6 +363,121 @@ static int __init create_denver_nvmstats(void)
 	return 0;
 }
 
+static void denver_set_mts_nvgindex(u32 index)
+{
+	asm volatile("msr s3_0_c15_c1_2, %0" : : "r" (index));
+}
+
+static void denver_set_mts_nvgdata(u64 data)
+{
+	asm volatile("msr s3_0_c15_c1_3, %0" : : "r" (data));
+}
+
+static void denver_get_mts_nvgdata(u64 *data)
+{
+	asm volatile("mrs %0, s3_0_c15_c1_3" : "=r" (*data));
+}
+
+int denver_set_pmic_config(enum denver_pmic_type type,
+		u16 ret_vol, bool lock)
+{
+	u64 reg;
+	static bool locked;
+
+	if (type >= NR_PMIC_TYPES)
+		return -EINVAL;
+
+	if (locked) {
+		pr_warn("Denver: PMIC config is locked.\n");
+		return -EINVAL;
+	}
+
+	spin_lock(&nvg_lock);
+
+	denver_set_mts_nvgindex(NVG_CHANNEL_PMIC);
+
+	/* retention voltage is sanitized by MTS */
+	reg = type | (ret_vol << 16) | ((u64)lock << 63);
+
+	denver_set_mts_nvgdata(reg);
+
+	spin_unlock(&nvg_lock);
+
+	locked = lock;
+
+	return 0;
+}
+
+int denver_get_pmic_config(enum denver_pmic_type *type,
+		u16 *ret_vol, bool *lock)
+{
+	u64 reg = 0;
+
+	spin_lock(&nvg_lock);
+
+	denver_set_mts_nvgindex(NVG_CHANNEL_PMIC);
+
+	denver_get_mts_nvgdata(&reg);
+
+	spin_unlock(&nvg_lock);
+
+	*type = reg & 0xffff;
+	*ret_vol = (reg >> 16) & 0xffff;
+	*lock = (reg >> 63);
+
+	return 0;
+}
+
+static int __init denver_pmic_init(void)
+{
+	u32 voltage;
+	u32 type;
+	u32 lock;
+	int err;
+	struct device_node *np;
+
+	np = of_find_node_by_path("/denver_cpuidle_pmic");
+	if (!np) {
+		pr_debug("Denver: using default PMIC setting.\n");
+		return 0;
+	}
+
+	err = of_property_read_u32(np, "type", &type);
+	if (err) {
+		pr_err("%s: failed to read PMIC type\n", __func__);
+		goto done;
+	}
+	if (type > NR_PMIC_TYPES) {
+		pr_err("%s: invalid PMIC type: %d\n", __func__, type);
+		goto done;
+	}
+
+	err = of_property_read_u32(np, "retention-voltage", &voltage);
+	if (err) {
+		pr_err("%s: failed to read voltage\n", __func__);
+		goto done;
+	}
+
+	err = of_property_read_u32(np, "lock", &lock);
+	if (err) {
+		pr_err("%s: failed to read lock\n", __func__);
+		goto done;
+	}
+	if (lock != 0 && lock != 1) {
+		pr_err("%s: invalid lock setting [0|1]: read %d\n", __func__, lock);
+		goto done;
+	}
+
+	err = denver_set_pmic_config(type, (u16)voltage, lock);
+
+	pr_info("Denver: PMIC: type = %s, voltage = %d, locked = %d\n",
+			pmic_names[type], voltage, lock);
+
+done:
+	return err;
+}
+arch_initcall(denver_pmic_init);
+
 static bool backdoor_enabled;
 
 bool denver_backdoor_enabled(void)
@@ -403,6 +534,44 @@ static void check_backdoor(void)
 	backdoor_enabled ? "" : "NOT ");
 }
 
+static u32 mts_version;
+
+static int mts_version_cpu_notify(struct notifier_block *nb,
+					 unsigned long action, void *pcpu)
+{
+	/* Record MTS version if the current CPU is Denver */
+	if (!mts_version && ((read_cpuid_id() >> 24) == 'N'))
+		asm volatile ("mrs %0, AIDR_EL1" : "=r" (mts_version));
+	return NOTIFY_OK;
+}
+
+static struct notifier_block mts_version_cpu_nb = {
+	.notifier_call = mts_version_cpu_notify,
+};
+
+static int __init denver_knobs_init_early(void)
+{
+	return register_cpu_notifier(&mts_version_cpu_nb);
+}
+early_initcall(denver_knobs_init_early);
+
+static int mts_version_show(struct seq_file *m, void *v)
+{
+	return seq_printf(m, "%u\n", mts_version);
+}
+
+static int mts_version_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, mts_version_show, NULL);
+}
+
+static const struct file_operations mts_version_fops = {
+	.open		= mts_version_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
 static int __init denver_knobs_init(void)
 {
 	int error;
@@ -429,6 +598,14 @@ static int __init denver_knobs_init(void)
 		error = create_denver_cregs();
 		if (error)
 			return error;
+	}
+
+	/* Cancel the notifier as mts_version should be set now. */
+	unregister_cpu_notifier(&mts_version_cpu_nb);
+
+	if (mts_version && !proc_create("mts_version", 0, NULL, &mts_version_fops)) {
+		pr_err("Failed to create /proc/mts_version!\n");
+		return -1;
 	}
 
 	return 0;

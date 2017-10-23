@@ -20,6 +20,7 @@
 #include <linux/mv643xx_i2c.h>
 #include <linux/timex.h>
 #include <linux/kexec.h>
+#include <linux/reboot.h>
 #include <net/dsa.h>
 #include <asm/page.h>
 #include <asm/mach/map.h>
@@ -530,7 +531,7 @@ void __init kirkwood_init_early(void)
 
 	mvebu_mbus_init("marvell,kirkwood-mbus",
 			BRIDGE_WINS_BASE, BRIDGE_WINS_SZ,
-			DDR_WINDOW_CPU_BASE, DDR_WINDOW_CPU_SZ);
+			DDR_WINDOW_CPU_BASE, DDR_WINDOW_CPU_SZ, 0);
 }
 
 int kirkwood_tclk;
@@ -723,7 +724,7 @@ void __init kirkwood_init(void)
 #endif
 }
 
-void kirkwood_restart(char mode, const char *cmd)
+void kirkwood_restart(enum reboot_mode mode, const char *cmd)
 {
 	/*
 	 * Enable soft reset to assert RSTOUTn.

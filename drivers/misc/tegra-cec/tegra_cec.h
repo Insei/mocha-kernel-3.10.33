@@ -1,7 +1,11 @@
 /*
  * drivers/misc/tegra-cec/tegra_cec.h
  *
+<<<<<<< HEAD
  * Copyright (c) 2012-2014, NVIDIA CORPORATION.  All rights reserved.
+=======
+ * Copyright (c) 2012-2017, NVIDIA CORPORATION.  All rights reserved.
+>>>>>>> update/master
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -29,12 +33,23 @@ struct tegra_cec {
 	struct miscdevice 	misc_dev;
 	struct clk		*clk;
 	struct mutex		tx_lock;
+<<<<<<< HEAD
+=======
+	struct mutex		recovery_lock;
+>>>>>>> update/master
 	void __iomem		*cec_base;
 	int			tegra_cec_irq;
 	wait_queue_head_t	rx_waitq;
 	wait_queue_head_t	tx_waitq;
 	wait_queue_head_t	init_waitq;
 	atomic_t		init_done;
+<<<<<<< HEAD
+=======
+#ifdef CONFIG_PM
+	wait_queue_head_t	suspend_waitq;
+	atomic_t		init_cancel;
+#endif
+>>>>>>> update/master
 	u16			logical_addr;
 	struct work_struct	work;
 	unsigned int		rx_wake;
@@ -156,4 +171,11 @@ static int tegra_cec_remove(struct platform_device *pdev);
 
 #define TEGRA_CEC_NAME "tegra_cec"
 
+<<<<<<< HEAD
+=======
+#define TEGRA_CEC_IOC_MAGIC 'C'
+
+#define TEGRA_CEC_IOCTL_ERROR_RECOVERY	_IO(TEGRA_CEC_IOC_MAGIC, 1)
+
+>>>>>>> update/master
 #endif /* TEGRA_CEC_H */

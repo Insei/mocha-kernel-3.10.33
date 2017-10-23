@@ -5,7 +5,7 @@
  *  SD support Copyright (C) 2004 Ian Molton, All Rights Reserved.
  *  Copyright (C) 2005-2007 Pierre Ossman, All Rights Reserved.
  *
- *  Copyright (c) 2013, NVIDIA CORPORATION. All rights reserved.
+ *  Copyright (c) 2013-2016, NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -192,7 +192,6 @@ static int mmc_decode_scr(struct mmc_card *card)
 	struct sd_scr *scr = &card->scr;
 	unsigned int scr_struct;
 	u32 resp[4];
-
 	resp[3] = card->raw_scr[1];
 	resp[2] = card->raw_scr[0];
 
@@ -216,6 +215,7 @@ static int mmc_decode_scr(struct mmc_card *card)
 
 	if (scr->sda_spec3)
 		scr->cmds = UNSTUFF_BITS(resp, 32, 2);
+
 	return 0;
 }
 
@@ -268,6 +268,13 @@ static int mmc_read_ssr(struct mmc_card *card)
 			pr_warning("%s: SD Status: Invalid Allocation Unit size.\n",
 				   mmc_hostname(card->host));
 		}
+<<<<<<< HEAD
+=======
+		card->speed_class = UNSTUFF_BITS(ssr, 440 - 384, 8);
+	} else {
+		pr_warning("%s: SD Status: Invalid Allocation Unit "
+			"size.\n", mmc_hostname(card->host));
+>>>>>>> update/master
 	}
 out:
 	kfree(ssr);
@@ -691,6 +698,7 @@ MMC_DEV_ATTR(manfid, "0x%06x\n", card->cid.manfid);
 MMC_DEV_ATTR(name, "%s\n", card->cid.prod_name);
 MMC_DEV_ATTR(oemid, "0x%04x\n", card->cid.oemid);
 MMC_DEV_ATTR(serial, "0x%08x\n", card->cid.serial);
+MMC_DEV_ATTR(speed_class, "%u\n", card->speed_class);
 
 
 static struct attribute *sd_std_attrs[] = {
@@ -706,6 +714,7 @@ static struct attribute *sd_std_attrs[] = {
 	&dev_attr_name.attr,
 	&dev_attr_oemid.attr,
 	&dev_attr_serial.attr,
+	&dev_attr_speed_class.attr,
 	NULL,
 };
 
@@ -725,7 +734,7 @@ struct device_type sd_type = {
 /*
  * Fetch CID from card.
  */
-int mmc_sd_get_cid(struct mmc_host *host, u32 ocr, u32 *cid, u32 *rocr)
+int mmc_sd_get_cid(struct mmc_host *host, u32 ocr, u32 *cid, u32 *rocr, u8 enable_uhs)
 {
 	int err;
 	u32 max_current;
@@ -761,7 +770,7 @@ try_again:
 	 * to switch to 1.8V signaling level. If the card has failed
 	 * repeatedly to switch however, skip this.
 	 */
-	if (retries && mmc_host_uhs(host))
+	if (retries && mmc_host_uhs(host) && enable_uhs)
 		ocr |= SD_OCR_S18R;
 
 	/*
@@ -789,6 +798,12 @@ try_again:
 		} else if (err) {
 			retries = 0;
 			goto try_again;
+		}
+	} else {
+		if (host->ops->validate_sd2_0) {
+			err = host->ops->validate_sd2_0(host);
+			if (err)
+				return err;
 		}
 	}
 
@@ -945,11 +960,15 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 	int err;
 	u32 cid[4];
 	u32 rocr = 0;
-
+	u8 enable_uhs = 1;
+#ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
+	unsigned long flags;
+#endif
 	BUG_ON(!host);
 	WARN_ON(!host->claimed);
 
-	err = mmc_sd_get_cid(host, ocr, cid, &rocr);
+retry:
+	err = mmc_sd_get_cid(host, ocr, cid, &rocr, enable_uhs);
 	if (err)
 		return err;
 
@@ -969,6 +988,10 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 		card->type = MMC_TYPE_SD;
 		memcpy(card->raw_cid, cid, sizeof(card->raw_cid));
 	}
+
+	/* Call the optional init_card for HC quirks */
+	if (host->ops->init_card)
+		host->ops->init_card(host, card);
 
 	/*
 	 * For native busses:  get card RCA and quit open drain mode.
@@ -1003,9 +1026,19 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 	/* Initialization sequence for UHS-I cards */
 	if (rocr & SD_ROCR_S18A) {
 		err = mmc_sd_init_uhs_card(card);
-		if (err)
-			goto free_card;
-
+		if (err) {
+			if(enable_uhs) {
+				dev_info(mmc_dev(host),
+					"Initialization of UHS-1 card failed,"
+					"falling back to HS mode%d\n",
+					err);
+				mmc_power_cycle(host);
+				enable_uhs = 0;
+				ocr &= ~SD_OCR_S18R;
+				goto retry;
+			} else
+				goto free_card;
+		}
 		/* Card is an ultra-high-speed card */
 		mmc_sd_card_set_uhs(card);
 	} else {
@@ -1037,6 +1070,12 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 	}
 
 	host->card = card;
+#ifdef CONFIG_MMC_BLOCK_DEFERRED_RESUME
+	spin_lock_irqsave(&host->lock, flags);
+	host->bus_resume_flags &= ~MMC_BUSRESUME_NEEDS_RESUME;
+	host->rescan_disable = 0;
+	spin_unlock_irqrestore(&host->lock, flags);
+#endif
 
 #ifdef CONFIG_MMC_FREQ_SCALING
 	/*
@@ -1055,7 +1094,6 @@ static int mmc_sd_init_card(struct mmc_host *host, u32 ocr,
 					"DFS is enabled successfully\n");
 		}
 #endif
-
 	return 0;
 
 free_card:

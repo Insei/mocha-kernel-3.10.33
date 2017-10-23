@@ -40,12 +40,18 @@
 
 #include "mm.h"
 
+/* HACK: These should come from pgtable.h. Remove these when upgrading the kernel */
+#define pmd_pfn(pmd)  (((pmd_val(pmd) & PMD_MASK) & PHYS_MASK) >> PAGE_SHIFT)
+#define pmd_sect(pmd) ((pmd_val(pmd) & PMD_TYPE_MASK) == PMD_TYPE_SECT)
+
 /*
  * Empty_zero_page is a special page that is used for zero-initialized data
  * and COW.
  */
-struct page *empty_zero_page;
+unsigned long empty_zero_page;
 EXPORT_SYMBOL(empty_zero_page);
+unsigned long zero_page_mask;
+static int zero_page_order = 3;
 
 pgprot_t pgprot_default;
 EXPORT_SYMBOL(pgprot_default);
@@ -129,7 +135,7 @@ early_param("cachepolicy", early_cachepolicy);
 /*
  * Adjust the PMD section entries according to the CPU in use.
  */
-static void __init init_mem_pgprot(void)
+void __init init_mem_pgprot(void)
 {
 	pteval_t default_pgprot;
 	int i;
@@ -172,7 +178,7 @@ void __init *early_alloc(unsigned long sz)
 }
 
 static void __init alloc_init_pte(pmd_t *pmd, unsigned long addr,
-				  unsigned long end, unsigned long pfn, int iomap)
+		unsigned long end, unsigned long pfn, unsigned int type)
 {
 	pte_t *pte;
 
@@ -184,16 +190,26 @@ static void __init alloc_init_pte(pmd_t *pmd, unsigned long addr,
 
 	pte = pte_offset_kernel(pmd, addr);
 	do {
-		if (iomap)
+		switch (type) {
+		case MT_NORMAL_NC:
+			set_pte(pte, pfn_pte(pfn, PROT_NORMAL_NC));
+			break;
+		case MT_DEVICE_nGnRE:
 			set_pte(pte, pfn_pte(pfn, PROT_DEVICE_nGnRE));
-		else
+			break;
+		case MT_MEMORY_KERNEL_EXEC:
 			set_pte(pte, pfn_pte(pfn, PAGE_KERNEL_EXEC));
+			break;
+		default:
+			BUG();
+		}
+
 		pfn++;
 	} while (pte++, addr += PAGE_SIZE, addr != end);
 }
 
 static void __init alloc_init_pmd(pud_t *pud, unsigned long addr,
-				  unsigned long end, phys_addr_t phys, int iomap)
+		unsigned long end, phys_addr_t phys, unsigned int type)
 {
 	pmd_t *pmd;
 	unsigned long next;
@@ -211,26 +227,42 @@ static void __init alloc_init_pmd(pud_t *pud, unsigned long addr,
 		next = pmd_addr_end(addr, end);
 		/* try section mapping first */
 		if (((addr | next | phys) & ~SECTION_MASK) == 0) {
-			if (iomap)
+			pmd_t old_pmd = *pmd;
+			switch (type) {
+			case MT_NORMAL_NC:
+				set_pmd(pmd, __pmd(phys | PROT_SECT_NORMAL_NC));
+				break;
+			case MT_DEVICE_nGnRE:
 				set_pmd(pmd, __pmd(phys | PROT_SECT_DEVICE_nGnRE));
-			else
+				break;
+			case MT_MEMORY_KERNEL_EXEC:
 				set_pmd(pmd, __pmd(phys | prot_sect_kernel));
+				break;
+			default:
+				BUG();
+			}
+			/*
+			 * Check for previous table entries created during
+			 * boot (__create_page_tables) and flush them
+			 */
+			if (!pmd_none(old_pmd))
+				flush_tlb_all();
+		} else {
+			alloc_init_pte(pmd, addr, next, __phys_to_pfn(phys), type);
 		}
-		else
-			alloc_init_pte(pmd, addr, next, __phys_to_pfn(phys), iomap);
 		phys += next - addr;
 	} while (pmd++, addr = next, addr != end);
 }
 
 static void __init alloc_init_pud(pgd_t *pgd, unsigned long addr,
-				  unsigned long end, unsigned long phys, int iomap)
+		unsigned long end, unsigned long phys, unsigned int type)
 {
 	pud_t *pud = pud_offset(pgd, addr);
 	unsigned long next;
 
 	do {
 		next = pud_addr_end(addr, end);
-		alloc_init_pmd(pud, addr, next, phys, iomap);
+		alloc_init_pmd(pud, addr, next, phys, type);
 		phys += next - addr;
 	} while (pud++, addr = next, addr != end);
 }
@@ -239,32 +271,33 @@ static void __init alloc_init_pud(pgd_t *pgd, unsigned long addr,
  * Create the page directory entries and any necessary page tables for the
  * mapping specified by 'md'.
  */
-static void __init create_mapping(phys_addr_t phys, unsigned long virt,
-				  phys_addr_t size, int iomap)
+static void __init create_mapping(struct map_desc *io_desc)
 {
 	unsigned long addr, length, end, next;
+	unsigned long virt = io_desc->virtual;
+	unsigned long phys = __pfn_to_phys(io_desc->pfn);
 	pgd_t *pgd;
 
 	if (virt < VMALLOC_START) {
-		pr_warning("BUG: not creating mapping for 0x%016llx at 0x%016lx - outside kernel range\n",
+		pr_warning("BUG: not creating mapping for 0x%016lx at 0x%016lx - outside kernel range\n",
 			   phys, virt);
 		return;
 	}
 
 	addr = virt & PAGE_MASK;
-	length = PAGE_ALIGN(size + (virt & ~PAGE_MASK));
+	length = PAGE_ALIGN(io_desc->length + (virt & ~PAGE_MASK));
 
 	pgd = pgd_offset_k(addr);
 	end = addr + length;
 	do {
 		next = pgd_addr_end(addr, end);
-		alloc_init_pud(pgd, addr, next, phys, iomap);
+		alloc_init_pud(pgd, addr, next, phys, io_desc->type);
 		phys += next - addr;
 	} while (pgd++, addr = next, addr != end);
 }
 
 /* To support old-style static device memory mapping. */
-void iotable_init(struct map_desc *io_desc, int nr)
+__init void iotable_init(struct map_desc *io_desc, int nr)
 {
 	struct map_desc *md;
 	struct vm_struct *vm;
@@ -272,7 +305,7 @@ void iotable_init(struct map_desc *io_desc, int nr)
 	vm = early_alloc(sizeof(*vm) * nr);
 
 	for (md = io_desc; nr; md++, nr--) {
-		create_mapping(__pfn_to_phys(md->pfn), md->virtual, md->length, true);
+		create_mapping(md);
 		vm->addr = (void *)(md->virtual & PAGE_MASK);
 		vm->size = PAGE_ALIGN(md->length + (md->virtual & ~PAGE_MASK));
 		vm->phys_addr = __pfn_to_phys(md->pfn);
@@ -299,6 +332,26 @@ __init void iotable_init_va(struct map_desc *io_desc, int nr)
 	}
 }
 
+<<<<<<< HEAD
+__init void iotable_init_va(struct map_desc *io_desc, int nr)
+{
+	struct map_desc *md;
+	struct vm_struct *vm;
+
+	vm = early_alloc(sizeof(*vm) * nr);
+
+	for (md = io_desc; nr; md++, nr--) {
+		vm->addr = (void *)(md->virtual & PAGE_MASK);
+		vm->size = PAGE_ALIGN(md->length + (md->virtual & ~PAGE_MASK));
+		vm->phys_addr = __pfn_to_phys(md->pfn);
+		vm->flags = VM_IOREMAP;
+		vm->caller = iotable_init;
+		vm_area_add_early(vm++);
+	}
+}
+
+=======
+>>>>>>> update/master
 __init void iotable_init_mapping(struct map_desc *io_desc, int nr)
 {
 	struct map_desc *md;
@@ -313,7 +366,7 @@ __init void iotable_init_mapping(struct map_desc *io_desc, int nr)
  * in head.S as this function is called too early to allocated any memory. The
  * mapping size is 2MB with 4KB pages or 64KB or 64KB pages.
  */
-void __iomem * __init early_io_map(phys_addr_t phys, unsigned long virt)
+void __iomem *early_io_map(phys_addr_t phys, unsigned long virt)
 {
 	unsigned long size, mask;
 	bool page64k = IS_ENABLED(CONFIG_ARM64_64K_PAGES);
@@ -351,16 +404,54 @@ void __iomem * __init early_io_map(phys_addr_t phys, unsigned long virt)
 static void __init map_mem(void)
 {
 	struct memblock_region *reg;
+	struct map_desc md;
+	phys_addr_t limit;
+
+	/*
+	 * Temporarily limit the memblock range. We need to do this as
+	 * create_mapping requires puds, pmds and ptes to be allocated from
+	 * memory addressable from the initial direct kernel mapping.
+	 *
+	 * The initial direct kernel mapping, located at swapper_pg_dir,
+	 * gives us PGDIR_SIZE memory starting from PHYS_OFFSET (which must be
+	 * aligned to 2MB as per Documentation/arm64/booting.txt).
+	 */
+	if (PGDIR_SIZE > SZ_512M)
+		limit = PHYS_OFFSET + SZ_512M;
+	else
+		limit = PHYS_OFFSET + PGDIR_SIZE;
+	memblock_set_current_limit(limit);
 
 	/* map all the memory banks */
 	for_each_memblock(memory, reg) {
 		phys_addr_t start = reg->base;
 		phys_addr_t end = start + reg->size;
 
+		md.virtual = __phys_to_virt(start);
+		md.pfn = __phys_to_pfn(start);
+		md.length = end - start;
+		md.type = MT_MEMORY_KERNEL_EXEC;
+
 		if (start >= end)
 			break;
 
-		create_mapping(start, __phys_to_virt(start), end - start, 0);
+#ifndef CONFIG_ARM64_64K_PAGES
+		/*
+		 * For the first memory bank align the start address and
+		 * current memblock limit to prevent create_mapping() from
+		 * allocating pte page tables from unmapped memory.
+		 * When 64K pages are enabled, the pte page table for the
+		 * first PGDIR_SIZE is already present in swapper_pg_dir.
+		 */
+		if (start < limit)
+			start = ALIGN(start, PMD_SIZE);
+		if (end < limit) {
+			limit = end & PMD_MASK;
+			memblock_set_current_limit(limit);
+		}
+#endif
+
+		create_mapping(&md);
 	}
 }
 
@@ -370,22 +461,21 @@ static void __init map_mem(void)
  */
 void __init paging_init(void)
 {
-	void *zero_page;
-
 	/*
 	 * Maximum PGDIR_SIZE addressable via the initial direct kernel
 	 * mapping in swapper_pg_dir.
 	 */
 	memblock_set_current_limit((PHYS_OFFSET & PGDIR_MASK) + PGDIR_SIZE);
 
-	init_mem_pgprot();
 	map_mem();
 
+#ifdef CONFIG_ARM64_MACH_FRAMEWORK
 	/*
 	 * Ask the machine support to map in the statically mapped devices.
 	 */
 	if (machine_desc->map_io)
 		machine_desc->map_io();
+#endif
 
 	/*
 	 * Finally flush the caches and tlb to ensure that we're in a
@@ -395,11 +485,15 @@ void __init paging_init(void)
 	flush_tlb_all();
 
 	/* allocate the zero page. */
-	zero_page = early_alloc(PAGE_SIZE);
+	empty_zero_page = (ulong)early_alloc(PAGE_SIZE << zero_page_order);
+	zero_page_mask = ((PAGE_SIZE << zero_page_order) - 1) & PAGE_MASK;
 
 	bootmem_init();
 
-	empty_zero_page = virt_to_page(zero_page);
+
+	dma_contiguous_remap();
+	/* Ensure the zero page is visible to the page table walker */
+	dsb();
 
 	/*
 	 * TTBR0 is only used for the identity mapping at this stage. Make it
@@ -442,6 +536,9 @@ int kern_addr_valid(unsigned long addr)
 	pmd = pmd_offset(pud, addr);
 	if (pmd_none(*pmd))
 		return 0;
+
+	if (pmd_sect(*pmd))
+		return pfn_valid(pmd_pfn(*pmd));
 
 	pte = pte_offset_kernel(pmd, addr);
 	if (pte_none(*pte))

@@ -15,6 +15,19 @@ snd-soc-tegra30-spdif-objs := tegra30_spdif.o
 snd-soc-tegra30-dam-objs := tegra30_dam.o
 snd-soc-tegra30-avp-objs := tegra30_avp.o
 snd-soc-tegra-dmic-objs := tegra_dmic.o
+snd-soc-tegra210-adma-objs := tegra210_adma.o
+snd-soc-tegra210-axbar-objs := tegra210_axbar.o
+snd-soc-tegra210-axbar-objs += tegra210_ahub_utils.o
+snd-soc-tegra210-admaif-objs := tegra210_admaif.o
+snd-soc-tegra210-ope-objs := tegra210_ope.o
+snd-soc-tegra210-peq-objs := tegra210_peq.o
+snd-soc-tegra210-mbdrc-objs := tegra210_mbdrc.o
+snd-soc-tegra210-sfc-objs := tegra210_sfc.o
+snd-soc-tegra210-spkprot-objs := tegra210_spkprot.o
+snd-soc-tegra210-amixer-objs := tegra210_amixer.o
+snd-soc-tegra210-i2s-objs := tegra210_i2s.o
+snd-soc-tegra210-dmic-objs := tegra210_dmic.o
+snd-soc-tegra210-mvc-objs := tegra210_mvc.o
 
 obj-$(CONFIG_SND_SOC_TEGRA) += snd-soc-tegra-pcm.o
 obj-$(CONFIG_SND_SOC_TEGRA) += snd-soc-tegra-utils.o
@@ -28,6 +41,19 @@ obj-$(CONFIG_SND_SOC_TEGRA30_I2S) += snd-soc-tegra30-i2s.o
 obj-$(CONFIG_SND_SOC_TEGRA30_SPDIF) += snd-soc-tegra30-spdif.o
 obj-$(CONFIG_SND_SOC_TEGRA30_AVP) += snd-soc-tegra30-avp.o
 obj-$(CONFIG_SND_SOC_TEGRA_DMIC) += snd-soc-tegra-dmic.o
+
+obj-$(CONFIG_SND_SOC_TEGRA210_ADMA) +=  snd-soc-tegra210-adma.o
+obj-$(CONFIG_SND_SOC_TEGRA210_AXBAR) += snd-soc-tegra210-axbar.o
+obj-$(CONFIG_SND_SOC_TEGRA210_ADMAIF) += snd-soc-tegra210-admaif.o
+obj-$(CONFIG_SND_SOC_TEGRA210_OPE) += snd-soc-tegra210-ope.o
+obj-$(CONFIG_SND_SOC_TEGRA210_PEQ) += snd-soc-tegra210-peq.o
+obj-$(CONFIG_SND_SOC_TEGRA210_MBDRC) += snd-soc-tegra210-mbdrc.o
+obj-$(CONFIG_SND_SOC_TEGRA210_SFC) += snd-soc-tegra210-sfc.o
+obj-$(CONFIG_SND_SOC_TEGRA210_SPKPROT) += snd-soc-tegra210-spkprot.o
+obj-$(CONFIG_SND_SOC_TEGRA210_AMIXER) += snd-soc-tegra210-amixer.o
+obj-$(CONFIG_SND_SOC_TEGRA210_I2S) +=  snd-soc-tegra210-i2s.o
+obj-$(CONFIG_SND_SOC_TEGRA210_DMIC) += snd-soc-tegra210-dmic.o
+obj-$(CONFIG_SND_SOC_TEGRA210_MVC) +=  snd-soc-tegra210-mvc.o
 
 # Tegra machine Support
 snd-soc-tegra-wm8753-objs := tegra_wm8753.o
@@ -46,6 +72,8 @@ snd-soc-tegra-vcm-objs := tegra_vcm.o
 snd-soc-tegra-cs42l73-objs := tegra_cs42l73.o
 snd-soc-tegra-max98090-objs := tegra_max98090.o
 snd-soc-tegra-dmic-rev1-objs := tegra_dmic_rev1.o
+snd-soc-tegra-es755-objs := tegra_es755.o
+snd-soc-tegra-dummy-objs := tegra_dummy_machine.o
 
 obj-$(CONFIG_SND_SOC_TEGRA_WM8753) += snd-soc-tegra-wm8753.o
 obj-$(CONFIG_SND_SOC_TEGRA_WM8903) += snd-soc-tegra-wm8903.o
@@ -65,3 +93,5 @@ obj-$(CONFIG_SND_SOC_TEGRA_P852) += snd-soc-tegra-vcm.o
 obj-$(CONFIG_SND_SOC_TEGRA_CS42L73) += snd-soc-tegra-cs42l73.o
 obj-$(CONFIG_SND_SOC_TEGRA_MAX98090) += snd-soc-tegra-max98090.o
 obj-$(CONFIG_SND_SOC_TEGRA_DMIC_REV1) += snd-soc-tegra-dmic-rev1.o
+obj-$(CONFIG_SND_SOC_TEGRA_ES755) += snd-soc-tegra-es755.o
+obj-$(CONFIG_SND_SOC_TEGRA_DUMMY) += snd-soc-tegra-dummy.o

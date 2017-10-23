@@ -42,6 +42,7 @@ struct power_supply_extcon {
 	struct power_supply			usb;
 	uint8_t					ac_online;
 	uint8_t					usb_online;
+	bool					default_ac_connected;
 	struct power_supply_extcon_plat_data	*pdata;
 	spinlock_t				lock;
 	struct power_supply_cables		*psy_cables;
@@ -157,8 +158,10 @@ struct power_supply_extcon *the_psy_extcon;
 
 static enum power_supply_property power_supply_extcon_props[] = {
 	POWER_SUPPLY_PROP_ONLINE,
+	POWER_SUPPLY_PROP_CHARGER_TYPE,
 };
 
+<<<<<<< HEAD
 /* Disable charging used by the charging driver */
 void power_supply_exton_set_online(bool online)
 {
@@ -175,6 +178,34 @@ void power_supply_exton_set_online(bool online)
 
 	power_supply_changed(&the_psy_extcon->usb);
 	power_supply_changed(&the_psy_extcon->ac);
+=======
+static bool psy_get_cable_state(struct power_supply_extcon *psy_extcon,
+		const char *cable_name)
+{
+	int i;
+	bool found = false;
+	int ret;
+
+	for (i = 0; i < psy_extcon->max_psy_cables; ++i) {
+		if (!strncmp(psy_extcon->psy_cables[i].name,
+				cable_name, CABLE_NAME_MAX)) {
+			found = true;
+			break;
+		}
+	}
+
+	if (!found)
+		return 0;
+
+	if (!psy_extcon->psy_cables[i].ec_cable)
+		return 0;
+
+	ret = extcon_get_cable_state_(psy_extcon->psy_cables[i].ec_cable->edev,
+			psy_extcon->psy_cables[i].ec_cable->cable_index);
+	if (ret >= 1)
+		return true;
+	return false;
+>>>>>>> update/master
 }
 
 static int power_supply_extcon_get_property(struct power_supply *psy,
@@ -182,11 +213,16 @@ static int power_supply_extcon_get_property(struct power_supply *psy,
 {
 	int online;
 	int ret = 0;
+	int i = 0;
+	bool state = false;
 	struct power_supply_extcon *psy_extcon;
+	struct power_supply_cables *psy_cable;
 
 	if (psy->type == POWER_SUPPLY_TYPE_MAINS) {
 		psy_extcon = container_of(psy, struct power_supply_extcon, ac);
 		online = psy_extcon->ac_online;
+		if(!online && psy_extcon->default_ac_connected)
+			online = true;
 	} else if (psy->type == POWER_SUPPLY_TYPE_USB) {
 		psy_extcon = container_of(psy, struct power_supply_extcon, usb);
 		online = psy_extcon->usb_online;
@@ -198,12 +234,27 @@ static int power_supply_extcon_get_property(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_ONLINE:
 		val->intval = online;
 		break;
+	case POWER_SUPPLY_PROP_CHARGER_TYPE:
+		val->strval = "no cable";
+		for (i = 0; i < psy_extcon->max_psy_cables; ++i) {
+			psy_cable = &psy_extcon->psy_cables[i];
+			if (IS_ERR(psy_cable->ec_cable) || !psy_cable->ec_cable)
+				continue;
+
+			state = psy_get_cable_state(psy_extcon, psy_cable->name);
+			if (state) {
+				val->strval = psy_cable->name;
+				break;
+			}
+		}
+		break;
 	default:
 		return -EINVAL;
 	}
 	return ret;
 }
 
+<<<<<<< HEAD
 static bool psy_get_cable_state(struct power_supply_extcon *psy_extcon,
 		const char *cable_name)
 {
@@ -255,6 +306,30 @@ static int power_supply_extcon_attach_cable(
 			psy_extcon->usb_online = psy_cable->usb_online;
 			break;
 		}
+=======
+static int power_supply_extcon_attach_cable(
+		struct power_supply_extcon *psy_extcon)
+{
+	struct power_supply_cables *psy_cable;
+	bool state = false;
+	int i;
+
+	psy_extcon->usb_online = 0;
+	psy_extcon->ac_online = 0;
+
+	for (i = 0; i < psy_extcon->max_psy_cables; ++i) {
+		psy_cable = &psy_extcon->psy_cables[i];
+		if (!psy_cable->ec_cable)
+			continue;
+
+		state = psy_get_cable_state(psy_extcon, psy_cable->name);
+		if (state) {
+			dev_info(psy_extcon->dev, "%s cable detected\n",
+					psy_cable->print_str);
+			psy_extcon->ac_online = psy_cable->ac_online;
+			psy_extcon->usb_online = psy_cable->usb_online;
+			break;
+		}
 	}
 
 	if (!state)
@@ -282,13 +357,70 @@ static int psy_extcon_extcon_notifier(struct notifier_block *self,
 				cable->print_str);
 		psy_extcon->ac_online = cable->ac_online;
 		psy_extcon->usb_online = cable->usb_online;
+>>>>>>> update/master
 	}
+
+	if (!state)
+		dev_info(psy_extcon->dev, "No cable detected\n");
 
 	power_supply_changed(&psy_extcon->usb);
 	power_supply_changed(&psy_extcon->ac);
 	spin_unlock(&psy_extcon->lock);
 
 	return NOTIFY_DONE;
+}
+
+<<<<<<< HEAD
+static int psy_extcon_extcon_notifier(struct notifier_block *self,
+		unsigned long event, void *ptr)
+{
+	struct power_supply_cables *cable = container_of(self,
+		struct power_supply_cables, nb);
+	struct power_supply_extcon *psy_extcon = cable->psy_extcon;
+
+	spin_lock(&psy_extcon->lock);
+	if (event == 0) {
+		dev_info(psy_extcon->dev, "Charging cable removed\n");
+		psy_extcon->ac_online = 0;
+		psy_extcon->usb_online = 0;
+	} else if (event == 1) {
+		dev_info(psy_extcon->dev, "%s cable detected\n",
+				cable->print_str);
+		psy_extcon->ac_online = cable->ac_online;
+		psy_extcon->usb_online = cable->usb_online;
+	}
+
+	power_supply_changed(&psy_extcon->usb);
+	power_supply_changed(&psy_extcon->ac);
+	spin_unlock(&psy_extcon->lock);
+=======
+static struct power_supply_extcon_plat_data *psy_extcon_get_dt_pdata(
+		struct platform_device *pdev)
+{
+	struct device_node *np = pdev->dev.of_node;
+	struct power_supply_extcon_plat_data *pdata;
+	char const *pstr;
+	int ret;
+
+	pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
+	if (!pdata)
+		return ERR_PTR(-ENOMEM);
+
+	ret = of_property_read_string(np, "power-supply,extcon-dev", &pstr);
+	if (!ret)
+		pdata->extcon_name = pstr;
+
+	ret = of_property_read_string(np, "power-supply,y-cable-extcon-dev",
+					&pstr);
+	if (!ret)
+		pdata->y_cable_extcon_name = pstr;
+>>>>>>> update/master
+
+	pdata->default_ac_connected = false;
+	pdata->default_ac_connected = of_property_read_bool(np,
+				"power-supply,default-ac-cable-connected");
+
+	return pdata;
 }
 
 static struct power_supply_extcon_plat_data *psy_extcon_get_dt_pdata(
@@ -361,10 +493,16 @@ static int psy_extcon_probe(struct platform_device *pdev)
 		dev_err(psy_extcon->dev, "failed: power supply register\n");
 		goto pwr_sply_error;
 	}
+<<<<<<< HEAD
 
 	psy_extcon->psy_cables = psy_cables;
 	psy_extcon->max_psy_cables = ARRAY_SIZE(psy_cables);
 	for (j = 0; j < psy_extcon->max_psy_cables; j++) {
+=======
+	psy_extcon->default_ac_connected = pdata->default_ac_connected;
+
+	for (j = 0; j < ARRAY_SIZE(psy_cables); j++) {
+>>>>>>> update/master
 		struct power_supply_cables *psy_cable = &psy_cables[j];
 		const char *ext_name;
 
@@ -409,6 +547,13 @@ register_cable:
 		}
 	}
 
+<<<<<<< HEAD
+=======
+	psy_extcon->psy_cables = psy_cables;
+	barrier();
+	psy_extcon->max_psy_cables = ARRAY_SIZE(psy_cables);
+
+>>>>>>> update/master
 	spin_lock(&psy_extcon->lock);
 	power_supply_extcon_attach_cable(psy_extcon);
 	spin_unlock(&psy_extcon->lock);

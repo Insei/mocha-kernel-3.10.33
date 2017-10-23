@@ -1,8 +1,12 @@
 /*
  * SDIO access interface for drivers - linux specific (pci only)
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+>>>>>>> update/master
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -22,7 +26,11 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
+<<<<<<< HEAD
  * $Id: bcmsdh_linux.c 455573 2014-02-14 17:49:31Z $
+=======
+ * $Id: bcmsdh_linux.c 461444 2014-03-12 02:55:28Z $
+>>>>>>> update/master
  */
 
 /**
@@ -33,7 +41,6 @@
 
 #include <typedefs.h>
 #include <linuxver.h>
-
 #include <linux/pci.h>
 #include <linux/completion.h>
 
@@ -46,7 +53,28 @@ extern void dhdsdio_isr(void * args);
 #include <bcmutils.h>
 #include <dngl_stats.h>
 #include <dhd.h>
+<<<<<<< HEAD
 #include <dhd_linux.h>
+=======
+#if defined(CONFIG_ARCH_ODIN)
+#include <linux/platform_data/gpio-odin.h>
+#endif /* defined(CONFIG_ARCH_ODIN) */
+#include <dhd_linux.h>
+
+#ifdef	CONFIG_BCMDHD_CUSTOM_SYSFS_TEGRA
+#include "dhd_custom_sysfs_tegra.h"
+#endif
+
+#ifdef	CONFIG_BCMDHD_CUSTOM_NET_BW_EST_TEGRA
+#include "dhd_custom_net_bw_est_tegra.h"
+#endif
+
+#ifdef	CONFIG_BCMDHD_CUSTOM_NET_DIAG_TEGRA
+#include "dhd_custom_net_diag_tegra.h"
+#endif
+
+extern int bcmdhd_irq_number;
+>>>>>>> update/master
 
 /* driver info, initialized when bcmsdh_register is called */
 static bcmsdh_driver_t drvinfo = {NULL, NULL, NULL, NULL};
@@ -132,7 +160,11 @@ bcmsdh_chipmatch(uint16 vendor, uint16 device)
 	return (FALSE);
 }
 
+<<<<<<< HEAD
 void *bcmsdh_probe(osl_t *osh, void *dev, void *sdioh, void *adapter_info, uint bus_type,
+=======
+void* bcmsdh_probe(osl_t *osh, void *dev, void *sdioh, void *adapter_info, uint bus_type,
+>>>>>>> update/master
 	uint bus_num, uint slot_num)
 {
 	ulong regs;
@@ -182,6 +214,36 @@ void *bcmsdh_probe(osl_t *osh, void *dev, void *sdioh, void *adapter_info, uint 
 		goto err;
 	}
 
+<<<<<<< HEAD
+=======
+#ifdef	CONFIG_BCMDHD_CUSTOM_SYSFS_TEGRA
+	if (tegra_sysfs_register(dev) < 0) {
+		pr_err("%s: tegra_sysfs_register() failed\n", __func__);
+		goto err;
+	}
+#endif
+#ifdef	CONFIG_BCMDHD_CUSTOM_NET_BW_EST_TEGRA
+	if (tegra_net_bw_est_register(dev) < 0) {
+		pr_err("%s: tegra_net_bw_est_register() failed\n", __func__);
+#ifdef	CONFIG_BCMDHD_CUSTOM_SYSFS_TEGRA
+		tegra_sysfs_unregister(dev);
+#endif
+		goto err;
+	}
+#endif
+#ifdef	CONFIG_BCMDHD_CUSTOM_NET_DIAG_TEGRA
+	if (tegra_net_diag_register(dev) < 0) {
+		pr_err("%s: tegra_net_diag_register() failed\n", __func__);
+#ifdef	CONFIG_BCMDHD_CUSTOM_NET_BW_EST_TEGRA
+		tegra_net_bw_est_unregister(dev);
+#endif
+#ifdef	CONFIG_BCMDHD_CUSTOM_SYSFS_TEGRA
+		tegra_sysfs_unregister(dev);
+#endif
+		goto err;
+	}
+#endif
+>>>>>>> update/master
 	return bcmsdh;
 
 	/* error handling */
@@ -196,6 +258,22 @@ err:
 int bcmsdh_remove(bcmsdh_info_t *bcmsdh)
 {
 	bcmsdh_os_info_t *bcmsdh_osinfo = bcmsdh->os_cxt;
+<<<<<<< HEAD
+=======
+
+#ifdef	CONFIG_BCMDHD_CUSTOM_NET_DIAG_TEGRA
+	if (bcmsdh_osinfo->dev)
+		tegra_net_diag_unregister(bcmsdh_osinfo->dev);
+#endif
+#ifdef	CONFIG_BCMDHD_CUSTOM_NET_BW_EST_TEGRA
+	if (bcmsdh_osinfo->dev)
+		tegra_net_bw_est_unregister(bcmsdh_osinfo->dev);
+#endif
+#ifdef	CONFIG_BCMDHD_CUSTOM_SYSFS_TEGRA
+	if (bcmsdh_osinfo->dev)
+		tegra_sysfs_unregister(bcmsdh_osinfo->dev);
+#endif
+>>>>>>> update/master
 
 #if !defined(CONFIG_HAS_WAKELOCK) && (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 36))
 	if (bcmsdh_osinfo->dev)
@@ -326,7 +404,11 @@ static irqreturn_t wlan_oob_irq(int irq, void *dev_id)
 }
 
 int bcmsdh_oob_intr_register(bcmsdh_info_t *bcmsdh, bcmsdh_cb_fn_t oob_irq_handler,
+<<<<<<< HEAD
 	void *oob_irq_handler_context)
+=======
+	void* oob_irq_handler_context)
+>>>>>>> update/master
 {
 	int err = 0;
 	bcmsdh_os_info_t *bcmsdh_osinfo = bcmsdh->os_cxt;
@@ -340,16 +422,34 @@ int bcmsdh_oob_intr_register(bcmsdh_info_t *bcmsdh, bcmsdh_cb_fn_t oob_irq_handl
 		(int)bcmsdh_osinfo->oob_irq_num, (int)bcmsdh_osinfo->oob_irq_flags));
 	bcmsdh_osinfo->oob_irq_handler = oob_irq_handler;
 	bcmsdh_osinfo->oob_irq_handler_context = oob_irq_handler_context;
+<<<<<<< HEAD
 	err = request_irq(bcmsdh_osinfo->oob_irq_num, wlan_oob_irq,
 		bcmsdh_osinfo->oob_irq_flags, "bcmsdh_sdmmc", bcmsdh);
+=======
+#if defined(CONFIG_ARCH_ODIN)
+	err = odin_gpio_sms_request_irq(bcmsdh_osinfo->oob_irq_num, wlan_oob_irq,
+		bcmsdh_osinfo->oob_irq_flags, "bcmsdh_sdmmc", bcmsdh);
+#else
+	err = request_irq(bcmsdh_osinfo->oob_irq_num, wlan_oob_irq,
+		bcmsdh_osinfo->oob_irq_flags, "bcmsdh_sdmmc", bcmsdh);
+#endif /* defined(CONFIG_ARCH_ODIN) */
+>>>>>>> update/master
 	if (err) {
 		SDLX_MSG(("%s: request_irq failed with %d\n", __FUNCTION__, err));
 		return err;
 	}
+<<<<<<< HEAD
 
 		err = enable_irq_wake(bcmsdh_osinfo->oob_irq_num);
 		if (!err)
 			bcmsdh_osinfo->oob_irq_wake_enabled = TRUE;
+=======
+	bcmdhd_irq_number = (int)bcmsdh_osinfo->oob_irq_num;
+
+	err = enable_irq_wake(bcmsdh_osinfo->oob_irq_num);
+	if (!err)
+		bcmsdh_osinfo->oob_irq_wake_enabled = TRUE;
+>>>>>>> update/master
 	bcmsdh_osinfo->oob_irq_enabled = TRUE;
 	bcmsdh_osinfo->oob_irq_registered = TRUE;
 	return err;
@@ -377,7 +477,11 @@ void bcmsdh_oob_intr_unregister(bcmsdh_info_t *bcmsdh)
 	free_irq(bcmsdh_osinfo->oob_irq_num, bcmsdh);
 	bcmsdh_osinfo->oob_irq_registered = FALSE;
 }
+<<<<<<< HEAD
 #endif
+=======
+#endif 
+>>>>>>> update/master
 
 /* Module parameters specific to each host-controller driver */
 

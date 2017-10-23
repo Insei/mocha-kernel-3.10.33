@@ -1,8 +1,12 @@
 /*
  * BCMSDH Function Driver for the native SDIO/MMC driver in the Linux Kernel
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+>>>>>>> update/master
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -22,9 +26,14 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
+<<<<<<< HEAD
  * $Id: bcmsdh_sdmmc.c 457662 2014-02-24 15:07:28Z $
+=======
+ * $Id: bcmsdh_sdmmc.c 459285 2014-03-03 02:54:39Z $
+>>>>>>> update/master
  */
 #include <typedefs.h>
+#include "dynamic.h"
 
 #include <bcmdevs.h>
 #include <bcmendian.h>
@@ -62,6 +71,10 @@ static void IRQHandlerF2(struct sdio_func *func);
 static int sdioh_sdmmc_get_cisaddr(sdioh_info_t *sd, uint32 regaddr);
 extern int sdio_reset_comm(struct mmc_card *card);
 
+<<<<<<< HEAD
+=======
+extern int card_removed;
+>>>>>>> update/master
 #define DEFAULT_SDIO_F2_BLKSIZE		512
 #ifndef CUSTOM_SDIO_F2_BLKSIZE
 #define CUSTOM_SDIO_F2_BLKSIZE		DEFAULT_SDIO_F2_BLKSIZE
@@ -995,7 +1008,11 @@ sdioh_request_packet_chain(sdioh_info_t *sd, uint fix_inc, uint write, uint func
 		while (pnext != NULL && ttl_len < max_req_size) {
 			int pkt_len;
 			int sg_data_size;
+<<<<<<< HEAD
 			uint8 *pdata = (uint8 *)PKTDATA(sd->osh, pnext);
+=======
+			uint8 *pdata = (uint8*)PKTDATA(sd->osh, pnext);
+>>>>>>> update/master
 
 			ASSERT(pdata != NULL);
 			pkt_len = PKTLEN(sd->osh, pnext);
@@ -1048,7 +1065,6 @@ sdioh_request_packet_chain(sdioh_info_t *sd, uint fix_inc, uint write, uint func
 		mmc_cmd.arg |= (addr & 0x1FFFF) << 9;
 		mmc_cmd.arg |= blk_num & 0x1FF;
 		mmc_cmd.flags = MMC_RSP_SPI_R5 | MMC_RSP_R5 | MMC_CMD_ADTC;
-
 		mmc_req.cmd = &mmc_cmd;
 		mmc_req.data = &mmc_dat;
 		if (!fifo)
@@ -1073,7 +1089,11 @@ sdioh_request_packet_chain(sdioh_info_t *sd, uint fix_inc, uint write, uint func
 
 static SDIOH_API_RC
 sdioh_buffer_tofrom_bus(sdioh_info_t *sd, uint fix_inc, uint write, uint func,
+<<<<<<< HEAD
 				uint addr, uint8 *buf, uint len)
+=======
+                     uint addr, uint8 *buf, uint len)
+>>>>>>> update/master
 {
 	bool fifo = (fix_inc == SDIOH_DATA_FIX);
 	int err_ret = 0;
@@ -1152,6 +1172,7 @@ sdioh_request_buffer(sdioh_info_t *sd, uint pio_dma, uint fix_inc, uint write, u
 	}
 
 	ASSERT(buffer);
+<<<<<<< HEAD
 
 	/* buffer and length are aligned, use it directly so we can avoid memory copy */
 	if (((ulong)buffer & DMA_ALIGN_MASK) == 0 && (buf_len & DMA_ALIGN_MASK) == 0)
@@ -1160,6 +1181,16 @@ sdioh_request_buffer(sdioh_info_t *sd, uint pio_dma, uint fix_inc, uint write, u
 	sd_err(("%s: [%d] doing memory copy buf=%p, len=%d\n",
 		__FUNCTION__, write, buffer, buf_len));
 
+=======
+
+	/* buffer and length are aligned, use it directly so we can avoid memory copy */
+	if (((ulong)buffer & DMA_ALIGN_MASK) == 0 && (buf_len & DMA_ALIGN_MASK) == 0)
+		return sdioh_buffer_tofrom_bus(sd, fix_inc, write, func, addr, buffer, buf_len);
+
+	sd_err(("%s: [%d] doing memory copy buf=%p, len=%d\n",
+		__FUNCTION__, write, buffer, buf_len));
+
+>>>>>>> update/master
 	/* otherwise, a memory copy is needed as the input buffer is not aligned */
 	tmppkt = PKTGET_STATIC(sd->osh, buf_len + DEFAULT_SDIO_F2_BLKSIZE, write ? TRUE : FALSE);
 	if (tmppkt == NULL) {
@@ -1333,7 +1364,11 @@ sdioh_start(sdioh_info_t *sd, int stage)
 		   2.6.27. The implementation prior to that is buggy, and needs broadcom's
 		   patch for it
 		*/
+<<<<<<< HEAD
 		if ((ret = mmc_power_restore_host((sd->func[0])->card->host))) {
+=======
+		if ((ret = mmc_power_restore_host(sd->func[0]->card->host))) {
+>>>>>>> update/master
 			sd_err(("%s Failed, error = %d\n", __FUNCTION__, ret));
 			return ret;
 		}
@@ -1420,8 +1455,16 @@ sdioh_stop(sdioh_info_t *sd)
 #endif
 		bcmsdh_oob_intr_set(sd->bcmsdh, FALSE);
 #endif /* !defined(OOB_INTR_ONLY) */
+<<<<<<< HEAD
 		if (mmc_power_save_host((sd->func[0])->card->host))
 			sd_err(("%s card power save fail\n", __FUNCTION__));
+=======
+		if (!card_removed)
+		{
+			if (mmc_power_save_host((sd->func[0])->card->host))
+				sd_err(("%s card power save fail\n", __FUNCTION__));
+		}
+>>>>>>> update/master
 	}
 	else
 		sd_err(("%s Failed\n", __FUNCTION__));

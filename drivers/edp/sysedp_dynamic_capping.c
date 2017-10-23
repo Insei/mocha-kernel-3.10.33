@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -25,12 +25,14 @@
 #include <linux/workqueue.h>
 #include <linux/platform_data/tegra_edp.h>
 #include <linux/debugfs.h>
+#include <linux/slab.h>
+#include <linux/of.h>
 #include <trace/events/sysedp.h>
 
 #include "sysedp_internal.h"
 
-struct freqcap {
-	unsigned int cpu;
+struct sysedpcap {
+	unsigned int cpupwr;
 	unsigned int gpu;
 	unsigned int emc;
 };
@@ -39,8 +41,9 @@ static unsigned int gpu_high_threshold = 500;
 static unsigned int gpu_window = 80;
 static unsigned int gpu_high_hist;
 static unsigned int gpu_high_count = 2;
-static unsigned int online_cpu_count;
+static unsigned int priority_bias = 75;
 static bool gpu_busy;
+static unsigned int fgpu;
 static unsigned int avail_power;
 static unsigned int avail_oc_relax;
 static unsigned int cap_method;
@@ -48,95 +51,53 @@ static unsigned int cap_method;
 static struct tegra_sysedp_corecap *cur_corecap;
 static struct clk *emc_cap_clk;
 static struct clk *gpu_cap_clk;
-static struct pm_qos_request cpufreq_qos;
+static struct pm_qos_request cpupwr_qos;
+static struct pm_qos_request gpupwr_qos;
 static unsigned int cpu_power_balance;
 static unsigned int force_gpu_pri;
 static struct delayed_work capping_work;
 static struct tegra_sysedp_platform_data *capping_device_platdata;
-static struct freqcap core_policy;
-static struct freqcap forced_caps;
-static struct freqcap cur_caps;
+static struct sysedpcap core_policy;
+static struct sysedpcap forced_caps;
+static struct sysedpcap cur_caps;
 static DEFINE_MUTEX(core_lock);
 
 static int init_done;
 
-/* To save some cycles from a linear search */
-static unsigned int cpu_lut_match(unsigned int power,
-		struct tegra_system_edp_entry *lut, unsigned int lutlen)
-{
-	unsigned int fv;
-	unsigned int lv;
-	unsigned int step;
-	unsigned int i;
-
-	if (lutlen == 1)
-		return 0;
-
-	fv = lut[0].power_limit_100mW * 100;
-	lv = lut[lutlen - 1].power_limit_100mW * 100;
-	step = (lv - fv) / (lutlen - 1);
-
-	i = (power - fv + step - 1) / step;
-	i = min_t(unsigned int, i, lutlen - 1);
-	if (lut[i].power_limit_100mW * 100 >= power)
-		return i;
-
-	/* Didn't work, search back from the end */
-	return lutlen - 1;
-}
-
-static unsigned int get_cpufreq_lim(unsigned int power)
-{
-	struct tegra_system_edp_entry *p;
-	int i;
-
-	i = cpu_lut_match(power, capping_device_platdata->cpufreq_lim,
-			capping_device_platdata->cpufreq_lim_size);
-	p = capping_device_platdata->cpufreq_lim + i;
-
-	for (; i > 0; i--, p--) {
-		if (p->power_limit_100mW * 100 <= power)
-			break;
-	}
-
-	WARN_ON(p->power_limit_100mW > power);
-	return p->freq_limits[online_cpu_count - 1];
-}
-
-static void pr_caps(struct freqcap *old, struct freqcap *new,
-		unsigned int cpu_power)
+static void pr_caps(struct sysedpcap *old, struct sysedpcap *new)
 {
 	if (!IS_ENABLED(CONFIG_DEBUG_KERNEL))
 		return;
 
-	if (new->cpu == old->cpu &&
-			new->gpu == old->gpu &&
-			new->emc == old->emc)
+	if ((new->cpupwr == old->cpupwr) &&
+	    (new->gpu == old->gpu) &&
+	    (new->emc == old->emc))
 		return;
 
-	pr_debug("sysedp: ncpus %u, gpupri %d, core %5u mW, "
-			"cpu %5u mW %u kHz, gpu %u kHz, emc %u kHz\n",
-			online_cpu_count, gpu_busy, cur_corecap->power,
-			cpu_power, new->cpu, new->gpu, new->emc);
+	pr_debug("sysedp: gpupri %d, core %5u mW, "
+		 "cpu %5u mW, gpu %u %s, emc %u kHz\n",
+		 gpu_busy, cur_corecap->power,
+		 new->cpupwr, new->gpu,
+		 capping_device_platdata->gpu_cap_as_mw ? "mW" : "kHz",
+		 new->emc);
 }
 
 static void apply_caps(struct tegra_sysedp_devcap *devcap)
 {
-	struct freqcap new;
+	struct sysedpcap new;
 	int r;
 	int do_trace = 0;
 
-	core_policy.cpu = get_cpufreq_lim(devcap->cpu_power +
-			cpu_power_balance);
-	core_policy.gpu = devcap->gpufreq;
+	core_policy.cpupwr = devcap->cpu_power + cpu_power_balance;
+	core_policy.gpu = devcap->gpu_cap;
 	core_policy.emc = devcap->emcfreq;
 
-	new.cpu = forced_caps.cpu ?: core_policy.cpu;
+	new.cpupwr = forced_caps.cpupwr ?: core_policy.cpupwr;
 	new.gpu = forced_caps.gpu ?: core_policy.gpu;
 	new.emc = forced_caps.emc ?: core_policy.emc;
 
-	if (new.cpu != cur_caps.cpu) {
-		pm_qos_update_request(&cpufreq_qos, new.cpu);
+	if (new.cpupwr != cur_caps.cpupwr) {
+		pm_qos_update_request(&cpupwr_qos, new.cpupwr);
 		do_trace = 1;
 	}
 
@@ -147,21 +108,44 @@ static void apply_caps(struct tegra_sysedp_devcap *devcap)
 	}
 
 	if (new.gpu != cur_caps.gpu) {
-		r = clk_set_rate(gpu_cap_clk, new.gpu * 1000);
-		WARN_ON(r && (r != -ENOENT));
+		if (capping_device_platdata->gpu_cap_as_mw) {
+			pm_qos_update_request(&gpupwr_qos, new.gpu);
+		} else {
+			r = clk_set_rate(gpu_cap_clk, new.gpu * 1000);
+			WARN_ON(r && (r != -ENOENT));
+		}
 		do_trace = 1;
 	}
 
 	if (do_trace)
-		trace_sysedp_dynamic_capping(new.cpu, new.gpu,
-					     new.emc, gpu_busy);
-	pr_caps(&cur_caps, &new, devcap->cpu_power);
+		trace_sysedp_dynamic_capping(new.cpupwr, new.gpu,
+					     new.emc, gpu_busy,
+					     capping_device_platdata->gpu_cap_as_mw);
+	pr_caps(&cur_caps, &new);
 	cur_caps = new;
 }
 
 static inline bool gpu_priority(void)
 {
-	return gpu_busy || force_gpu_pri;
+	bool prefer_gpu = gpu_busy;
+
+	/* NOTE: the policy for selecting between the GPU priority
+	 * mode and the CPU priority mode depends on whether GPU
+	 * caps are expressed in mW or kHz. The policy is "smarter"
+	 * when capping is in terms of kHz. So, if GPU caps are
+	 * expressed in mW, it is highly preferred to use supplemental
+	 * GPU capping tables expressed in KHz, as well.
+	 */
+	if ((!capping_device_platdata->gpu_cap_as_mw) ||
+		(capping_device_platdata->gpu_cap_as_mw &&
+					capping_device_platdata->gpu_supp_freq))
+		prefer_gpu = prefer_gpu
+			&& (fgpu > ((capping_device_platdata->gpu_supp_freq ?
+					cur_corecap->cpupri.gpu_supp_freq :
+						cur_corecap->cpupri.gpu_cap)
+					  * priority_bias / 100));
+
+	return force_gpu_pri || prefer_gpu;
 }
 
 static inline struct tegra_sysedp_devcap *get_devcap(void)
@@ -271,12 +255,13 @@ static bool calc_gpu_busy(unsigned int load)
 	return (gpu_high_hist & mask) == mask;
 }
 
-void tegra_edp_notify_gpu_load(unsigned int load)
+void tegra_edp_notify_gpu_load(unsigned int load, unsigned int freq_in_hz)
 {
 	bool old;
 
 	old = gpu_busy;
 	gpu_busy = calc_gpu_busy(load);
+	fgpu = freq_in_hz / 1000;
 
 	if (gpu_busy == old || force_gpu_pri || !capping_device_platdata)
 		return;
@@ -289,117 +274,61 @@ void tegra_edp_notify_gpu_load(unsigned int load)
 		schedule_delayed_work(&capping_work,
 				msecs_to_jiffies(gpu_window));
 }
-
-static int tegra_edp_cpu_notify(struct notifier_block *nb,
-		unsigned long action, void *data)
-{
-	switch (action) {
-	case CPU_UP_PREPARE:
-		online_cpu_count = num_online_cpus() + 1;
-		break;
-	case CPU_DEAD:
-		online_cpu_count = num_online_cpus();
-		break;
-	default:
-		return NOTIFY_OK;
-	}
-
-	do_cap_control();
-	return NOTIFY_OK;
-}
-
-static struct notifier_block tegra_edp_cpu_nb = {
-	.notifier_call = tegra_edp_cpu_notify
-};
+EXPORT_SYMBOL(tegra_edp_notify_gpu_load);
 
 #ifdef CONFIG_DEBUG_FS
 static struct dentry *capping_debugfs_dir;
 
-static int core_set(void *data, u64 val)
-{
-	unsigned int *pdata = data;
-	unsigned int old;
+#define DEFINE_SDC_SIMPLE_ATTR(__name, __var)				     \
+static int __name##_set(void *data, u64 val)				     \
+{									     \
+	if (val != __var) {						     \
+		__var = val;						     \
+		do_cap_control();					     \
+	}								     \
+									     \
+	return 0;							     \
+}									     \
+									     \
+static int __name##_get(void *data, u64 *val)				     \
+{									     \
+	*val = __var;							     \
+	return 0;							     \
+}									     \
+									     \
+DEFINE_SIMPLE_ATTRIBUTE(__name##_fops, __name##_get, __name##_set, "%lld\n");
 
-	old = *pdata;
-	*pdata = val;
+DEFINE_SDC_SIMPLE_ATTR(favor_gpu, force_gpu_pri);
+DEFINE_SDC_SIMPLE_ATTR(gpu_threshold, gpu_high_threshold);
+DEFINE_SDC_SIMPLE_ATTR(force_cpu_power, forced_caps.cpupwr);
+DEFINE_SDC_SIMPLE_ATTR(force_gpu, forced_caps.gpu);
+DEFINE_SDC_SIMPLE_ATTR(force_emc, forced_caps.emc);
+DEFINE_SDC_SIMPLE_ATTR(gpu_window, gpu_window);
+DEFINE_SDC_SIMPLE_ATTR(gpu_high_count, gpu_high_count);
+DEFINE_SDC_SIMPLE_ATTR(priority_bias, priority_bias);
 
-	if (old != *pdata) {
-		/* Changes to core_gain and cap_method require corecap update */
-		if ((pdata == &capping_device_platdata->core_gain) ||
-			(pdata == &cap_method))
-			update_cur_corecap();
-		do_cap_control();
-	}
+#define DEFINE_SDC_UPDATE_ATTR(__name, __var)				     \
+static int __name##_set(void *data, u64 val)				     \
+{									     \
+	if (val != __var) {						     \
+		__var = val;						     \
+		update_cur_corecap();                                        \
+		do_cap_control();					     \
+	}								     \
+									     \
+	return 0;							     \
+}									     \
+									     \
+static int __name##_get(void *data, u64 *val)				     \
+{									     \
+	*val = __var;							     \
+	return 0;							     \
+}									     \
+									     \
+DEFINE_SIMPLE_ATTRIBUTE(__name##_fops, __name##_get, __name##_set, "%lld\n");
 
-	return 0;
-}
-
-static int core_get(void *data, u64 *val)
-{
-	unsigned int *pdata = data;
-	*val = *pdata;
-	return 0;
-}
-
-DEFINE_SIMPLE_ATTRIBUTE(core_fops, core_get, core_set, "%lld\n");
-
-static void create_attr(const char *name, unsigned int *data)
-{
-	struct dentry *d;
-
-	d = debugfs_create_file(name, S_IRUGO | S_IWUSR, capping_debugfs_dir,
-			data, &core_fops);
-	WARN_ON(IS_ERR_OR_NULL(d));
-}
-
-static inline void edp_show_2core_cpucaps(struct seq_file *file)
-{
-	int i;
-	struct tegra_system_edp_entry *p = capping_device_platdata->cpufreq_lim;
-
-	seq_printf(file, "%5s %10s %10s\n",
-			"Power", "1-core", "2-cores");
-
-	for (i = 0; i < capping_device_platdata->cpufreq_lim_size; i++, p++) {
-		seq_printf(file, "%5d %10u %10u\n",
-				p->power_limit_100mW * 100,
-				p->freq_limits[0],
-				p->freq_limits[1]);
-	}
-}
-
-static inline void edp_show_4core_cpucaps(struct seq_file *file)
-{
-	int i;
-	struct tegra_system_edp_entry *p = capping_device_platdata->cpufreq_lim;
-
-	seq_printf(file, "%5s %10s %10s %10s %10s\n",
-			"Power", "1-core", "2-cores", "3-cores", "4-cores");
-
-	for (i = 0; i < capping_device_platdata->cpufreq_lim_size; i++, p++) {
-		seq_printf(file, "%5d %10u %10u %10u %10u\n",
-				p->power_limit_100mW * 100,
-				p->freq_limits[0],
-				p->freq_limits[1],
-				p->freq_limits[2],
-				p->freq_limits[3]);
-	}
-}
-
-static int cpucaps_show(struct seq_file *file, void *data)
-{
-	unsigned int max_nr_cpus = num_possible_cpus();
-
-	if (!capping_device_platdata || !capping_device_platdata->cpufreq_lim)
-		return -ENODEV;
-
-	if (max_nr_cpus == 2)
-		edp_show_2core_cpucaps(file);
-	else if (max_nr_cpus == 4)
-		edp_show_4core_cpucaps(file);
-
-	return 0;
-}
+DEFINE_SDC_UPDATE_ATTR(gain, capping_device_platdata->core_gain);
+DEFINE_SDC_UPDATE_ATTR(cap_method, cap_method);
 
 static int corecaps_show(struct seq_file *file, void *data)
 {
@@ -407,16 +336,21 @@ static int corecaps_show(struct seq_file *file, void *data)
 	struct tegra_sysedp_corecap *p;
 	struct tegra_sysedp_devcap *c;
 	struct tegra_sysedp_devcap *g;
+	const char *gpu_label;
 
 	if (!capping_device_platdata || !capping_device_platdata->corecap)
 		return -ENODEV;
+
+	gpu_label = (capping_device_platdata->gpu_cap_as_mw
+		     ? "GPU-mW"
+		     : "GPU-kHz");
 
 	p = capping_device_platdata->corecap;
 
 	seq_printf(file, "%s %s { %s %9s %9s } %s { %s %9s %9s } %7s\n",
 		   "E-state",
-		   "CPU-pri", "CPU-mW", "GPU-kHz", "EMC-kHz",
-		   "GPU-pri", "CPU-mW", "GPU-kHz", "EMC-kHz",
+		   "CPU-pri", "CPU-mW", gpu_label, "EMC-kHz",
+		   "GPU-pri", "CPU-mW", gpu_label, "EMC-kHz",
 		   "Pthrot");
 
 	for (i = 0; i < capping_device_platdata->corecap_size; i++, p++) {
@@ -424,28 +358,40 @@ static int corecaps_show(struct seq_file *file, void *data)
 		g = &p->gpupri;
 		seq_printf(file, "%7u %16u %9u %9u %18u %9u %9u %7u\n",
 			   p->power,
-			   c->cpu_power, c->gpufreq, c->emcfreq,
-			   g->cpu_power, g->gpufreq, g->emcfreq,
+			   c->cpu_power, c->gpu_cap, c->emcfreq,
+			   g->cpu_power, g->gpu_cap, g->emcfreq,
 			   p->pthrot);
 	}
 
 	return 0;
 }
 
+static int corecaps_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, corecaps_show, inode->i_private);
+}
+
+static const struct file_operations corecaps_fops = {
+	.open = corecaps_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
 static int status_show(struct seq_file *file, void *data)
 {
 	mutex_lock(&core_lock);
 
-	seq_printf(file, "cpus online : %u\n", online_cpu_count);
 	seq_printf(file, "gpu priority: %u\n", gpu_priority());
-	seq_printf(file, "gain        : %u\n", capping_device_platdata->core_gain);
+	seq_printf(file, "gain        : %u\n",
+		   capping_device_platdata->core_gain);
 	seq_printf(file, "core cap    : %u\n", cur_corecap->power);
 	seq_printf(file, "max throttle: %u\n", cur_corecap->pthrot);
 	seq_printf(file, "cpu balance : %u\n", cpu_power_balance);
 	seq_printf(file, "cpu power   : %u\n", get_devcap()->cpu_power +
-			cpu_power_balance);
-	seq_printf(file, "cpu cap     : %u kHz\n", cur_caps.cpu);
-	seq_printf(file, "gpu cap     : %u kHz\n", cur_caps.gpu);
+		   cpu_power_balance);
+	seq_printf(file, "gpu cap     : %u %s\n", cur_caps.gpu,
+		capping_device_platdata->gpu_cap_as_mw ? "mW" : "kHz");
 	seq_printf(file, "emc cap     : %u kHz\n", cur_caps.emc);
 	seq_printf(file, "cc method   : %u\n", cap_method);
 
@@ -453,29 +399,25 @@ static int status_show(struct seq_file *file, void *data)
 	return 0;
 }
 
-static int longattr_open(struct inode *inode, struct file *file)
+static int status_open(struct inode *inode, struct file *file)
 {
-	return single_open(file, inode->i_private, NULL);
+	return single_open(file, status_show, inode->i_private);
 }
 
-static const struct file_operations longattr_fops = {
-	.open = longattr_open,
+static const struct file_operations status_fops = {
+	.open = status_open,
 	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 
-static void create_longattr(const char *name,
-		int (*show)(struct seq_file *, void *))
-{
-	struct dentry *d;
-
-	d = debugfs_create_file(name, S_IRUGO, capping_debugfs_dir, show,
-			&longattr_fops);
-	WARN_ON(IS_ERR_OR_NULL(d));
-}
+#define SDC_DEBUGFS_CREATE_FILE(__name)	\
+	debugfs_create_file(#__name, S_IRUGO | S_IWUSR, d, NULL, &__name##_fops)
 
 static void init_debug(void)
 {
 	struct dentry *d;
+	struct dentry *df;
 
 	if (!sysedp_debugfs_dir)
 		return;
@@ -488,20 +430,30 @@ static void init_debug(void)
 
 	capping_debugfs_dir = d;
 
-
-	create_attr("favor_gpu", &force_gpu_pri);
-	create_attr("gpu_threshold", &gpu_high_threshold);
-	create_attr("force_cpu", &forced_caps.cpu);
-	create_attr("force_gpu", &forced_caps.gpu);
-	create_attr("force_emc", &forced_caps.emc);
-	create_attr("gpu_window", &gpu_window);
-	create_attr("gain", &capping_device_platdata->core_gain);
-	create_attr("gpu_high_count", &gpu_high_count);
-	create_attr("cap_method", &cap_method);
-
-	create_longattr("corecaps", corecaps_show);
-	create_longattr("cpucaps", cpucaps_show);
-	create_longattr("status", status_show);
+	df = SDC_DEBUGFS_CREATE_FILE(favor_gpu);
+	WARN_ON(!df);
+	df = SDC_DEBUGFS_CREATE_FILE(gpu_threshold);
+	WARN_ON(!df);
+	df = SDC_DEBUGFS_CREATE_FILE(force_cpu_power);
+	WARN_ON(!df);
+	df = SDC_DEBUGFS_CREATE_FILE(force_gpu);
+	WARN_ON(!df);
+	df = SDC_DEBUGFS_CREATE_FILE(force_emc);
+	WARN_ON(!df);
+	df = SDC_DEBUGFS_CREATE_FILE(gpu_window);
+	WARN_ON(!df);
+	df = SDC_DEBUGFS_CREATE_FILE(gpu_high_count);
+	WARN_ON(!df);
+	df = SDC_DEBUGFS_CREATE_FILE(gain);
+	WARN_ON(!df);
+	df = SDC_DEBUGFS_CREATE_FILE(cap_method);
+	WARN_ON(!df);
+	df = SDC_DEBUGFS_CREATE_FILE(corecaps);
+	WARN_ON(!df);
+	df = SDC_DEBUGFS_CREATE_FILE(priority_bias);
+	WARN_ON(!df);
+	df = SDC_DEBUGFS_CREATE_FILE(status);
+	WARN_ON(!df);
 }
 #else
 static inline void init_debug(void) {}
@@ -513,14 +465,136 @@ static int init_clks(void)
 	if (IS_ERR(emc_cap_clk))
 		return -ENODEV;
 
-	gpu_cap_clk = clk_get_sys("battery_edp", "gpu");
-	if (IS_ERR(gpu_cap_clk)) {
-		clk_put(emc_cap_clk);
-		return -ENODEV;
+	if (!capping_device_platdata->gpu_cap_as_mw) {
+		gpu_cap_clk = clk_get_sys("battery_edp", "gpu");
+		if (IS_ERR(gpu_cap_clk)) {
+			clk_put(emc_cap_clk);
+			return -ENODEV;
+		}
 	}
 
 	return 0;
 }
+
+static void of_sysedp_dynamic_capping_get_pdata(struct platform_device *pdev,
+		struct tegra_sysedp_platform_data **pdata)
+{
+	struct device_node *np = pdev->dev.of_node;
+	struct tegra_sysedp_platform_data *obj_ptr;
+	u32 val, lenp;
+	int n, i, idx, ret;
+	const void *ptr;
+	u32 *u32_ptr;
+
+	*pdata = NULL;
+
+	obj_ptr = devm_kzalloc(&pdev->dev,
+			       sizeof(struct tegra_sysedp_platform_data),
+			       GFP_KERNEL);
+	if (!obj_ptr)
+		return;
+
+	obj_ptr->gpu_supp_freq =
+		!!of_find_property(np, "nvidia,gpu_supp_freq", NULL);
+
+	ptr = of_get_property(np, "nvidia,corecap", &lenp);
+	if (!ptr)
+		return;
+
+	if (obj_ptr->gpu_supp_freq) {
+		if (lenp % (sizeof(u32)*10)) {
+			dev_err(&pdev->dev, "sysedp_dynamic_capping: corecap needs to be a multiple of 10 u32s!\n");
+			return;
+		}
+		n = lenp / (sizeof(u32)*10);
+	} else {
+		if (lenp % (sizeof(u32)*8)) {
+			dev_err(&pdev->dev, "sysedp_dynamic_capping: corecap needs to be a multiple of 8 u32s!\n");
+			return;
+		}
+		n = lenp / (sizeof(u32)*8);
+	}
+
+	if (!n)
+		return;
+
+	obj_ptr->corecap = devm_kzalloc(&pdev->dev,
+				sizeof(struct tegra_sysedp_corecap) * n,
+				GFP_KERNEL);
+
+	if (!obj_ptr->corecap)
+		return;
+
+	u32_ptr = kzalloc(lenp, GFP_KERNEL);
+	if (!u32_ptr)
+		return;
+	ret = of_property_read_u32_array(np, "nvidia,corecap",
+					 u32_ptr, (lenp / sizeof(u32)));
+	if (ret) {
+		dev_err(&pdev->dev,
+			"sysedp_dynamic_capping: Fail to read corecap\n");
+		kfree(u32_ptr);
+		return;
+	}
+
+	for (idx = 0, i = 0; idx < n; idx++) {
+		obj_ptr->corecap[idx].power            = u32_ptr[i];
+		obj_ptr->corecap[idx].cpupri.cpu_power = u32_ptr[i+1];
+		obj_ptr->corecap[idx].cpupri.gpu_cap   = u32_ptr[i+2];
+		obj_ptr->corecap[idx].cpupri.emcfreq   = u32_ptr[i+3];
+		obj_ptr->corecap[idx].gpupri.cpu_power = u32_ptr[i+4];
+		obj_ptr->corecap[idx].gpupri.gpu_cap   = u32_ptr[i+5];
+		obj_ptr->corecap[idx].gpupri.emcfreq   = u32_ptr[i+6];
+		obj_ptr->corecap[idx].pthrot           = u32_ptr[i+7];
+		if (obj_ptr->gpu_supp_freq) {
+			obj_ptr->corecap[idx].cpupri.gpu_supp_freq =
+								u32_ptr[i+8];
+			obj_ptr->corecap[idx].gpupri.gpu_supp_freq =
+								u32_ptr[i+9];
+			i += 10;
+		} else
+			i += 8;
+	}
+	obj_ptr->corecap_size = n;
+	kfree(u32_ptr);
+
+	ret = of_property_read_u32(np, "nvidia,core_gain", &val);
+	if (!ret)
+		obj_ptr->core_gain = (unsigned int)val;
+	else
+		return;
+
+	ret = of_property_read_u32(np, "nvidia,init_req_watts", &val);
+	if (!ret)
+		obj_ptr->init_req_watts = (unsigned int)val;
+	else
+		return;
+
+	ret = of_property_read_u32(np, "nvidia,throttle_depth", &val);
+	if (!ret) {
+		if (val > 100) {
+			dev_err(&pdev->dev,
+			    "sysedp_dynamic_capping: throttle_depth > 100\n");
+			return;
+		}
+		obj_ptr->pthrot_ratio = (unsigned int)val;
+	} else
+		return;
+
+	ret = of_property_read_u32(np, "nvidia,cap_method", &val);
+	if (!ret)
+		obj_ptr->cap_method = (unsigned int)val;
+	else
+		return;
+
+	obj_ptr->gpu_cap_as_mw =
+		!!of_find_property(np, "nvidia,gpu_cap_as_mw", NULL);
+
+	*pdata = obj_ptr;
+
+	return;
+}
+
 
 static int sysedp_dynamic_capping_probe(struct platform_device *pdev)
 {
@@ -528,17 +602,28 @@ static int sysedp_dynamic_capping_probe(struct platform_device *pdev)
 	struct tegra_sysedp_corecap *cap;
 	int i;
 
-	if (!pdev->dev.platform_data)
+	/* only one instance is allowed */
+	if (capping_device_platdata != NULL) {
+		WARN_ON(capping_device_platdata != NULL);
+		return -EINVAL;
+	}
+
+	if (pdev->dev.of_node)
+		of_sysedp_dynamic_capping_get_pdata(pdev,
+						    &capping_device_platdata);
+	else
+		capping_device_platdata = pdev->dev.platform_data;
+
+	if (!capping_device_platdata)
 		return -EINVAL;
 
-	online_cpu_count = num_online_cpus();
 	INIT_DELAYED_WORK(&capping_work, capping_worker);
-	pm_qos_add_request(&cpufreq_qos, PM_QOS_CPU_FREQ_MAX,
-			   PM_QOS_CPU_FREQ_MAX_DEFAULT_VALUE);
+	pm_qos_add_request(&cpupwr_qos, PM_QOS_MAX_CPU_POWER,
+			   PM_QOS_CPU_POWER_MAX_DEFAULT_VALUE);
 
-	r = register_cpu_notifier(&tegra_edp_cpu_nb);
-	if (r)
-		return r;
+	if (capping_device_platdata->gpu_cap_as_mw)
+		pm_qos_add_request(&gpupwr_qos, PM_QOS_MAX_GPU_POWER,
+				   PM_QOS_GPU_POWER_MAX_DEFAULT_VALUE);
 
 	r = init_clks();
 	if (r)
@@ -546,7 +631,6 @@ static int sysedp_dynamic_capping_probe(struct platform_device *pdev)
 
 
 	mutex_lock(&core_lock);
-	capping_device_platdata = pdev->dev.platform_data;
 	avail_power = capping_device_platdata->init_req_watts;
 	cap_method = capping_device_platdata->cap_method;
 	switch (cap_method) {
@@ -581,11 +665,18 @@ static int sysedp_dynamic_capping_probe(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct of_device_id sysedp_dynamic_capping_of_match[] = {
+	{ .compatible = "nvidia,tegra124-sysedp-dynamic-capping", },
+	{ },
+};
+MODULE_DEVICE_TABLE(of, sysedp_dynamic_capping_of_match);
+
 static struct platform_driver sysedp_dynamic_capping_driver = {
 	.probe = sysedp_dynamic_capping_probe,
 	.driver = {
 		.owner = THIS_MODULE,
-		.name = "sysedp_dynamic_capping"
+		.name = "sysedp_dynamic_capping",
+		.of_match_table = sysedp_dynamic_capping_of_match,
 	}
 };
 

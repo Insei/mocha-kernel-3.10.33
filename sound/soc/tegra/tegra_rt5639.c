@@ -34,7 +34,6 @@
 #endif
 #include <linux/pm_runtime.h>
 #include <mach/tegra_asoc_pdata.h>
-#include <mach/gpio-tegra.h>
 #include <mach/tegra_rt5640_pdata.h>
 
 #include <sound/core.h>
@@ -58,7 +57,15 @@
 #define DAI_LINK_BTSCO		2
 #define DAI_LINK_VOICE_CALL	3
 #define DAI_LINK_BT_VOICE_CALL	4
+<<<<<<< HEAD
 #define NUM_DAI_LINKS		5
+=======
+#define DAI_LINK_PCM_OFFLOAD_FE	5
+#define DAI_LINK_COMPR_OFFLOAD_FE	6
+#define DAI_LINK_PCM_OFFLOAD_CAPTURE_FE	7
+#define DAI_LINK_I2S_OFFLOAD_BE	8
+#define NUM_DAI_LINKS		9
+>>>>>>> update/master
 
 #define DELAY_AFTR_LDO1_EN_UP   450
 #define DELAY_BFR_LDO1_EN_DOWN  250
@@ -592,6 +599,30 @@ static int tegra_hw_free(struct snd_pcm_substream *substream)
 	return 0;
 }
 
+static int tegra_offload_hw_params_be_fixup(struct snd_soc_pcm_runtime *rtd,
+			struct snd_pcm_hw_params *params)
+{
+	if (!params_rate(params)) {
+		struct snd_interval *snd_rate = hw_param_interval(params,
+						SNDRV_PCM_HW_PARAM_RATE);
+
+		snd_rate->min = snd_rate->max = 48000;
+	}
+
+	if (!params_channels(params)) {
+		struct snd_interval *snd_channels = hw_param_interval(params,
+						SNDRV_PCM_HW_PARAM_CHANNELS);
+
+		snd_channels->min = snd_channels->max = 2;
+	}
+	snd_mask_set(hw_param_mask(params, SNDRV_PCM_HW_PARAM_FORMAT),
+				ffs(SNDRV_PCM_FORMAT_S16_LE));
+
+	pr_debug("%s::%d %d %d\n", __func__, params_rate(params),
+			params_channels(params), params_format(params));
+	return 1;
+}
+
 static int tegra_rt5639_voice_call_hw_params(
 			struct snd_pcm_substream *substream,
 			struct snd_pcm_hw_params *params)
@@ -1007,6 +1038,8 @@ static const struct snd_soc_dapm_route ardbeg_audio_map[] = {
 	/*{"micbias1", NULL, "Int Mic"},*/
 	/*{"IN1P", NULL, "micbias1"},*/
 	/*{"IN1N", NULL, "micbias1"},*/
+	/* AHUB BE connections */
+	{"AIF1 Playback", NULL, "I2S1_OUT"},
 };
 
 
@@ -1127,6 +1160,56 @@ static struct snd_soc_dai_link tegra_rt5639_dai[NUM_DAI_LINKS] = {
 		.codec_dai_name = "dit-hifi",
 		.ops = &tegra_rt5639_bt_voice_call_ops,
 	},
+	[DAI_LINK_PCM_OFFLOAD_FE] = {
+		.name = "offload-pcm",
+		.stream_name = "offload-pcm",
+
+		.platform_name = "tegra-offload",
+		.cpu_dai_name = "tegra-offload-pcm",
+
+		.codec_dai_name =  "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+
+		.dynamic = 1,
+	},
+	[DAI_LINK_COMPR_OFFLOAD_FE] = {
+		.name = "offload-compr",
+		.stream_name = "offload-compr",
+
+		.platform_name = "tegra-offload",
+		.cpu_dai_name = "tegra-offload-compr",
+
+		.codec_dai_name =  "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+
+		.dynamic = 1,
+	},
+	[DAI_LINK_PCM_OFFLOAD_CAPTURE_FE] = {
+		.name = "offload-pcm-capture",
+		.stream_name = "offload-pcm-capture",
+
+		.platform_name = "tegra-offload",
+		.cpu_dai_name = "tegra-offload-pcm",
+
+		.codec_dai_name =  "snd-soc-dummy-dai",
+		.codec_name = "snd-soc-dummy",
+
+	},
+	[DAI_LINK_I2S_OFFLOAD_BE] = {
+		.name = "offload-audio-codec",
+		.stream_name = "offload-audio-pcm",
+		.codec_name = "rt5639.0-001a",
+		.platform_name = "tegra30-i2s.1",
+		.cpu_dai_name = "tegra30-i2s.1",
+		.codec_dai_name = "rt5639-aif1",
+		.ops = &tegra_rt5639_ops,
+		.ignore_pmdown_time = 1,
+
+		.no_pcm = 1,
+
+		.be_id = 0,
+		.be_hw_params_fixup = tegra_offload_hw_params_be_fixup,
+	},
 };
 
 static int tegra_rt5639_suspend_pre(struct snd_soc_card *card)
@@ -1176,6 +1259,33 @@ static int tegra_rt5639_suspend_post(struct snd_soc_card *card)
 
 static int tegra_rt5639_resume_pre(struct snd_soc_card *card)
 {
+	struct tegra_rt5639 *machine = snd_soc_card_get_drvdata(card);
+	int i, suspend_allowed = 1;
+
+	/*In Voice Call we ignore suspend..so check for that*/
+	for (i = 0; i < machine->pcard->num_links; i++) {
+		if (machine->pcard->dai_link[i].ignore_suspend) {
+			suspend_allowed = 0;
+			break;
+		}
+	}
+
+	if (suspend_allowed) {
+		/*This may be required if dapm setbias level is not called in
+		some cases, may be due to a wrong dapm map*/
+		if (!machine->clock_enabled &&
+				machine->bias_level != SND_SOC_BIAS_OFF) {
+			machine->clock_enabled = 1;
+			tegra_asoc_utils_clk_enable(&machine->util_data);
+		}
+		/*TODO: Enable Audio Regulators*/
+	}
+
+	return 0;
+}
+
+static int tegra_rt5639_resume_post(struct snd_soc_card *card)
+{
 	int val;
 	struct snd_soc_jack_gpio *gpio = &tegra_rt5639_hp_jack_gpio;
 	struct tegra_rt5639 *machine = snd_soc_card_get_drvdata(card);
@@ -1198,14 +1308,6 @@ static int tegra_rt5639_resume_pre(struct snd_soc_card *card)
 			snd_soc_jack_report(gpio->jack, val, gpio->report);
 			enable_irq(gpio_to_irq(gpio->gpio));
 		}
-		/*This may be required if dapm setbias level is not called in
-		some cases, may be due to a wrong dapm map*/
-		if (!machine->clock_enabled &&
-				machine->bias_level != SND_SOC_BIAS_OFF) {
-			machine->clock_enabled = 1;
-			tegra_asoc_utils_clk_enable(&machine->util_data);
-		}
-		/*TODO: Enable Audio Regulators*/
 	}
 
 	return 0;
@@ -1250,6 +1352,7 @@ static struct snd_soc_card snd_soc_tegra_rt5639 = {
 	.suspend_post = tegra_rt5639_suspend_post,
 	.suspend_pre = tegra_rt5639_suspend_pre,
 	.resume_pre = tegra_rt5639_resume_pre,
+	.resume_post = tegra_rt5639_resume_post,
 	.set_bias_level = tegra_rt5639_set_bias_level,
 	.set_bias_level_post = tegra_rt5639_set_bias_level_post,
 	.controls = ardbeg_controls,
@@ -1302,6 +1405,8 @@ static int tegra_rt5639_driver_probe(struct platform_device *pdev)
 		if (pdata->gpio_hp_det < 0)
 			dev_warn(&pdev->dev, "Failed to get HP Det GPIO\n");
 
+		pdata->use_codec_jd_irq = of_property_read_bool(np, "nvidia,use_codec_jd_irq");
+
 		pdata->gpio_codec1 = pdata->gpio_codec2 = pdata->gpio_codec3 =
 		pdata->gpio_spkr_en = pdata->gpio_hp_mute =
 		pdata->gpio_int_mic_en = pdata->gpio_ext_mic_en = -1;
@@ -1311,12 +1416,21 @@ static int tegra_rt5639_driver_probe(struct platform_device *pdev)
 		pdata->i2s_param[HIFI_CODEC].audio_port_id = (int)val32[0];
 		pdata->i2s_param[HIFI_CODEC].is_i2s_master = (int)val32[1];
 		pdata->i2s_param[HIFI_CODEC].i2s_mode = (int)val32[2];
+		pdata->i2s_param[HIFI_CODEC].bit_clk = (int)val32[6];
 
 		of_property_read_u32_array(np, "nvidia,i2s-param-bt", val32,
 							   ARRAY_SIZE(val32));
 		pdata->i2s_param[BT_SCO].audio_port_id = (int)val32[0];
 		pdata->i2s_param[BT_SCO].is_i2s_master = (int)val32[1];
 		pdata->i2s_param[BT_SCO].i2s_mode = (int)val32[2];
+		pdata->i2s_param[BT_SCO].bit_clk = (int)val32[6];
+
+		of_property_read_u32_array(np, "nvidia,i2s-param-baseband",
+						val32, ARRAY_SIZE(val32));
+		pdata->i2s_param[BASEBAND].audio_port_id = (int)val32[0];
+		pdata->i2s_param[BASEBAND].is_i2s_master = (int)val32[1];
+		pdata->i2s_param[BASEBAND].i2s_mode = (int)val32[2];
+		pdata->i2s_param[BASEBAND].bit_clk = (int)val32[6];
 	}
 
 	if (!pdata) {
@@ -1324,11 +1438,18 @@ static int tegra_rt5639_driver_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	if (pdata->codec_name)
-		card->dai_link->codec_name = pdata->codec_name;
+	if (pdata->codec_name) {
+		card->dai_link[DAI_LINK_HIFI].codec_name = pdata->codec_name;
+		card->dai_link[DAI_LINK_I2S_OFFLOAD_BE].codec_name =
+			pdata->codec_name;
+	}
 
-	if (pdata->codec_dai_name)
-		card->dai_link->codec_dai_name = pdata->codec_dai_name;
+	if (pdata->codec_dai_name) {
+		card->dai_link[DAI_LINK_HIFI].codec_dai_name =
+			pdata->codec_dai_name;
+		card->dai_link[DAI_LINK_I2S_OFFLOAD_BE].codec_dai_name =
+			pdata->codec_dai_name;
+	}
 
 	machine = kzalloc(sizeof(struct tegra_rt5639), GFP_KERNEL);
 	if (!machine) {
@@ -1442,6 +1563,9 @@ static int tegra_rt5639_driver_probe(struct platform_device *pdev)
 	tegra_rt5639_i2s_dai_name[codec_id];
 	tegra_rt5639_dai[DAI_LINK_HIFI].platform_name =
 	tegra_rt5639_i2s_dai_name[codec_id];
+	tegra_rt5639_dai[DAI_LINK_I2S_OFFLOAD_BE].cpu_dai_name =
+	tegra_rt5639_i2s_dai_name[codec_id];
+
 
 	codec_id = pdata->i2s_param[BT_SCO].audio_port_id;
 	tegra_rt5639_dai[DAI_LINK_BTSCO].cpu_dai_name =
@@ -1513,7 +1637,7 @@ err_fini_utils:
 	if (machine->dmic_reg)
 		regulator_put(machine->dmic_reg);
 	if (machine->codec_reg) {
-		regulator_disable(machine->digital_reg);
+		regulator_disable(machine->codec_reg);
 		regulator_put(machine->codec_reg);
 	}
 
@@ -1527,8 +1651,9 @@ err_free_machine:
 	return ret;
 }
 
-static int tegra_rt5639_driver_remove(struct platform_device *pdev)
+void disable_rt5639_regulators(struct tegra_rt5639 *machine)
 {
+<<<<<<< HEAD
 	struct snd_soc_card *card = platform_get_drvdata(pdev);
 	struct tegra_rt5639 *machine = snd_soc_card_get_drvdata(card);
 	struct tegra_asoc_platform_data *pdata = machine->pdata;
@@ -1546,6 +1671,8 @@ static int tegra_rt5639_driver_remove(struct platform_device *pdev)
 					1,
 					&tegra_rt5639_hp_jack_gpio);
 
+=======
+>>>>>>> update/master
 	if (machine->digital_reg) {
 		regulator_disable(machine->digital_reg);
 		regulator_put(machine->digital_reg);
@@ -1559,11 +1686,64 @@ static int tegra_rt5639_driver_remove(struct platform_device *pdev)
 
 	if (machine->dmic_reg)
 		regulator_put(machine->dmic_reg);
+
 	if (machine->codec_reg) {
 		regulator_disable(machine->codec_reg);
 		regulator_put(machine->codec_reg);
 	}
 
+<<<<<<< HEAD
+=======
+	return;
+}
+
+void tegra_rt5639_driver_shutdown(struct platform_device *pdev)
+{
+	struct snd_soc_card *card = platform_get_drvdata(pdev);
+	struct snd_soc_codec *codec;
+	struct tegra_rt5639 *machine = snd_soc_card_get_drvdata(card);
+	struct tegra_asoc_platform_data *pdata = machine->pdata;
+
+	if (machine->gpio_requested & GPIO_HP_DET)
+			snd_soc_jack_free_gpios(&tegra_rt5639_hp_jack,
+						1,
+						&tegra_rt5639_hp_jack_gpio);
+
+	codec = card->rtd[DAI_LINK_HIFI].codec;
+	rt5639_reset(codec);
+
+	if (gpio_is_valid(pdata->gpio_ldo1_en)) {
+		gpio_set_value(pdata->gpio_ldo1_en, 0);
+		gpio_free(pdata->gpio_ldo1_en);
+	}
+
+	disable_rt5639_regulators(machine);
+	kfree(machine);
+
+	return;
+}
+
+static int tegra_rt5639_driver_remove(struct platform_device *pdev)
+{
+	struct snd_soc_card *card = platform_get_drvdata(pdev);
+	struct tegra_rt5639 *machine = snd_soc_card_get_drvdata(card);
+	struct tegra_asoc_platform_data *pdata = machine->pdata;
+	struct device_node *np = pdev->dev.of_node;
+
+	snd_soc_unregister_card(card);
+>>>>>>> update/master
+
+	msleep(DELAY_BFR_LDO1_EN_DOWN);
+	if (gpio_is_valid(pdata->gpio_ldo1_en)) {
+		gpio_set_value(pdata->gpio_ldo1_en, 0);
+		gpio_free(pdata->gpio_ldo1_en);
+	}
+	if (machine->gpio_requested & GPIO_HP_DET)
+		snd_soc_jack_free_gpios(&tegra_rt5639_hp_jack,
+					1,
+					&tegra_rt5639_hp_jack_gpio);
+
+	disable_rt5639_regulators(machine);
 
 	tegra_asoc_utils_fini(&machine->util_data);
 
@@ -1594,6 +1774,7 @@ static struct platform_driver tegra_rt5639_driver = {
 	},
 	.probe = tegra_rt5639_driver_probe,
 	.remove = tegra_rt5639_driver_remove,
+	.shutdown = tegra_rt5639_driver_shutdown,
 };
 
 static int __init tegra_rt5639_modinit(void)

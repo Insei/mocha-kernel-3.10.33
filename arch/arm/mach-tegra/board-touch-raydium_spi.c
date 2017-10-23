@@ -1,7 +1,7 @@
 /*
  * arch/arm/mach-tegra/board-touch-raydium_spi.c
  *
- * Copyright (C) 2012-2013, NVIDIA Corporation.  All Rights Reserved.
+ * Copyright (C) 2012-2014, NVIDIA Corporation.  All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +24,8 @@
 #include <linux/delay.h>
 #include <linux/gpio.h>
 #include <linux/spi/rm31080a_ts.h>
+
+#include "board-touch-raydium.h"
 
 int __init touch_init_raydium(int irq_gpio, int reset_gpio,
 				struct rm_spi_ts_platform_data *rm31080ts_data,

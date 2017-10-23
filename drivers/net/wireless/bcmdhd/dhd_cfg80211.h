@@ -1,8 +1,12 @@
 /*
  * Linux cfg80211 driver - Dongle Host Driver (DHD) related
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+>>>>>>> update/master
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -32,6 +36,7 @@
 #include <wl_cfg80211.h>
 #include <wl_cfgp2p.h>
 
+<<<<<<< HEAD
 s32 dhd_cfg80211_init(struct bcm_cfg80211 *cfg);
 s32 dhd_cfg80211_deinit(struct bcm_cfg80211 *cfg);
 s32 dhd_cfg80211_down(struct bcm_cfg80211 *cfg);
@@ -48,4 +53,20 @@ static inline int dhd_cfg80211_testmode_cmd(struct wiphy *wiphy, void *data, int
 }
 #endif
 
+=======
+#ifndef WL_ERR
+#define WL_ERR CFG80211_ERR
+#endif
+#ifndef WL_TRACE
+#define WL_TRACE CFG80211_TRACE
+#endif
+
+s32 dhd_cfg80211_init(struct bcm_cfg80211 *cfg);
+s32 dhd_cfg80211_deinit(struct bcm_cfg80211 *cfg);
+s32 dhd_cfg80211_down(struct bcm_cfg80211 *cfg);
+s32 dhd_cfg80211_set_p2p_info(struct bcm_cfg80211 *cfg, int val);
+s32 dhd_cfg80211_clean_p2p_info(struct bcm_cfg80211 *cfg);
+s32 dhd_config_dongle(struct bcm_cfg80211 *cfg);
+
+>>>>>>> update/master
 #endif /* __DHD_CFG80211__ */

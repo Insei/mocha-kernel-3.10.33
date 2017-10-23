@@ -23,14 +23,17 @@
 
 #include <asm-generic/dma-coherent.h>
 
+#include <asm/dma-iommu.h>
+
 #define ARCH_HAS_DMA_GET_REQUIRED_MASK
-#define DMA_ERROR_CODE  (~0)
 
 #define PG_PROT_KERNEL PAGE_KERNEL
 #define FLUSH_TLB_PAGE(addr) flush_tlb_kernel_range(addr, PAGE_SIZE)
 #define FLUSH_DCACHE_AREA __flush_dcache_area
 
 extern struct dma_map_ops arm_dma_ops;
+#define DMA_ERROR_CODE	(~(dma_addr_t)0)
+extern struct dma_map_ops *dma_ops;
 
 static inline struct dma_map_ops *get_dma_ops(struct device *dev)
 {
@@ -46,6 +49,7 @@ static inline void set_dma_ops(struct device *dev, struct dma_map_ops *ops)
 	dev->archdata.dma_ops = ops;
 }
 
+void set_dummy_dma_ops(struct device *dev);
 
 #include <asm-generic/dma-mapping-common.h>
 
@@ -119,6 +123,15 @@ static inline void dma_free_coherent(struct device *dev, size_t size,
 	ops->free(dev, size, vaddr, dev_addr, NULL);
 }
 
+static inline phys_addr_t dma_iova_to_phys(struct device *dev, dma_addr_t iova)
+{
+	struct dma_map_ops *ops = get_dma_ops(dev);
+
+	if (!ops->iova_to_phys)
+		return 0;
+
+	return ops->iova_to_phys(dev, iova);
+}
 /*
  * There is no dma_cache_sync() implementation, so just return NULL here.
  */
@@ -267,12 +280,38 @@ dma_map_linear_attrs(struct device *dev, phys_addr_t pa, size_t size,
 {
 	dma_addr_t da, req = pa;
 	void *va = phys_to_virt(pa);
+	DEFINE_DMA_ATTRS(_attrs);
 
 	da = dma_iova_alloc_at(dev, &req, size, attrs);
 	if (da == DMA_ERROR_CODE) {
-		DEFINE_DMA_ATTRS(_attrs);
+		struct dma_iommu_mapping *map;
+		dma_addr_t end = pa + size;
+		size_t bytes = 0;
+
 		switch (req) {
 		case -ENXIO:
+			map = to_dma_iommu_mapping(dev);
+			dev_info(dev, "Trying to IOVA linear map %pa-%pa outside of as:%pa-%pa\n",
+				 &pa, &end, &map->base, &map->end);
+
+			if ((pa >= map->base) && (pa < map->end)) {
+				req = pa;
+				bytes = map->end - pa;
+			} else if ((end > map->base) && (end <= map->end)) {
+				req = map->base;
+				bytes = end - map->base;
+			}
+
+			/* Partially reserve within IOVA map */
+			if (bytes) {
+				da = dma_iova_alloc_at(dev, &req, bytes, attrs);
+				if (da == DMA_ERROR_CODE)
+					return DMA_ERROR_CODE;
+
+				if (!dma_get_attr(DMA_ATTR_SKIP_CPU_SYNC, attrs))
+					dma_sync_single_for_device(NULL, da, bytes, dir);
+			}
+
 			/* Allow to map outside of map */
 			if (!attrs)
 				attrs = &_attrs;
@@ -387,7 +426,14 @@ static inline dma_addr_t virt_to_dma(struct device *dev, void *addr)
 }
 #endif
 
-
+#ifdef CONFIG_ARM_DMA_USE_IOMMU
+extern bool device_is_iommuable(struct device *dev);
+#else
+static inline bool device_is_iommuable(struct device *dev)
+{
+	return false;
+}
+#endif
 
 #endif	/* __KERNEL__ */
 #endif	/* __ASM_DMA_MAPPING_H */

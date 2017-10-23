@@ -1,7 +1,11 @@
 /*
  * drivers/misc/tegra-profiler/armv8_pmu.c
  *
+<<<<<<< HEAD
  * Copyright (c) 2015, NVIDIA CORPORATION.  All rights reserved.
+=======
+ * Copyright (c) 2014-2015, NVIDIA CORPORATION.  All rights reserved.
+>>>>>>> update/master
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -26,6 +30,10 @@
 #include <linux/slab.h>
 
 #include <asm/cputype.h>
+<<<<<<< HEAD
+=======
+#include <asm/cpu.h>
+>>>>>>> update/master
 
 #include "arm_pmu.h"
 #include "armv8_pmu.h"
@@ -48,7 +56,11 @@ struct quadd_cntrs_info {
 
 static DEFINE_PER_CPU(struct quadd_pmu_info, cpu_pmu_info);
 
+<<<<<<< HEAD
 static struct quadd_pmu_ctx pmu_ctx;
+=======
+static DEFINE_PER_CPU(struct quadd_pmu_ctx, pmu_ctx);
+>>>>>>> update/master
 
 static unsigned
 quadd_armv8_pmuv3_arm_events_map[QUADD_EVENT_TYPE_MAX] = {
@@ -299,11 +311,20 @@ static void select_counter(unsigned int counter)
 
 static int is_pmu_enabled(void)
 {
+<<<<<<< HEAD
+=======
+	struct quadd_pmu_ctx *local_pmu_ctx = &__get_cpu_var(pmu_ctx);
+>>>>>>> update/master
 	u32 pmcr = armv8_pmu_pmcr_read();
 
 	if (pmcr & QUADD_ARMV8_PMCR_E) {
 		u32 pmcnten = armv8_pmu_pmcntenset_read();
+<<<<<<< HEAD
 		pmcnten &= pmu_ctx.counters_mask | QUADD_ARMV8_CCNT;
+=======
+
+		pmcnten &= local_pmu_ctx->counters_mask | QUADD_ARMV8_CCNT;
+>>>>>>> update/master
 		return pmcnten ? 1 : 0;
 	}
 
@@ -340,8 +361,15 @@ get_free_counters(unsigned long *bitmap, int nbits, int *ccntr)
 	int cc;
 	u32 cntens;
 
+<<<<<<< HEAD
 	cntens = armv8_pmu_pmcntenset_read();
 	cntens = ~cntens & (pmu_ctx.counters_mask | QUADD_ARMV8_CCNT);
+=======
+	struct quadd_pmu_ctx *local_pmu_ctx = &__get_cpu_var(pmu_ctx);
+
+	cntens = armv8_pmu_pmcntenset_read();
+	cntens = ~cntens & (local_pmu_ctx->counters_mask | QUADD_ARMV8_CCNT);
+>>>>>>> update/master
 
 	bitmap_zero(bitmap, nbits);
 	bitmap_copy(bitmap, (unsigned long *)&cntens,
@@ -364,14 +392,26 @@ disable_interrupt(int idx)
 static void
 disable_all_interrupts(void)
 {
+<<<<<<< HEAD
 	u32 val = QUADD_ARMV8_CCNT | pmu_ctx.counters_mask;
+=======
+	struct quadd_pmu_ctx *local_pmu_ctx = &__get_cpu_var(pmu_ctx);
+	u32 val = QUADD_ARMV8_CCNT | local_pmu_ctx->counters_mask;
+
+>>>>>>> update/master
 	armv8_pmu_pmintenclr_write(val);
 }
 
 static void
 reset_overflow_flags(void)
 {
+<<<<<<< HEAD
 	u32 val = QUADD_ARMV8_CCNT | pmu_ctx.counters_mask;
+=======
+	struct quadd_pmu_ctx *local_pmu_ctx = &__get_cpu_var(pmu_ctx);
+	u32 val = QUADD_ARMV8_CCNT | local_pmu_ctx->counters_mask;
+
+>>>>>>> update/master
 	armv8_pmu_pmovsclr_write(val);
 }
 
@@ -385,13 +425,23 @@ select_event(unsigned int idx, unsigned int event)
 static void disable_all_counters(void)
 {
 	u32 val;
+<<<<<<< HEAD
+=======
+	u32 masked;
+	struct quadd_pmu_ctx *local_pmu_ctx = &__get_cpu_var(pmu_ctx);
+>>>>>>> update/master
 
 	/* Disable all counters */
 	val = armv8_pmu_pmcr_read();
 	if (val & QUADD_ARMV8_PMCR_E)
 		armv8_pmu_pmcr_write(val & ~QUADD_ARMV8_PMCR_E);
 
+<<<<<<< HEAD
 	armv8_pmu_pmcntenclr_write(QUADD_ARMV8_CCNT | pmu_ctx.counters_mask);
+=======
+	masked = QUADD_ARMV8_CCNT | local_pmu_ctx->counters_mask;
+	armv8_pmu_pmcntenclr_write(masked);
+>>>>>>> update/master
 }
 
 static void enable_all_counters(void)
@@ -458,6 +508,10 @@ static void pmu_start(void)
 {
 	int idx = 0, pcntrs, ccntr;
 	u32 event;
+<<<<<<< HEAD
+=======
+	struct quadd_pmu_ctx *local_pmu_ctx;
+>>>>>>> update/master
 	DECLARE_BITMAP(free_bitmap, QUADD_MAX_PMU_COUNTERS);
 	struct quadd_pmu_info *pi = &__get_cpu_var(cpu_pmu_info);
 	u32 *prevp = pi->prev_vals;
@@ -476,7 +530,12 @@ static void pmu_start(void)
 
 	pcntrs = get_free_counters(free_bitmap, QUADD_MAX_PMU_COUNTERS, &ccntr);
 
+<<<<<<< HEAD
 	list_for_each_entry(ei, &pmu_ctx.used_events, list) {
+=======
+	local_pmu_ctx = &__get_cpu_var(pmu_ctx);
+	list_for_each_entry(ei, &local_pmu_ctx->used_events, list) {
+>>>>>>> update/master
 		int index;
 
 		*prevp++ = 0;
@@ -542,6 +601,10 @@ pmu_read(struct event_data *events, int max_events)
 	u32 val;
 	int idx = 0, i = 0;
 	struct quadd_pmu_info *pi = &__get_cpu_var(cpu_pmu_info);
+<<<<<<< HEAD
+=======
+	struct quadd_pmu_ctx *local_pmu_ctx = &__get_cpu_var(pmu_ctx);
+>>>>>>> update/master
 	u32 *prevp = pi->prev_vals;
 	struct quadd_pmu_event_info *ei;
 
@@ -550,7 +613,11 @@ pmu_read(struct event_data *events, int max_events)
 		return 0;
 	}
 
+<<<<<<< HEAD
 	list_for_each_entry(ei, &pmu_ctx.used_events, list) {
+=======
+	list_for_each_entry(ei, &local_pmu_ctx->used_events, list) {
+>>>>>>> update/master
 		int index;
 
 		if (ei->quadd_event_id == QUADD_EVENT_TYPE_CPU_CYCLES) {
@@ -602,7 +669,13 @@ pmu_read_emulate(struct event_data *events, int max_events)
 	u32 *prevp = pi->prev_vals;
 	struct quadd_pmu_event_info *ei;
 
+<<<<<<< HEAD
 	list_for_each_entry(ei, &pmu_ctx.used_events, list) {
+=======
+	struct quadd_pmu_ctx *local_pmu_ctx = &__get_cpu_var(pmu_ctx);
+
+	list_for_each_entry(ei, &local_pmu_ctx->used_events, list) {
+>>>>>>> update/master
 		if (val > 200)
 			val = 100;
 
@@ -653,20 +726,37 @@ static void free_events(struct list_head *head)
 	}
 }
 
+<<<<<<< HEAD
 static int set_events(int *events, int size)
+=======
+static int set_events(int cpuid, int *events, int size)
+>>>>>>> update/master
 {
 	int free_pcntrs, err;
 	int i, nr_l1_r = 0, nr_l1_w = 0;
 	struct quadd_cntrs_info free_ci;
 
+<<<<<<< HEAD
 	pmu_ctx.l1_cache_rw = 0;
 
 	free_events(&pmu_ctx.used_events);
+=======
+	struct quadd_pmu_ctx *local_pmu_ctx = &per_cpu(pmu_ctx, cpuid);
+
+
+	local_pmu_ctx->l1_cache_rw = 0;
+
+	free_events(&local_pmu_ctx->used_events);
+>>>>>>> update/master
 
 	if (!events || !size)
 		return 0;
 
+<<<<<<< HEAD
 	if (!pmu_ctx.current_map) {
+=======
+	if (!local_pmu_ctx->current_map) {
+>>>>>>> update/master
 		pr_err("Invalid current_map\n");
 		return -ENODEV;
 	}
@@ -675,7 +765,11 @@ static int set_events(int *events, int size)
 	free_ci.pcntrs = QUADD_MAX_PMU_COUNTERS;
 	free_ci.ccntr = 1;
 
+<<<<<<< HEAD
 	on_each_cpu(__get_free_counters, &free_ci, 1);
+=======
+	smp_call_function_single(cpuid, __get_free_counters, &free_ci, 1);
+>>>>>>> update/master
 
 	free_pcntrs = free_ci.pcntrs;
 	pr_info("free counters: pcntrs/ccntr: %d/%d\n",
@@ -700,7 +794,11 @@ static int set_events(int *events, int size)
 		}
 
 		INIT_LIST_HEAD(&ei->list);
+<<<<<<< HEAD
 		list_add_tail(&ei->list, &pmu_ctx.used_events);
+=======
+		list_add_tail(&ei->list, &local_pmu_ctx->used_events);
+>>>>>>> update/master
 
 		if (events[i] == QUADD_EVENT_TYPE_CPU_CYCLES) {
 			ei->hw_value = QUADD_ARMV8_CPU_CYCLE_EVENT;
@@ -716,7 +814,11 @@ static int set_events(int *events, int size)
 				goto out_free;
 			}
 
+<<<<<<< HEAD
 			ei->hw_value = pmu_ctx.current_map[events[i]];
+=======
+			ei->hw_value = local_pmu_ctx->current_map[events[i]];
+>>>>>>> update/master
 		}
 
 		ei->quadd_event_id = events[i];
@@ -732,11 +834,16 @@ static int set_events(int *events, int size)
 	}
 
 	if (nr_l1_r > 0 && nr_l1_w > 0)
+<<<<<<< HEAD
 		pmu_ctx.l1_cache_rw = 1;
+=======
+		local_pmu_ctx->l1_cache_rw = 1;
+>>>>>>> update/master
 
 	return 0;
 
 out_free:
+<<<<<<< HEAD
 	free_events(&pmu_ctx.used_events);
 	return err;
 }
@@ -749,17 +856,46 @@ static int get_supported_events(int *events, int max_events)
 
 	for (i = 0; i < max_events; i++) {
 		if (pmu_ctx.current_map[i] != QUADD_ARMV8_UNSUPPORTED_EVENT)
+=======
+	free_events(&local_pmu_ctx->used_events);
+	return err;
+}
+
+static int get_supported_events(int cpuid, int *events, int max_events)
+{
+	int i, nr_events = 0;
+
+	struct quadd_pmu_ctx *local_pmu_ctx = &per_cpu(pmu_ctx, cpuid);
+
+	max_events = min_t(int, QUADD_EVENT_TYPE_MAX, max_events);
+
+	for (i = 0; i < max_events; i++) {
+		unsigned int event = local_pmu_ctx->current_map[i];
+
+		if (event != QUADD_ARMV8_UNSUPPORTED_EVENT)
+>>>>>>> update/master
 			events[nr_events++] = i;
 	}
 	return nr_events;
 }
 
+<<<<<<< HEAD
 static int get_current_events(int *events, int max_events)
+=======
+static int get_current_events(int cpuid, int *events, int max_events)
+>>>>>>> update/master
 {
 	int i = 0;
 	struct quadd_pmu_event_info *ei;
 
+<<<<<<< HEAD
 	list_for_each_entry(ei, &pmu_ctx.used_events, list) {
+=======
+	struct quadd_pmu_ctx *local_pmu_ctx = &per_cpu(pmu_ctx, cpuid);
+
+
+	list_for_each_entry(ei, &local_pmu_ctx->used_events, list) {
+>>>>>>> update/master
 		events[i++] = ei->quadd_event_id;
 
 		if (i >= max_events)
@@ -769,9 +905,17 @@ static int get_current_events(int *events, int max_events)
 	return i;
 }
 
+<<<<<<< HEAD
 static struct quadd_arch_info *get_arch(void)
 {
 	return &pmu_ctx.arch;
+=======
+static struct quadd_arch_info *get_arch(int cpuid)
+{
+	struct quadd_pmu_ctx *local_pmu_ctx = &per_cpu(pmu_ctx, cpuid);
+
+	return &local_pmu_ctx->arch;
+>>>>>>> update/master
 }
 
 static struct quadd_event_source_interface pmu_armv8_int = {
@@ -792,6 +936,7 @@ static struct quadd_event_source_interface pmu_armv8_int = {
 	.get_arch		= get_arch,
 };
 
+<<<<<<< HEAD
 struct quadd_event_source_interface *quadd_armv8_pmu_init(void)
 {
 	u32 pmcr, imp, idcode;
@@ -814,12 +959,53 @@ struct quadd_event_source_interface *quadd_armv8_pmu_init(void)
 		pmu_ctx.counters_mask =
 			QUADD_ARMV8_COUNTERS_MASK_PMUV3;
 		pmu_ctx.current_map =
+=======
+static int quadd_armv8_pmu_init_for_cpu(int cpuid)
+{
+	u32 pmcr;
+	u32 idcode = 0;
+	int err = 0;
+	int idx;
+	struct cpuinfo_arm64 *local_cpu_data = &per_cpu(cpu_data, cpuid);
+	struct quadd_pmu_ctx *local_pmu_ctx = &per_cpu(pmu_ctx, cpuid);
+	u32 reg_midr = local_cpu_data->reg_midr;
+	u32 ext_ver;
+	u64 aa64_dfr;
+
+	char implementer = (reg_midr >> 24) & 0xFF;
+
+	strncpy(local_pmu_ctx->arch.name, "Unknown",
+			sizeof(local_pmu_ctx->arch.name));
+
+	local_pmu_ctx->arch.type = QUADD_AA64_CPU_TYPE_UNKNOWN;
+	local_pmu_ctx->arch.ver = 0;
+	local_pmu_ctx->current_map = NULL;
+
+	aa64_dfr = read_cpuid(ID_AA64DFR0_EL1);
+	aa64_dfr = (aa64_dfr >> 8) & 0x0f;
+
+	if (aa64_dfr != QUADD_AA64_PMUVER_PMUV3)
+		err = 1;
+
+	if (err == 0 && (implementer == 'A' || implementer == 'N')) {
+
+		strncpy(local_pmu_ctx->arch.name, "AA64 PmuV3",
+				sizeof(local_pmu_ctx->arch.name));
+
+		idx = sizeof(local_pmu_ctx->arch.name) - 1;
+		local_pmu_ctx->arch.name[idx] = '\0';
+
+		local_pmu_ctx->counters_mask =
+			QUADD_ARMV8_COUNTERS_MASK_PMUV3;
+		local_pmu_ctx->current_map =
+>>>>>>> update/master
 			quadd_armv8_pmuv3_arm_events_map;
 
 		pmcr = armv8_pmu_pmcr_read();
 
 		idcode = (pmcr >> QUADD_ARMV8_PMCR_IDCODE_SHIFT) &
 			QUADD_ARMV8_PMCR_IDCODE_MASK;
+<<<<<<< HEAD
 		imp = pmcr >> QUADD_ARMV8_PMCR_IMP_SHIFT;
 
 		pr_info("imp: %#x, idcode: %#x\n", imp, idcode);
@@ -882,11 +1068,112 @@ struct quadd_event_source_interface *quadd_armv8_pmu_init(void)
 	pmu_ctx.arch.name[sizeof(pmu_ctx.arch.name) - 1] = '\0';
 	pr_info("arch: %s, type: %d, ver: %d\n",
 		pmu_ctx.arch.name, pmu_ctx.arch.type, pmu_ctx.arch.ver);
+=======
+
+		pr_info("imp: %#x, idcode: %#x\n", implementer, idcode);
+	}
+
+	if (err == 0) {
+		switch (implementer) {
+		case 'A':
+			strncat(local_pmu_ctx->arch.name, " ARM",
+				sizeof(local_pmu_ctx->arch.name) -
+				strlen(local_pmu_ctx->arch.name));
+			idx = sizeof(local_pmu_ctx->arch.name) - 1;
+			local_pmu_ctx->arch.name[idx] = '\0';
+
+			if (idcode == QUADD_AA64_CPU_IDCODE_CORTEX_A53) {
+				local_pmu_ctx->arch.type =
+					QUADD_AA64_CPU_TYPE_CORTEX_A53;
+
+				strncat(local_pmu_ctx->arch.name, " CORTEX-A53",
+					sizeof(local_pmu_ctx->arch.name) -
+					strlen(local_pmu_ctx->arch.name));
+
+			} else if (idcode == QUADD_AA64_CPU_IDCODE_CORTEX_A57) {
+				local_pmu_ctx->arch.type =
+					QUADD_AA64_CPU_TYPE_CORTEX_A57;
+				local_pmu_ctx->current_map =
+					quadd_armv8_pmuv3_a57_events_map;
+
+				strncat(local_pmu_ctx->arch.name, " CORTEX-A57",
+					sizeof(local_pmu_ctx->arch.name) -
+					strlen(local_pmu_ctx->arch.name));
+			} else {
+				local_pmu_ctx->arch.type =
+					QUADD_AA64_CPU_TYPE_ARM;
+			}
+			break;
+		case 'N':
+			ext_ver = armv8_id_afr0_el1_read();
+
+			ext_ver = (ext_ver >> QUADD_ARMV8_PMU_NVEXT_SHIFT) &
+				QUADD_ARMV8_PMU_NVEXT_MASK;
+
+			strncat(local_pmu_ctx->arch.name, " NVIDIA (Denver)",
+				sizeof(local_pmu_ctx->arch.name) -
+				strlen(local_pmu_ctx->arch.name));
+			local_pmu_ctx->arch.type = QUADD_AA64_CPU_TYPE_DENVER;
+			local_pmu_ctx->arch.ver = ext_ver;
+			local_pmu_ctx->current_map =
+				quadd_armv8_pmuv3_denver_events_map;
+			break;
+		default:
+			strncat(local_pmu_ctx->arch.name,
+				" Unknown implementor code",
+				sizeof(local_pmu_ctx->arch.name) -
+				strlen(local_pmu_ctx->arch.name));
+			local_pmu_ctx->arch.type =
+				QUADD_AA64_CPU_TYPE_UNKNOWN_IMP;
+			err = 1;
+			break;
+		}
+	}
+
+	local_pmu_ctx->arch.name[sizeof(local_pmu_ctx->arch.name) - 1] = '\0';
+	pr_info("arch: %s, type: %d, ver: %d\n",
+		local_pmu_ctx->arch.name, local_pmu_ctx->arch.type,
+		local_pmu_ctx->arch.ver);
+
+	INIT_LIST_HEAD(&local_pmu_ctx->used_events);
+	return err;
+}
+
+struct quadd_event_source_interface *quadd_armv8_pmu_init(void)
+{
+	struct quadd_event_source_interface *pmu = NULL;
+	int cpuid;
+	int err;
+	int initialized = 1;
+
+	for_each_possible_cpu(cpuid) {
+		err = quadd_armv8_pmu_init_for_cpu(cpuid);
+		if (err) {
+			initialized = 0;
+			break;
+		}
+	}
+
+	if (initialized == 1)
+		pmu = &pmu_armv8_int;
+	else
+		pr_err("error: incorrect PMUVer\n");
+>>>>>>> update/master
 
 	return pmu;
 }
 
 void quadd_armv8_pmu_deinit(void)
 {
+<<<<<<< HEAD
 	free_events(&pmu_ctx.used_events);
+=======
+	int cpu_id;
+
+	for_each_possible_cpu(cpu_id) {
+		struct quadd_pmu_ctx *local_pmu_ctx = &per_cpu(pmu_ctx, cpu_id);
+
+		free_events(&local_pmu_ctx->used_events);
+	}
+>>>>>>> update/master
 }

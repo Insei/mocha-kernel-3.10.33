@@ -1,13 +1,22 @@
 /*
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
  *
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+ * 
+>>>>>>> update/master
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
  * under the terms of the GNU General Public License version 2 (the "GPL"),
  * available at http://www.broadcom.com/licenses/GPLv2.php, with the
  * following added to such license:
+<<<<<<< HEAD
  *
+=======
+ * 
+>>>>>>> update/master
  *      As a special exception, the copyright holders of this software give you
  * permission to link this software with independent modules, and to copy and
  * distribute the resulting executable under terms of your choice, provided that
@@ -15,14 +24,22 @@
  * the license of that module.  An independent module is a module which is not
  * derived from this software.  The special exception does not apply to any
  * modifications of the software.
+<<<<<<< HEAD
  *
+=======
+ * 
+>>>>>>> update/master
  *      Notwithstanding the above, under no circumstances may you combine this
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
  * Fundamental constants relating to Neighbor Discovery Protocol
  *
+<<<<<<< HEAD
  * $Id: bcmipv6.h 399482 2013-04-30 09:24:37Z $
+=======
+ * $Id: bcmipv6.h 439574 2013-11-27 06:37:37Z $
+>>>>>>> update/master
  */
 
 #ifndef _bcmipv6_h_
@@ -57,7 +74,12 @@
 #define IPV6_FRAG_OFFS_SHIFT	3
 
 /* For icmpv6 */
+<<<<<<< HEAD
 #define ICMPV6_HEADER_TYPE 	0x3A
+=======
+#define ICMPV6_HEADER_TYPE	0x3A
+#define ICMPV6_PKT_TYPE_RA	134
+>>>>>>> update/master
 #define ICMPV6_PKT_TYPE_NS	135
 #define ICMPV6_PKT_TYPE_NA	136
 
@@ -76,7 +98,11 @@
 							 a[10] | a[11] | a[12] | a[13] | \
 							 a[14] | a[15]) == 0)
 
+<<<<<<< HEAD
 #define IPV6_ADDR_LOCAL(a)	(((a[0] == 0xfe) && (a[1] & 0x80)) ? TRUE : FALSE)
+=======
+#define IPV6_ADDR_LOCAL(a)	(((a[0] == 0xfe) && (a[1] & 0x80))? TRUE: FALSE)
+>>>>>>> update/master
 
 /* IPV6 address */
 BWL_PRE_PACKED_STRUCT struct ipv6_addr {
@@ -139,11 +165,19 @@ BWL_PRE_PACKED_STRUCT struct ipv6_frag {
 #include <packed_section_end.h>
 
 static const struct ipv6_addr all_node_ipv6_maddr = {
+<<<<<<< HEAD
 	{ 0xff, 0x2, 0, 0,
 	0, 0, 0, 0,
 	0, 0, 0, 0,
 	0, 0, 0, 1
 	} };
+=======
+									{ 0xff, 0x2, 0, 0,
+									0, 0, 0, 0,
+									0, 0, 0, 0,
+									0, 0, 0, 1
+									}};
+>>>>>>> update/master
 
 #define IPV6_ISMULTI(a) (a[0] == 0xff)
 

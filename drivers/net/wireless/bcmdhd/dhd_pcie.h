@@ -1,15 +1,24 @@
 /*
  * Linux DHD Bus Module for PCIE
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
  *
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+ * 
+>>>>>>> update/master
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
  * under the terms of the GNU General Public License version 2 (the "GPL"),
  * available at http://www.broadcom.com/licenses/GPLv2.php, with the
  * following added to such license:
+<<<<<<< HEAD
  *
+=======
+ * 
+>>>>>>> update/master
  *      As a special exception, the copyright holders of this software give you
  * permission to link this software with independent modules, and to copy and
  * distribute the resulting executable under terms of your choice, provided that
@@ -17,12 +26,20 @@
  * the license of that module.  An independent module is a module which is not
  * derived from this software.  The special exception does not apply to any
  * modifications of the software.
+<<<<<<< HEAD
  *
+=======
+ * 
+>>>>>>> update/master
  *      Notwithstanding the above, under no circumstances may you combine this
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
+<<<<<<< HEAD
  * $Id: dhd_pcie.h 452261 2014-01-29 19:30:23Z $
+=======
+ * $Id: dhd_pcie.h 511256 2014-10-29 07:06:18Z $
+>>>>>>> update/master
  */
 
 
@@ -30,6 +47,7 @@
 #define dhd_pcie_h
 
 #include <bcmpcie.h>
+<<<<<<< HEAD
 
 /* defines */
 
@@ -37,6 +55,25 @@
 #define DONGLE_REG_MAP_SIZE (32 * 1024)
 #define DONGLE_TCM_MAP_SIZE (4096 * 1024)
 #define DONGLE_MIN_MEMSIZE (128 * 1024)
+=======
+#include <hnd_cons.h>
+#ifdef SUPPORT_LINKDOWN_RECOVERY
+#ifdef CONFIG_ARCH_MSM
+#ifdef CONFIG_ARCH_MSM8994
+#include <linux/msm_pcie.h>
+#else
+#include <mach/msm_pcie.h>
+#endif
+#endif /* CONFIG_ARCH_MSM */
+#endif /* SUPPORT_LINKDOWN_RECOVERY */
+
+/* defines */
+
+#define PCMSGBUF_HDRLEN 0
+#define DONGLE_REG_MAP_SIZE (32 * 1024)
+#define DONGLE_TCM_MAP_SIZE (4096 * 1024)
+#define DONGLE_MIN_MEMSIZE (128 *1024)
+>>>>>>> update/master
 #ifdef DHD_DEBUG
 #define DHD_PCIE_SUCCESS 0
 #define DHD_PCIE_FAILURE 1
@@ -44,6 +81,10 @@
 #define	REMAP_ENAB(bus)			((bus)->remap)
 #define	REMAP_ISADDR(bus, a)		(((a) >= ((bus)->orig_ramsize)) && ((a) < ((bus)->ramsize)))
 
+<<<<<<< HEAD
+=======
+#define MAX_DHD_TX_FLOWS	256
+>>>>>>> update/master
 
 /* user defined data structures */
 #ifdef DHD_DEBUG
@@ -55,16 +96,33 @@
 typedef struct dhd_console {
 	 uint		count;	/* Poll interval msec counter */
 	 uint		log_addr;		 /* Log struct address (fixed) */
+<<<<<<< HEAD
 	 hndrte_log_t	 log;			 /* Log struct (host copy) */
+=======
+	 hnd_log_t	 log;			 /* Log struct (host copy) */
+>>>>>>> update/master
 	 uint		 bufsize;		 /* Size of log buffer */
 	 uint8		 *buf;			 /* Log buffer (host copy) */
 	 uint		 last;			 /* Last buffer read index */
 } dhd_console_t;
 #endif /* DHD_DEBUG */
+<<<<<<< HEAD
+=======
+typedef struct ring_sh_info {
+	uint32 ring_mem_addr;
+	uint32 ring_state_w;
+	uint32 ring_state_r;
+} ring_sh_info_t;
+>>>>>>> update/master
 
 typedef struct dhd_bus {
 	dhd_pub_t	*dhd;
 	struct pci_dev  *dev;		/* pci device handle */
+<<<<<<< HEAD
+=======
+	dll_t       const_flowring; /* constructed list of tx flowring queues */
+
+>>>>>>> update/master
 	si_t		*sih;			/* Handle for SI calls */
 	char		*vars;			/* Variables (from CIS and/or other) */
 	uint		varsz;			/* Size of variables buffer */
@@ -85,7 +143,12 @@ typedef struct dhd_bus {
 	uint16		cl_devid;		/* cached devid for dhdsdio_probe_attach() */
 	char		*fw_path;		/* module_param: path to firmware image */
 	char		*nv_path;		/* module_param: path to nvram vars file */
+<<<<<<< HEAD
 	const char      *nvram_params;		/* user specified nvram params. */
+=======
+	char		*nvram_params;		/* user specified nvram params. */
+	int		nvram_params_len;
+>>>>>>> update/master
 
 	struct pktq	txq;			/* Queue length used for flow-control */
 
@@ -115,10 +178,22 @@ typedef struct dhd_bus {
 	ulong		shared_addr;
 	pciedev_shared_t	*pcie_sh;
 	bool bus_flowctrl;
+<<<<<<< HEAD
 	ioct_resp_hdr_t	ioct_resp;
 	uint32		dma_rxoffset;
 	volatile char	*regs;		/* pci device memory va */
 	volatile char	*tcm;		/* pci device memory va */
+=======
+	ioctl_comp_resp_msg_t	ioct_resp;
+	uint32		dma_rxoffset;
+	volatile char	*regs;		/* pci device memory va */
+	volatile char	*tcm;		/* pci device memory va */
+	uint32		tcm_size;
+#ifdef CONFIG_ARCH_MSM8994
+	uint32		bar1_win_base;
+	uint32		bar1_win_mask;
+#endif
+>>>>>>> update/master
 	osl_t		*osh;
 	uint32		nvram_csm;	/* Nvram checksum */
 	uint16		pollrate;
@@ -129,11 +204,16 @@ typedef struct dhd_bus {
 	bool	sleep_allowed;
 
 	/* version 3 shared struct related info start */
+<<<<<<< HEAD
+=======
+	ring_sh_info_t	ring_sh[BCMPCIE_COMMON_MSGRINGS + MAX_DHD_TX_FLOWS];
+>>>>>>> update/master
 	uint8	h2d_ring_count;
 	uint8	d2h_ring_count;
 	uint32  ringmem_ptr;
 	uint32  ring_state_ptr;
 
+<<<<<<< HEAD
 	uint32 h2d_data_ring_mem_addr;
 	uint32 h2d_ctrl_ring_mem_addr;
 	uint32 h2d_data_ring_state_addr;
@@ -143,6 +223,9 @@ typedef struct dhd_bus {
 	uint32 d2h_ctrl_ring_mem_addr;
 	uint32 d2h_data_ring_state_addr;
 	uint32 d2h_ctrl_ring_state_addr;
+=======
+	uint32 d2h_dma_scratch_buffer_mem_addr;
+>>>>>>> update/master
 
 	uint32 h2d_mb_data_ptr_addr;
 	uint32 d2h_mb_data_ptr_addr;
@@ -150,16 +233,43 @@ typedef struct dhd_bus {
 
 	uint32 def_intmask;
 	bool	ltrsleep_on_unload;
+<<<<<<< HEAD
 
+=======
+	uint	wait_for_d3_ack;
+	uint8	txmode_push;
+	uint32 max_sub_queues;
+	bool	db1_for_mb;
+	bool	suspended;
+#ifdef SUPPORT_LINKDOWN_RECOVERY
+#ifdef CONFIG_ARCH_MSM
+	struct msm_pcie_register_event pcie_event;
+	bool islinkdown;
+#endif /* CONFIG_ARCH_MSM */
+#endif /* SUPPORT_LINKDOWN_RECOVERY */
+#ifdef PCIE_TX_DEFERRAL
+	struct workqueue_struct *tx_wq;
+	struct work_struct create_flow_work;
+	struct work_struct delete_flow_work;
+	unsigned long *delete_flow_map;
+	struct sk_buff_head orphan_list;
+#endif /* PCIE_TX_DEFERRAL */
+	uint8 force_suspend;
+>>>>>>> update/master
 } dhd_bus_t;
 
 /* function declarations */
 
+<<<<<<< HEAD
 extern uint32 *dhdpcie_bus_reg_map(osl_t *osh, ulong addr, int size);
+=======
+extern uint32* dhdpcie_bus_reg_map(osl_t *osh, ulong addr, int size);
+>>>>>>> update/master
 extern int dhdpcie_bus_register(void);
 extern void dhdpcie_bus_unregister(void);
 extern bool dhdpcie_chipmatch(uint16 vendor, uint16 device);
 
+<<<<<<< HEAD
 extern struct dhd_bus *dhdpcie_bus_attach(osl_t *osh, volatile char *regs, volatile char *tcm);
 extern uint32 dhdpcie_bus_cfg_read_dword(struct dhd_bus *bus, uint32 addr, uint32 size);
 extern void dhdpcie_bus_cfg_write_dword(struct dhd_bus *bus, uint32 addr, uint32 size, uint32 data);
@@ -167,4 +277,34 @@ extern void dhdpcie_bus_intr_disable(struct dhd_bus *bus);
 extern void dhdpcie_bus_release(struct dhd_bus *bus);
 extern int32 dhdpcie_bus_isr(struct dhd_bus *bus);
 extern void dhdpcie_free_irq(dhd_bus_t *bus);
+=======
+extern struct dhd_bus* dhdpcie_bus_attach(osl_t *osh, volatile char* regs,
+	volatile char* tcm, uint32 tcm_size);
+extern uint32 dhdpcie_bus_cfg_read_dword(struct dhd_bus *bus, uint32 addr, uint32 size);
+extern void dhdpcie_bus_cfg_write_dword(struct dhd_bus *bus, uint32 addr, uint32 size, uint32 data);
+extern void dhdpcie_bus_intr_disable(struct dhd_bus *bus);
+extern void dhdpcie_bus_remove_prep(struct dhd_bus *bus);
+extern void dhdpcie_bus_release(struct dhd_bus *bus);
+extern int32 dhdpcie_bus_isr(struct dhd_bus *bus);
+extern void dhdpcie_free_irq(dhd_bus_t *bus);
+extern int dhdpcie_bus_suspend(struct  dhd_bus *bus, bool state);
+extern int dhdpcie_pci_suspend_resume(struct dhd_bus *bus, bool state);
+#ifndef BCMPCIE_OOB_HOST_WAKE
+extern void dhdpcie_pme_active(osl_t *osh, bool enable);
+#endif /* !BCMPCIE_OOB_HOST_WAKE */
+extern int dhdpcie_start_host_pcieclock(dhd_bus_t *bus);
+extern int dhdpcie_stop_host_pcieclock(dhd_bus_t *bus);
+extern int dhdpcie_disable_device(dhd_bus_t *bus);
+extern int dhdpcie_enable_device(dhd_bus_t *bus);
+extern int dhdpcie_alloc_resource(dhd_bus_t *bus);
+extern void dhdpcie_free_resource(dhd_bus_t *bus);
+extern int dhdpcie_bus_request_irq(struct dhd_bus *bus);
+#ifdef BCMPCIE_OOB_HOST_WAKE
+extern int dhdpcie_oob_intr_register(dhd_bus_t *bus);
+extern void dhdpcie_oob_intr_unregister(dhd_bus_t *bus);
+extern void dhdpcie_oob_intr_set(dhd_bus_t *bus, bool enable);
+#endif /* BCMPCIE_OOB_HOST_WAKE */
+
+extern int dhd_buzzz_dump_dngl(dhd_bus_t *bus);
+>>>>>>> update/master
 #endif /* dhd_pcie_h */

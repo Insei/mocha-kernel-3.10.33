@@ -4,6 +4,11 @@
 
 obj-$(CONFIG_EXTCON)		+= extcon-class.o
 obj-$(CONFIG_EXTCON_GPIO)	+= extcon-gpio.o
+<<<<<<< HEAD
+=======
+obj-$(CONFIG_EXTCON_GPIO)	+= extcon-gpio-states.o
+obj-$(CONFIG_EXTCON_GPIO_OTG)	+= extcon-gpio-otg.o
+>>>>>>> update/master
 obj-$(CONFIG_EXTCON_CABLE_XLATE) += extcon-cable-xlate.o
 obj-$(CONFIG_EXTCON_ADC_JACK)	+= extcon-adc-jack.o
 obj-$(CONFIG_EXTCON_MAX77665)	+= extcon-max77665.o

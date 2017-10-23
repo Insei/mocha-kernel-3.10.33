@@ -2,7 +2,11 @@
  * drivers/regulator/tegra-regulator.c
  *
  * Copyright (c) 2010 Google, Inc
+<<<<<<< HEAD
  * Copyright (C) 2011-2014 NVIDIA Corporation.
+=======
+ * Copyright (C) 2011-2016 NVIDIA Corporation. All rights reserved.
+>>>>>>> update/master
  *
  * Author:
  *	Colin Cross <ccross@google.com>
@@ -22,6 +26,7 @@
 #define _MACH_TEGRA_POWERGATE_H_
 
 #include <linux/init.h>
+#include <linux/notifier.h>
 
 #if defined(CONFIG_ARCH_TEGRA_2x_SOC) || defined(CONFIG_ARCH_TEGRA_3x_SOC)
 #define TEGRA_POWERGATE_CPU0	0
@@ -32,14 +37,12 @@
 #define TEGRA_POWERGATE_3D0	TEGRA_POWERGATE_3D
 #define TEGRA_POWERGATE_GPU	TEGRA_POWERGATE_3D
 #define TEGRA_POWERGATE_VENC	2
+#define TEGRA_POWERGATE_VE	TEGRA_POWERGATE_VENC
 #define TEGRA_POWERGATE_PCIE	3
 #define TEGRA_POWERGATE_VDEC	4
-#if defined(CONFIG_ARCH_TEGRA_14x_SOC)
-#define TEGRA_POWERGATE_C0L2	5
-#else
 #define TEGRA_POWERGATE_L2	5
-#endif
 #define TEGRA_POWERGATE_MPE	6
+#define TEGRA_POWERGATE_NVENC	TEGRA_POWERGATE_MPE
 #define TEGRA_POWERGATE_HEG	7
 #define TEGRA_POWERGATE_SATA	8
 #define TEGRA_POWERGATE_CPU1	9
@@ -58,11 +61,18 @@
 #define TEGRA_POWERGATE_XUSBA	20
 #define TEGRA_POWERGATE_XUSBB	21
 #define TEGRA_POWERGATE_XUSBC	22
-#if defined(CONFIG_ARCH_TEGRA_12x_SOC)
+#if defined(CONFIG_ARCH_TEGRA_12x_SOC) || defined(CONFIG_ARCH_TEGRA_21x_SOC)
 #define TEGRA_POWERGATE_VIC	23
 #endif
-#if defined(CONFIG_ARCH_TEGRA_14x_SOC) || defined(CONFIG_ARCH_TEGRA_12x_SOC)
+#if defined(CONFIG_ARCH_TEGRA_12x_SOC)
 #define TEGRA_POWERGATE_IRAM	24
+#endif
+
+#if defined(CONFIG_ARCH_TEGRA_21x_SOC)
+#define TEGRA_POWERGATE_NVDEC	25
+#define TEGRA_POWERGATE_NVJPG	26
+#define TEGRA_POWERGATE_APE	27
+#define TEGRA_POWERGATE_VE2	29
 #endif
 
 #define TEGRA_POWERGATE_CPU	TEGRA_POWERGATE_CPU0
@@ -76,6 +86,8 @@
 #define TEGRA_NUM_POWERGATE	14
 #elif defined(CONFIG_ARCH_TEGRA_11x_SOC)
 #define TEGRA_NUM_POWERGATE	23
+#elif defined(CONFIG_ARCH_TEGRA_21x_SOC)
+#define TEGRA_NUM_POWERGATE	30
 #else
 #define TEGRA_NUM_POWERGATE	24
 #endif
@@ -89,6 +101,8 @@
 #define TEGRA_IS_DISP_POWERGATE_ID(id) (((id) == TEGRA_POWERGATE_DISA) || \
 					((id) == TEGRA_POWERGATE_DISB))
 #define TEGRA_IS_VENC_POWERGATE_ID(id)  ((id) == TEGRA_POWERGATE_VENC)
+#define TEGRA_IS_PCIE_POWERGATE_ID(id)  ((id) == TEGRA_POWERGATE_PCIE)
+#define TEGRA_IS_XUSBC_POWERGATE_ID(id) ((id) == TEGRA_POWERGATE_XUSBC)
 #endif
 
 int  __init tegra_powergate_init(void);
@@ -103,6 +117,7 @@ int tegra_powergate_mc_flush(int id);
 int tegra_powergate_mc_flush_done(int id);
 int tegra_powergate_remove_clamping(int id);
 const char *tegra_powergate_get_name(int id);
+bool tegra_powergate_is_hotreset_asserted(int mc_client_id);
 
 /*
  * Functions to powergate/un-powergate partitions.
@@ -137,4 +152,16 @@ int tegra_powergate_partition(int id);
 int tegra_unpowergate_partition(int id);
 
 bool tegra_powergate_check_clamping(int id);
+<<<<<<< HEAD
+=======
+#if defined(CONFIG_ARCH_TEGRA_21x_SOC)
+int slcg_register_notifier(int id, struct notifier_block *nb);
+int slcg_unregister_notifier(int id, struct notifier_block *nb);
+#else
+static inline int slcg_register_notifier(int id, struct notifier_block *nb)
+{ return 0; }
+static inline int slcg_unregister_notifier(int id, struct notifier_block *nb)
+{ return 0; }
+#endif
+>>>>>>> update/master
 #endif /* _MACH_TEGRA_POWERGATE_H_ */

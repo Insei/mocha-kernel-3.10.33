@@ -1,7 +1,7 @@
 /*
  * tegra30_spdif_alt.c - Tegra30 SPDIF driver
  *
- * Copyright (c) 2013 NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2014 NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -36,6 +36,27 @@
 
 #define DRV_NAME "tegra30-spdif"
 
+static const struct reg_default tegra30_spdif_reg_defaults[] = {
+	{TEGRA30_SPDIF_CTRL, 0x00000000},
+	{TEGRA30_SPDIF_STROBE_CTRL, 0x00000000},
+	{TEGRA30_SPDIF_CIF_TXD_CTRL, 0x00001100},
+	{TEGRA30_SPDIF_CIF_RXD_CTRL, 0x00001100},
+	{TEGRA30_SPDIF_CIF_TXU_CTRL, 0x00001100},
+	{TEGRA30_SPDIF_CIF_RXU_CTRL, 0x00001100},
+	{TEGRA30_SPDIF_FLOWCTL_CTRL, 0x80000000},
+	{TEGRA30_SPDIF_TX_STEP, 0x00008000},
+	{TEGRA30_SPDIF_FLOW_STATUS, 0x00000000},
+	{TEGRA30_SPDIF_LCOEF_1_4_0, 0x0000002e},
+	{TEGRA30_SPDIF_LCOEF_1_4_1, 0x0000f9e6},
+	{TEGRA30_SPDIF_LCOEF_1_4_2, 0x000020ca},
+	{TEGRA30_SPDIF_LCOEF_1_4_3, 0x00007147},
+	{TEGRA30_SPDIF_LCOEF_1_4_4, 0x0000f17e},
+	{TEGRA30_SPDIF_LCOEF_1_4_5, 0x000001e0},
+	{TEGRA30_SPDIF_LCOEF_2_4_0, 0x00000117},
+	{TEGRA30_SPDIF_LCOEF_2_4_1, 0x0000f26b},
+	{TEGRA30_SPDIF_LCOEF_2_4_2, 0x00004c07},
+};
+
 static int tegra30_spdif_runtime_suspend(struct device *dev)
 {
 	struct tegra30_spdif *spdif = dev_get_drvdata(dev);
@@ -69,6 +90,17 @@ static int tegra30_spdif_runtime_resume(struct device *dev)
 
 	return 0;
 }
+
+#ifdef CONFIG_PM_SLEEP
+static int tegra30_spdif_suspend(struct device *dev)
+{
+	struct tegra30_spdif *spdif = dev_get_drvdata(dev);
+
+	regcache_mark_dirty(spdif->regmap);
+
+	return 0;
+}
+#endif
 
 static int tegra30_spdif_set_dai_sysclk(struct snd_soc_dai *dai,
 		int clk_id, unsigned int freq, int dir)
@@ -112,14 +144,18 @@ static int tegra30_spdif_set_dai_sysclk(struct snd_soc_dai *dai,
 	}
 
 	if (dir == SND_SOC_CLOCK_OUT) {
+		pm_runtime_get_sync(dai->dev);
 		ret = clk_set_rate(spdif->clk_spdif_out, spdif_out_clock_rate);
+		pm_runtime_put(dai->dev);
 		if (ret) {
 			dev_err(dev, "Can't set SPDIF Out clock rate: %d\n",
 				ret);
 			return ret;
 		}
 	} else {
+		pm_runtime_get_sync(dai->dev);
 		ret = clk_set_rate(spdif->clk_spdif_in, spdif_in_clock_rate);
+		pm_runtime_put(dai->dev);
 		if (ret) {
 			dev_err(dev, "Can't set SPDIF In clock rate: %d\n",
 				ret);
@@ -129,7 +165,6 @@ static int tegra30_spdif_set_dai_sysclk(struct snd_soc_dai *dai,
 
 	return 0;
 }
-
 
 static int tegra30_spdif_hw_params(struct snd_pcm_substream *substream,
 				 struct snd_pcm_hw_params *params,
@@ -273,9 +308,37 @@ static struct snd_soc_codec_driver tegra30_spdif_codec = {
 	.num_dapm_widgets = ARRAY_SIZE(tegra30_spdif_widgets),
 	.dapm_routes = tegra30_spdif_routes,
 	.num_dapm_routes = ARRAY_SIZE(tegra30_spdif_routes),
+	.idle_bias_off = 1,
 };
 
-static bool tegra30_spdif_wr_rd_reg(struct device *dev, unsigned int reg)
+static bool tegra30_spdif_wr_reg(struct device *dev, unsigned int reg)
+{
+	switch (reg) {
+	case TEGRA30_SPDIF_CTRL:
+	case TEGRA30_SPDIF_STROBE_CTRL:
+	case TEGRA30_SPDIF_CIF_TXD_CTRL:
+	case TEGRA30_SPDIF_CIF_RXD_CTRL:
+	case TEGRA30_SPDIF_CIF_TXU_CTRL:
+	case TEGRA30_SPDIF_CIF_RXU_CTRL:
+	case TEGRA30_SPDIF_FLOWCTL_CTRL:
+	case TEGRA30_SPDIF_TX_STEP:
+	case TEGRA30_SPDIF_FLOW_STATUS:
+	case TEGRA30_SPDIF_LCOEF_1_4_0:
+	case TEGRA30_SPDIF_LCOEF_1_4_1:
+	case TEGRA30_SPDIF_LCOEF_1_4_2:
+	case TEGRA30_SPDIF_LCOEF_1_4_3:
+	case TEGRA30_SPDIF_LCOEF_1_4_4:
+	case TEGRA30_SPDIF_LCOEF_1_4_5:
+	case TEGRA30_SPDIF_LCOEF_2_4_0:
+	case TEGRA30_SPDIF_LCOEF_2_4_1:
+	case TEGRA30_SPDIF_LCOEF_2_4_2:
+		return true;
+	default:
+		return false;
+	};
+}
+
+static bool tegra30_spdif_rd_reg(struct device *dev, unsigned int reg)
 {
 	switch (reg) {
 	case TEGRA30_SPDIF_CTRL:
@@ -317,14 +380,31 @@ static bool tegra30_spdif_wr_rd_reg(struct device *dev, unsigned int reg)
 	};
 }
 
+static bool tegra30_spdif_volatile_reg(struct device *dev, unsigned int reg)
+{
+	switch (reg) {
+	case TEGRA30_SPDIF_FLOW_STATUS:
+	case TEGRA30_SPDIF_FLOW_TOTAL:
+	case TEGRA30_SPDIF_FLOW_OVER:
+	case TEGRA30_SPDIF_FLOW_UNDER:
+		return true;
+	default:
+		return false;
+	};
+
+}
+
 static const struct regmap_config tegra30_spdif_regmap_config = {
 	.reg_bits = 32,
 	.reg_stride = 4,
 	.val_bits = 32,
 	.max_register = TEGRA30_SPDIF_LCOEF_2_4_2,
-	.writeable_reg = tegra30_spdif_wr_rd_reg,
-	.readable_reg = tegra30_spdif_wr_rd_reg,
-	.cache_type = REGCACHE_RBTREE,
+	.writeable_reg = tegra30_spdif_wr_reg,
+	.readable_reg = tegra30_spdif_rd_reg,
+	.volatile_reg = tegra30_spdif_volatile_reg,
+	.cache_type = REGCACHE_FLAT,
+	.reg_defaults = tegra30_spdif_reg_defaults,
+	.num_reg_defaults = ARRAY_SIZE(tegra30_spdif_reg_defaults),
 };
 
 static const struct tegra30_spdif_soc_data soc_data_tegra30 = {
@@ -463,6 +543,8 @@ static int tegra30_spdif_platform_remove(struct platform_device *pdev)
 static const struct dev_pm_ops tegra30_spdif_pm_ops = {
 	SET_RUNTIME_PM_OPS(tegra30_spdif_runtime_suspend,
 			   tegra30_spdif_runtime_resume, NULL)
+	SET_SYSTEM_SLEEP_PM_OPS(tegra30_spdif_suspend,
+			   NULL)
 };
 
 static struct platform_driver tegra30_spdif_driver = {

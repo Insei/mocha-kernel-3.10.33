@@ -3,6 +3,7 @@
  *
  * Copyright (C) 2007-2008 Google, Inc.
  * Copyright (C) 2010 Intel Corporation <tony.luck@intel.com>
+ * Copyright (C) 2014 NVIDIA Corporation. All rights reserved.
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -33,7 +34,11 @@
 #include <linux/hardirq.h>
 #include <linux/jiffies.h>
 #include <linux/workqueue.h>
+<<<<<<< HEAD
 #include <linux/proc_fs.h>
+=======
+#include <linux/debugfs.h>
+>>>>>>> update/master
 
 #include "internal.h"
 
@@ -227,6 +232,18 @@ static int pstore_write_compat(enum pstore_type_id type,
 	return psi->write_buf(type, reason, id, part, psinfo->buf, size, psi);
 }
 
+static void pstore_mk_knob_dir(void)
+{
+#ifdef CONFIG_DEBUG_FS
+	if (psinfo->debugfs_dir)
+		return;
+
+	psinfo->debugfs_dir = debugfs_create_dir("pstore", NULL);
+	if (!psinfo->debugfs_dir)
+		pr_err("%s: unable to create pstore directory\n", __func__);
+#endif
+}
+
 /*
  * platform specific persistent storage driver registers with
  * us here. If pstore is already mounted, call the platform
@@ -265,9 +282,12 @@ int pstore_register(struct pstore_info *psi)
 	if (pstore_is_mounted())
 		pstore_get_records(0);
 
+	pstore_mk_knob_dir();
 	kmsg_dump_register(&pstore_dumper);
 	pstore_register_console();
 	pstore_register_ftrace();
+	pstore_register_rtrace();
+	pstore_register_pmsg();
 
 	if (pstore_update_ms >= 0) {
 		pstore_timer.expires = jiffies +

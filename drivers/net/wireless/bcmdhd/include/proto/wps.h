@@ -1,15 +1,24 @@
 /*
  * WPS IE definitions
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
  *
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+ * 
+>>>>>>> update/master
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
  * under the terms of the GNU General Public License version 2 (the "GPL"),
  * available at http://www.broadcom.com/licenses/GPLv2.php, with the
  * following added to such license:
+<<<<<<< HEAD
  *
+=======
+ * 
+>>>>>>> update/master
  *      As a special exception, the copyright holders of this software give you
  * permission to link this software with independent modules, and to copy and
  * distribute the resulting executable under terms of your choice, provided that
@@ -17,7 +26,11 @@
  * the license of that module.  An independent module is a module which is not
  * derived from this software.  The special exception does not apply to any
  * modifications of the software.
+<<<<<<< HEAD
  *
+=======
+ * 
+>>>>>>> update/master
  *      Notwithstanding the above, under no circumstances may you combine this
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
@@ -127,6 +140,10 @@ extern "C" {
 #define WPS_WFA_SUBID_NW_KEY_SHAREABLE    0x02
 #define WPS_WFA_SUBID_REQ_TO_ENROLL       0x03
 #define WPS_WFA_SUBID_SETTINGS_DELAY_TIME 0x04
+<<<<<<< HEAD
+=======
+#define WPS_WFA_SUBID_REG_CFG_METHODS     0x05
+>>>>>>> update/master
 
 
 /* WCN-NET Windows Rally Vertical Pairing Vendor Extensions */
@@ -175,6 +192,10 @@ extern "C" {
 #define WPS_WFA_SUBID_NW_KEY_SHAREABLE_S    1
 #define WPS_WFA_SUBID_REQ_TO_ENROLL_S       1
 #define WPS_WFA_SUBID_SETTINGS_DELAY_TIME_S 1
+<<<<<<< HEAD
+=======
+#define WPS_WFA_SUBID_REG_CFG_METHODS_S     2
+>>>>>>> update/master
 
 /* Association states */
 #define WPS_ASSOC_NOT_ASSOCIATED  0
@@ -227,6 +248,11 @@ extern "C" {
 #define WPS_ERROR_MSG_TIMEOUT             16	/* Deprecated in WSC 2.0 */
 #define WPS_ERROR_REG_SESSION_TIMEOUT     17	/* Deprecated in WSC 2.0 */
 #define WPS_ERROR_DEV_PWD_AUTH_FAIL       18
+<<<<<<< HEAD
+=======
+#define WPS_ERROR_60GHZ_NOT_SUPPORT       19
+#define WPS_ERROR_PKH_MISMATCH            20	/* Public Key Hash Mismatch */
+>>>>>>> update/master
 
 /* Connection types */
 #define WPS_CONNTYPE_ESS    0x01
@@ -239,6 +265,12 @@ extern "C" {
 #define WPS_DEVICEPWDID_REKEY            0x0003
 #define WPS_DEVICEPWDID_PUSH_BTN         0x0004
 #define WPS_DEVICEPWDID_REG_SPEC         0x0005
+<<<<<<< HEAD
+=======
+#define WPS_DEVICEPWDID_IBSS             0x0006
+#define WPS_DEVICEPWDID_NFC_CHO          0x0007	/* NFC-Connection-Handover */
+#define WPS_DEVICEPWDID_WFDS             0x0008	/* Wi-Fi Direct Services Specification */
+>>>>>>> update/master
 
 /* Encryption type */
 #define WPS_ENCRTYPE_NONE    0x0001

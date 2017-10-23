@@ -802,6 +802,8 @@ static struct videobuf_queue_ops cx231xx_video_qops = {
 
 void video_mux(struct cx231xx *dev, int index)
 {
+	if (is_model_avermedia_h837_series(dev->model))
+		return;
 	dev->video_input = index;
 	dev->ctl_ainput = INPUT(index)->amux;
 
@@ -887,7 +889,6 @@ static int vidioc_g_fmt_vid_cap(struct file *file, void *priv,
 	f->fmt.pix.colorspace = V4L2_COLORSPACE_SMPTE170M;
 
 	f->fmt.pix.field = V4L2_FIELD_INTERLACED;
-	f->fmt.pix.priv = 0;
 
 	return 0;
 }
@@ -932,7 +933,6 @@ static int vidioc_try_fmt_vid_cap(struct file *file, void *priv,
 	f->fmt.pix.sizeimage = f->fmt.pix.bytesperline * height;
 	f->fmt.pix.colorspace = V4L2_COLORSPACE_SMPTE170M;
 	f->fmt.pix.field = V4L2_FIELD_INTERLACED;
-	f->fmt.pix.priv = 0;
 
 	return 0;
 }
@@ -1848,7 +1848,7 @@ static int cx231xx_v4l2_open(struct file *filp)
 			 video_device_node_name(vdev), v4l2_type_names[fh_type],
 			 dev->users);
 
-#if 0
+#if 1
 	errCode = cx231xx_set_mode(dev, CX231XX_ANALOG_MODE);
 	if (errCode < 0) {
 		cx231xx_errdev

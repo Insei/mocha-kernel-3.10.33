@@ -2,7 +2,7 @@
  * tegra30_avp.c - Tegra AVP audio driver
  *
  * Author: Sumit Bhattacharya <sumitb@nvidia.com>
- * Copyright (c) 2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -93,9 +93,9 @@ static const struct tegra30_avp_ucode_desc {
 	int max_mem_size;
 	const char *bin_name;
 } avp_ucode_desc[] = {
-	[CODEC_PCM] = {30000, "nvavp_aud_ucode.bin" },
-	[CODEC_MP3] = {60000, "nvavp_mp3dec_ucode.bin" },
-	[CODEC_AAC] = {100000, "nvavp_aacdec_ucode.bin" },
+	[CODEC_PCM] = {25000, "nvavp_aud_ucode.bin" },
+	[CODEC_MP3] = {45000, "nvavp_mp3dec_ucode.bin" },
+	[CODEC_AAC] = {80000, "nvavp_aacdec_ucode.bin" },
 };
 
 struct tegra30_avp_audio_dma {
@@ -105,8 +105,8 @@ struct tegra30_avp_audio_dma {
 	struct dma_slave_config		chan_slave_config;
 	dma_cookie_t			chan_cookie;
 
-	int				use_count;
-	int				active_count;
+	atomic_t			is_dma_allocated;
+	atomic_t			active_count;
 };
 
 struct tegra30_avp_stream {
@@ -123,8 +123,9 @@ struct tegra30_avp_stream {
 	unsigned int			notification_received;
 	unsigned int			source_buffer_offset;
 
-	void				(*notify_cb)(void *args);
-	void				*notify_args;
+	void		(*notify_cb)(void *args, unsigned int is_eos);
+	void		*notify_args;
+	unsigned int	is_drain_called;
 };
 
 struct tegra30_avp_audio {
@@ -140,7 +141,7 @@ struct tegra30_avp_audio {
 
 	unsigned int			*cmd_buf;
 	int				cmd_buf_idx;
-	int				stream_active_count;
+	atomic_t		stream_active_count;
 	struct tegra30_avp_audio_dma	audio_dma;
 	spinlock_t			lock;
 };
@@ -171,8 +172,10 @@ struct snd_compr_codec_caps tegra30_avp_compr_codec_caps[] = {
 		.descriptor = {
 			[0] = {
 				.max_ch = 2,
-				.sample_rates = SNDRV_PCM_RATE_44100 |
+				.sample_rates = {
+					[0] = SNDRV_PCM_RATE_44100 |
 						SNDRV_PCM_RATE_48000,
+				},
 				.bit_rate = {
 					[0] = 32000,
 					[1] = 64000,
@@ -197,8 +200,10 @@ struct snd_compr_codec_caps tegra30_avp_compr_codec_caps[] = {
 		.descriptor = {
 			[0] = {
 				.max_ch = 2,
-				.sample_rates = SNDRV_PCM_RATE_44100 |
+				.sample_rates = {
+					[0] = SNDRV_PCM_RATE_44100 |
 						SNDRV_PCM_RATE_48000,
+				},
 				.bit_rate = {
 					[0] = 32000,
 					[1] = 64000,
@@ -212,7 +217,7 @@ struct snd_compr_codec_caps tegra30_avp_compr_codec_caps[] = {
 					SND_RATECONTROLMODE_VARIABLEBITRATE,
 				.profiles = SND_AUDIOPROFILE_AAC,
 				.modes = SND_AUDIOMODE_AAC_LC,
-				.formats = SND_AUDIOSTREAMFORMAT_MP4ADTS,
+				.formats = SND_AUDIOSTREAMFORMAT_RAW,
 				.min_buffer = 1024,
 			},
 		},
@@ -363,6 +368,7 @@ static int tegra30_avp_load_ucode(void)
 err_cmd_buf_mem_free:
 	tegra30_avp_mem_free(&audio_avp->cmd_buf_mem);
 err_param_mem_free:
+	audio_avp->audio_engine = NULL;
 	tegra30_avp_mem_free(&audio_avp->param_mem);
 err_ucode_mem_free:
 	tegra30_avp_mem_free(&audio_avp->ucode_mem);
@@ -437,11 +443,10 @@ static int tegra30_avp_audio_alloc_dma(struct tegra_offload_dma_params *params)
 	dma_cap_mask_t mask;
 	int ret = 0;
 
-	dev_vdbg(audio_avp->dev, "%s : use %d",
-		__func__, dma->use_count);
+	dev_vdbg(audio_avp->dev, "%s: is_dma_allocated %d",
+			__func__, atomic_read(&dma->is_dma_allocated));
 
-	dma->use_count++;
-	if (dma->use_count > 1)
+	if (atomic_read(&dma->is_dma_allocated) == 1)
 		return 0;
 
 	memcpy(&dma->params, params, sizeof(struct tegra_offload_dma_params));
@@ -468,6 +473,8 @@ static int tegra30_avp_audio_alloc_dma(struct tegra_offload_dma_params *params)
 		return ret;
 	}
 	audio_engine->apb_channel_handle = dma->chan->chan_id;
+	atomic_set(&dma->is_dma_allocated, 1);
+
 	return 0;
 }
 
@@ -476,17 +483,15 @@ static void tegra30_avp_audio_free_dma(void)
 	struct tegra30_avp_audio *audio_avp = avp_audio_ctx;
 	struct tegra30_avp_audio_dma *dma = &audio_avp->audio_dma;
 
-	dev_vdbg(audio_avp->dev, "%s : use %d",
-		__func__, dma->use_count);
+	dev_vdbg(audio_avp->dev, "%s: is_dma_allocated %d",
+			__func__, atomic_read(&dma->is_dma_allocated));
 
-	if (dma->use_count <= 0)
-		return;
+	if (atomic_read(&dma->is_dma_allocated) == 1) {
+		dma_release_channel(dma->chan);
+		atomic_set(&dma->is_dma_allocated, 0);
+	}
 
-	dma->use_count--;
-	if (dma->use_count)
-		return;
-
-	dma_release_channel(dma->chan);
+	return;
 }
 
 static int tegra30_avp_audio_start_dma(void)
@@ -495,10 +500,10 @@ static int tegra30_avp_audio_start_dma(void)
 	struct tegra30_avp_audio_dma *dma = &audio_avp->audio_dma;
 	struct audio_engine_data *audio_engine = audio_avp->audio_engine;
 
-	dev_vdbg(audio_avp->dev, "%s: active %d.", __func__, dma->active_count);
+	dev_vdbg(audio_avp->dev, "%s: active %d", __func__,
+			atomic_read(&dma->active_count));
 
-	dma->active_count++;
-	if (dma->active_count > 1)
+	if (atomic_inc_return(&dma->active_count) > 1)
 		return 0;
 
 	dma->chan_desc = dmaengine_prep_dma_cyclic(dma->chan,
@@ -521,14 +526,12 @@ static int tegra30_avp_audio_stop_dma(void)
 	struct tegra30_avp_audio *audio_avp = avp_audio_ctx;
 	struct tegra30_avp_audio_dma *dma = &audio_avp->audio_dma;
 
-	dev_vdbg(audio_avp->dev, "%s : active %d",
-		__func__, dma->active_count);
+	dev_vdbg(audio_avp->dev, "%s: active %d.", __func__,
+			atomic_read(&dma->active_count));
 
-	dma->active_count--;
-	if (dma->active_count > 0)
-		return 0;
+	if (atomic_dec_and_test(&dma->active_count))
+		dmaengine_terminate_all(dma->chan);
 
-	dmaengine_terminate_all(dma->chan);
 	return 0;
 }
 
@@ -636,7 +639,7 @@ static int tegra30_avp_stream_set_state(int id, enum KSSTATE new_state)
 
 	if (new_state == KSSTATE_RUN)
 		tegra30_avp_audio_start_dma();
-	else
+	else if (old_state == KSSTATE_RUN)
 		tegra30_avp_audio_stop_dma();
 
 	return ret;
@@ -656,27 +659,22 @@ static void tegra30_avp_stream_notify(void)
 		avp_stream = &audio_avp->avp_stream[i];
 		stream = avp_stream->stream;
 
-		if (avp_stream->notify_cb &&
-			(stream->stream_state_target != KSSTATE_RUN))
+		if (!stream->stream_allocated)
 			continue;
-		while (stream->stream_notification_request >
-			avp_stream->notification_received) {
-			int data_processed =
-				stream->source_buffer_read_position -
-				avp_stream->last_notification_offset;
 
-			if (data_processed < 0)
-				data_processed += stream->source_buffer_size;
+		if (avp_stream->is_drain_called &&
+		   (stream->source_buffer_read_position ==
+			stream->source_buffer_write_position) &&
+		   (avp_stream->notification_received >=
+			stream->stream_notification_request)) {
+			/* End of stream occured and noitfy same with value 1 */
+			avp_stream->notify_cb(avp_stream->notify_args, 1);
+			tegra30_avp_stream_set_state(i, KSSTATE_STOP);
+		} else if (stream->stream_notification_request >
+			avp_stream->notification_received) {
 			avp_stream->notification_received++;
 
-			while (data_processed >= avp_stream->period_size) {
-				avp_stream->notify_cb(avp_stream->notify_args);
-				avp_stream->last_notification_offset +=
-					avp_stream->period_size;
-				avp_stream->last_notification_offset %=
-					stream->source_buffer_size;
-				data_processed -= avp_stream->period_size;
-			}
+			avp_stream->notify_cb(avp_stream->notify_args, 0);
 		}
 	}
 }
@@ -720,11 +718,114 @@ static void tegra30_avp_free_shared_mem(struct tegra_offload_mem *mem)
 	tegra30_avp_mem_free(mem);
 }
 
+/* Loopback APIs */
+static int tegra30_avp_loopback_set_params(int id,
+		struct tegra_offload_pcm_params *params)
+{
+	struct tegra30_avp_audio *audio_avp = avp_audio_ctx;
+	struct tegra30_avp_stream *avp_stream = &audio_avp->avp_stream[id];
+	struct stream_data *stream = avp_stream->stream;
+	int ret = 0;
+
+	dev_vdbg(audio_avp->dev, "%s:entry\n", __func__);
+
+	/* TODO : check validity of parameters */
+	if (!stream) {
+		dev_err(audio_avp->dev, "AVP platform not initialized.");
+		return -ENODEV;
+	}
+
+
+	stream->stream_notification_interval = params->period_size;
+	stream->stream_notification_enable = 1;
+	stream->stream_params.rate = params->rate;
+	stream->stream_params.channels = params->channels;
+	stream->stream_params.bits_per_sample = params->bits_per_sample;
+
+
+	avp_stream->period_size = params->period_size;
+	avp_stream->notify_cb = params->period_elapsed_cb;
+	avp_stream->notify_args = params->period_elapsed_args;
+
+	stream->source_buffer_system =
+		(uintptr_t)(params->source_buf.virt_addr);
+	stream->source_buffer_avp = params->source_buf.phys_addr;
+	stream->source_buffer_size = params->buffer_size;
+	return ret;
+}
+
+static int tegra30_avp_loopback_set_state(int id, int state)
+{
+	struct tegra30_avp_audio *audio_avp = avp_audio_ctx;
+	struct tegra30_avp_stream *avp_stream = &audio_avp->avp_stream[id];
+	struct stream_data *stream = avp_stream->stream;
+
+	dev_vdbg(audio_avp->dev, "%s : id %d state %d", __func__, id, state);
+
+	if (!stream) {
+		dev_err(audio_avp->dev, "AVP platform not initialized.");
+		return -ENODEV;
+	}
+
+	switch (state) {
+	case SNDRV_PCM_TRIGGER_START:
+		stream->stream_state_target = KSSTATE_RUN;
+		return 0;
+	case SNDRV_PCM_TRIGGER_STOP:
+		stream->stream_state_target = KSSTATE_STOP;
+		stream->source_buffer_write_position = 0;
+		stream->source_buffer_write_count = 0;
+		avp_stream->last_notification_offset = 0;
+		avp_stream->notification_received = 0;
+		avp_stream->source_buffer_offset = 0;
+		return 0;
+	default:
+		dev_err(audio_avp->dev, "Unsupported state.");
+		return -EINVAL;
+	}
+}
+
+static size_t tegra30_avp_loopback_get_position(int id)
+{
+	struct tegra30_avp_audio *audio_avp = avp_audio_ctx;
+	struct tegra30_avp_stream *avp_stream = &audio_avp->avp_stream[id];
+	struct stream_data *stream = avp_stream->stream;
+	size_t pos = 0;
+
+	pos = (size_t)stream->source_buffer_read_position;
+
+	dev_vdbg(audio_avp->dev, "%s id %d pos %d", __func__, id, (u32)pos);
+
+	return pos;
+}
+
+static void tegra30_avp_loopback_data_ready(int id, int bytes)
+{
+	struct tegra30_avp_audio *audio_avp = avp_audio_ctx;
+	struct tegra30_avp_stream *avp_stream = &audio_avp->avp_stream[id];
+	struct stream_data *stream = avp_stream->stream;
+
+	dev_vdbg(audio_avp->dev, "%s :id %d size %d", __func__, id, bytes);
+
+	stream->source_buffer_write_position += bytes;
+	stream->source_buffer_write_position %= stream->source_buffer_size;
+
+	avp_stream->source_buffer_offset += bytes;
+	while (avp_stream->source_buffer_offset >=
+		stream->stream_notification_interval) {
+		stream->source_buffer_write_count++;
+		avp_stream->source_buffer_offset -=
+		stream->stream_notification_interval;
+	}
+	return;
+}
+
 /* PCM APIs */
-static int tegra30_avp_pcm_open(int *id)
+static int tegra30_avp_pcm_open(int *id, char *stream)
 {
 	struct tegra30_avp_audio *audio_avp = avp_audio_ctx;
 	struct audio_engine_data *audio_engine = audio_avp->audio_engine;
+	struct tegra30_avp_stream *avp_stream;
 	int ret = 0;
 
 	dev_vdbg(audio_avp->dev, "%s", __func__);
@@ -748,14 +849,35 @@ static int tegra30_avp_pcm_open(int *id)
 		audio_engine = audio_avp->audio_engine;
 	}
 
-	if (!audio_engine->stream[pcm_stream_id].stream_allocated)
-		*id = pcm_stream_id;
-	else if (!audio_engine->stream[pcm2_stream_id].stream_allocated)
-		*id = pcm2_stream_id;
-	else {
-		dev_err(audio_avp->dev, "All AVP PCM streams are busy");
-		return -EBUSY;
+	if (strcmp(stream, "pcm") == 0) {
+		avp_stream = &audio_avp->avp_stream[1];
+		if (!audio_engine->stream[pcm_stream_id].stream_allocated) {
+			*id = pcm_stream_id;
+			audio_engine->stream[*id].stream_allocated = 1;
+			atomic_inc(&audio_avp->stream_active_count);
+		} else if (
+		!audio_engine->stream[pcm2_stream_id].stream_allocated) {
+			*id = pcm2_stream_id;
+			audio_engine->stream[*id].stream_allocated = 1;
+			atomic_inc(&audio_avp->stream_active_count);
+		} else {
+			dev_err(audio_avp->dev, "All AVP PCM streams are busy");
+			return -EBUSY;
+		}
+	} else if (strcmp(stream, "loopback") == 0) {
+		avp_stream = &audio_avp->avp_stream[0];
+		if
+		(!audio_engine->stream[loopback_stream_id].stream_allocated) {
+			dev_vdbg(audio_avp->dev,
+			"Assigning loopback id:%d\n", loopback_stream_id);
+			audio_engine->stream[*id].stream_allocated = 1;
+			*id = loopback_stream_id;
+		} else {
+			dev_err(audio_avp->dev, "AVP loopback streams is busy");
+			return -EBUSY;
+		}
 	}
+
 	tegra30_avp_audio_set_state(KSSTATE_RUN);
 	return 0;
 }
@@ -790,7 +912,8 @@ static int tegra30_avp_pcm_set_params(int id,
 	avp_stream->notify_cb = params->period_elapsed_cb;
 	avp_stream->notify_args = params->period_elapsed_args;
 
-	stream->source_buffer_system = params->source_buf.virt_addr;
+	stream->source_buffer_system =
+			(uintptr_t) (params->source_buf.virt_addr);
 	stream->source_buffer_avp = params->source_buf.phys_addr;
 	stream->source_buffer_size = params->buffer_size;
 
@@ -904,7 +1027,12 @@ static int tegra30_avp_compr_open(int *id)
 		dev_err(audio_avp->dev, "All AVP COMPR streams are busy");
 		return -EBUSY;
 	}
+	audio_avp->avp_stream[*id].is_drain_called = 0;
+	audio_engine->stream[*id].stream_allocated = 1;
+
+	atomic_inc(&audio_avp->stream_active_count);
 	tegra30_avp_audio_set_state(KSSTATE_RUN);
+
 	return 0;
 }
 
@@ -936,7 +1064,7 @@ static int tegra30_avp_compr_set_params(int id,
 		/* AAC-LC is only supported profile*/
 		stream->u.aac.audio_profile = AAC_PROFILE_LC;
 		stream->u.aac.sampling_freq = params->rate;
-		stream->u.aac.payload_type  = AAC_PAYLOAD_ADTS;
+		stream->u.aac.payload_type  = AAC_PAYLOAD_RAW;
 		switch (params->rate) {
 		case 8000:
 			stream->u.aac.sampling_freq_index = 0xb;
@@ -995,10 +1123,15 @@ static int tegra30_avp_compr_set_params(int id,
 
 	stream->source_buffer_size = (params->fragments *
 			params->fragment_size);
-	tegra30_avp_mem_alloc(&avp_stream->source_buf,
+	ret = tegra30_avp_mem_alloc(&avp_stream->source_buf,
 			      stream->source_buffer_size);
+	if (ret < 0) {
+		dev_err(audio_avp->dev, "Failed to allocate source buf memory");
+		return ret;
+	}
 
-	stream->source_buffer_system = avp_stream->source_buf.virt_addr;
+	stream->source_buffer_system =
+			(uintptr_t) avp_stream->source_buf.virt_addr;
 	stream->source_buffer_avp = avp_stream->source_buf.phys_addr;
 
 	if (stream->source_buffer_size > AVP_COMPR_THRESHOLD) {
@@ -1018,7 +1151,7 @@ static int tegra30_avp_compr_set_params(int id,
 
 	if ((params->codec_type == SND_AUDIOCODEC_MP3) ||
 	    (params->codec_type == SND_AUDIOCODEC_AAC)) {
-		dev_info(audio_avp->dev, "\n*** STARTING %s ULP PLAYBACK ***\n",
+		dev_info(audio_avp->dev, "\n*** STARTING %s Offload PLAYBACK ***\n",
 		   (params->codec_type == SND_AUDIOCODEC_MP3) ? "MP3" : "AAC");
 	}
 	return 0;
@@ -1027,6 +1160,7 @@ static int tegra30_avp_compr_set_params(int id,
 static int tegra30_avp_compr_set_state(int id, int state)
 {
 	struct tegra30_avp_audio *audio_avp = avp_audio_ctx;
+	struct tegra30_avp_stream *avp_stream = &audio_avp->avp_stream[id];
 
 	dev_vdbg(audio_avp->dev, "%s : id %d state %d",
 		 __func__, id, state);
@@ -1047,7 +1181,8 @@ static int tegra30_avp_compr_set_state(int id, int state)
 		tegra30_avp_stream_set_state(id, KSSTATE_RUN);
 		return 0;
 	case SND_COMPR_TRIGGER_DRAIN:
-		/* TODO */
+	case SND_COMPR_TRIGGER_PARTIAL_DRAIN:
+		avp_stream->is_drain_called = 1;
 		return 0;
 	default:
 		dev_err(audio_avp->dev, "Unsupported state.");
@@ -1081,7 +1216,7 @@ static int tegra30_avp_compr_write(int id, char __user *buf, int bytes)
 	struct tegra30_avp_audio *audio_avp = avp_audio_ctx;
 	struct tegra30_avp_stream *avp_stream = &audio_avp->avp_stream[id];
 	struct stream_data *stream = avp_stream->stream;
-	void *dst = stream->source_buffer_system +
+	void *dst = (char *)(uintptr_t)stream->source_buffer_system +
 		stream->source_buffer_write_position;
 	int avail = 0;
 	int write = 0;
@@ -1119,8 +1254,8 @@ static int tegra30_avp_compr_write(int id, char __user *buf, int bytes)
 			return -EFAULT;
 		}
 
-		ret = copy_from_user(stream->source_buffer_system, buf + write,
-			bytes - write);
+		ret = copy_from_user((void *)(uintptr_t)stream->source_buffer_system,
+				buf + write, bytes - write);
 		if (ret < 0) {
 			dev_err(audio_avp->dev, "Failed to copy user data.");
 			return -EFAULT;
@@ -1234,10 +1369,16 @@ static void tegra30_avp_stream_close(int id)
 		return;
 	}
 	tegra30_avp_mem_free(&avp_stream->source_buf);
-	tegra30_avp_audio_free_dma();
 	stream->stream_allocated = 0;
 	tegra30_avp_stream_set_state(id, KSSTATE_STOP);
-	tegra30_avp_audio_set_state(KSSTATE_STOP);
+
+	if (id == loopback_stream_id)
+		return;
+
+	if (atomic_dec_and_test(&audio_avp->stream_active_count)) {
+		tegra30_avp_audio_free_dma();
+		tegra30_avp_audio_set_state(KSSTATE_STOP);
+	}
 }
 
 static struct tegra_offload_ops avp_audio_platform = {
@@ -1253,6 +1394,14 @@ static struct tegra_offload_ops avp_audio_platform = {
 		.set_stream_state = tegra30_avp_pcm_set_state,
 		.get_stream_position = tegra30_avp_pcm_get_position,
 		.data_ready = tegra30_avp_pcm_data_ready,
+	},
+	.loopback_ops = {
+		.stream_open = tegra30_avp_pcm_open,
+		.stream_close = tegra30_avp_stream_close,
+		.set_stream_params = tegra30_avp_loopback_set_params,
+		.set_stream_state = tegra30_avp_loopback_set_state,
+		.get_stream_position = tegra30_avp_loopback_get_position,
+		.data_ready = tegra30_avp_loopback_data_ready,
 	},
 	.compr_ops = {
 		.stream_open = tegra30_avp_compr_open,
@@ -1303,7 +1452,9 @@ static int tegra30_avp_audio_remove(struct platform_device *pdev)
 
 	dev_vdbg(&pdev->dev, "%s", __func__);
 
-	tegra_nvavp_audio_client_release(audio_avp->nvavp_client);
+	tegra_deregister_offload_ops();
+	if (audio_avp->nvavp_client)
+		tegra_nvavp_audio_client_release(audio_avp->nvavp_client);
 	tegra30_avp_mem_free(&audio_avp->cmd_buf_mem);
 	tegra30_avp_mem_free(&audio_avp->param_mem);
 	tegra30_avp_mem_free(&audio_avp->ucode_mem);

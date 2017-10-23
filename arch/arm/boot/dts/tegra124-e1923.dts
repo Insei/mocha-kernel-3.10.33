@@ -1,12 +1,32 @@
+/*
+ * arch/arm/boot/dts/tegra124-e1923.dts
+ *
+ * Copyright (c) 2014, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
 /dts-v1/;
 
-#include "tegra124.dtsi"
+#include "tegra124-soc-shield.dtsi"
 #include "tegra124-platforms/tegra124-ardbeg-powermon-e1780-1000-a01.dtsi"
 #include "tegra124-platforms/tegra124-e1923-emc.dtsi"
 #include "tegra124-platforms/tegra124-tn8-gpio-e1780-1100-a02.dtsi"
 #include "tegra124-platforms/tegra124-tn8-pinmux-e1780-1100-a02.dtsi"
 #include "tegra124-platforms/tegra124-tn8-keys-e1780-1100-a02.dtsi"
-#include "panel-p-wuxga-10-1.dts"
+#include "panel-p-wuxga-10-1.dtsi"
+#include "tegra124-platforms/tegra124-ardbeg-hdmi-e1780-1000-a00.dtsi"
 
 / {
 	model = "NVIDIA Tegra124 Ardbeg ERS-S POP";
@@ -21,13 +41,40 @@
 		linux,initrd-start = <0x85000000>;
 		linux,initrd-end = <0x851bc400>;
 	};
+
+	firmware {
+		android {
+			compatible = "android,firmware";
+			hardware = "ardbeg";
+		};
+	};
+
 	host1x {
+		/* tegradc.0 */
+		dc@54200000 {
+			status = "okay";
+			nvidia,dc-flags = <TEGRA_DC_FLAG_ENABLED>;
+			nvidia,emc-clk-rate = <204000000>;
+			nvidia,cmu-enable = <1>;
+			nvidia,low-v-win = <0x2>;
+			nvidia,fb-bpp = <32>; /* bits per pixel */
+			nvidia,fb-flags = <TEGRA_FB_FLIP_ON_PROBE>;
+		};
+		/* tegradc.1 */
+		dc@54240000 {
+			status = "okay";
+			nvidia,dc-flags = <TEGRA_DC_FLAG_ENABLED>;
+			nvidia,emc-clk-rate = <300000000>;
+			nvidia,fb-bpp = <32>; /* bits per pixel */
+			nvidia,fb-flags = <TEGRA_FB_FLIP_ON_PROBE>;
+		};
 		dsi {
 			nvidia,dsi-controller-vs = <1>;
 			status = "okay";
 			panel-p-wuxga-10-1 {
-				nvidia,dsi-panel-rst-gpio = <&gpio TEGRA_GPIO(H, 3) 0>; /* PH3 */
-				nvidia,dsi-panel-bl-pwm-gpio = <&gpio TEGRA_GPIO(H, 1) 0>; /* PH1 */
+				nvidia,dsi-dpd-pads = <DSIC_DPD_EN DSID_DPD_EN>;
+				nvidia,panel-rst-gpio = <&gpio TEGRA_GPIO(H, 3) 0>; /* PH3 */
+				nvidia,panel-bl-pwm-gpio = <&gpio TEGRA_GPIO(H, 1) 0>; /* PH1 */
 			};
 		};
 	};
@@ -44,6 +91,13 @@
         serial@70006200 {
                 compatible = "nvidia,tegra114-hsuart";
                 status = "okay";
+        };
+
+        serial@70006300 {
+                compatible = "nvidia,tegra20-uart", "nvidia,tegra114-hsuart";
+		console-port;
+		sqa-automation-port;
+		status = "okay";
         };
 
 	memory@0x80000000 {
@@ -65,7 +119,7 @@
 		spi-max-frequency = <25000000>;
 	};
 
-	pmc {
+	pmc@7000e400 {
 		status = "okay";
 		nvidia,invert-interrupt;
 		nvidia,suspend-mode = <0>;
@@ -91,13 +145,12 @@
 		nvidia,ss_portmap = <0x20>; /* SSP0 on USB2P0, SSP1 on USB2P2 */
 		nvidia,lane_owner = <6>; /* USB3P0 USB3P1 */
 		nvidia,ulpicap = <0>; /* No ulpi support. can we remove */
-		nvidia,supply_utmi_vbuses = "usb_vbus0", "usb_vbus1", "usb_vbus2";
-		nvidia,supply_s3p3v = "hvdd_usb";
-		nvidia,supply_s1p8v = "avdd_pll_utmip";
-		nvidia,supply_vddio_hsic = "vddio_hsic";
-		nvidia,supply_s1p05v = "avddio_usb";
 		/* hsic config values in order defined in structure */
 		nvidia,hsic0 = /bits/8 <0x1 0x1 0x8 0xa 0 0 1 0x22 0>;
+		status = "okay";
+	};
+	backlight {
+		compatible = "pwm-backlight";
 		status = "okay";
 	};
 };

@@ -1,7 +1,7 @@
 /*
  * arch/arm/mach-tegra/board-ardbeg-sdhci.c
  *
- * Copyright (c) 2013-2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2016, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -29,16 +29,22 @@
 #include <linux/mfd/max77660/max77660-core.h>
 #include <linux/tegra-fuse.h>
 #include <linux/dma-mapping.h>
+<<<<<<< HEAD
 
 #include <asm/mach-types.h>
 #include <mach/irqs.h>
 #include <mach/gpio-tegra.h>
+=======
+#include <linux/clk/tegra.h>
+
+#include <asm/mach-types.h>
+#include <mach/irqs.h>
+>>>>>>> update/master
 #include <mach/nct.h>
 
 #include "gpio-names.h"
 #include "board.h"
 #include "board-ardbeg.h"
-#include "dvfs.h"
 #include "iomap.h"
 #include "tegra-board-id.h"
 
@@ -188,6 +194,7 @@ static struct tegra_sdhci_platform_data tegra_sdhci_platform_data0 = {
 	.wp_gpio = -1,
 	.power_gpio = -1,
 	.tap_delay = 0,
+	.power_off_rail = true,
 	.trim_delay = 0x2,
 	.ddr_clk_limit = 41000000,
 	.uhs_mask = MMC_UHS_MASK_DDR50,
@@ -201,13 +208,18 @@ static struct tegra_sdhci_platform_data tegra_sdhci_platform_data2 = {
 	.wp_gpio = -1,
 	.power_gpio = ARDBEG_SD_PW,
 	.tap_delay = 0,
+	.power_off_rail = true,
 	.trim_delay = 0x3,
 	.uhs_mask = MMC_UHS_MASK_DDR50,
 	.calib_3v3_offsets = 0x7676,
 	.calib_1v8_offsets = 0x7676,
+<<<<<<< HEAD
 	.mmc_data = {
 		.ocr_mask = MMC_OCR_3V3_MASK,
 	},
+=======
+	.enb_ext_loopback = 1,
+>>>>>>> update/master
 };
 
 static struct tegra_sdhci_platform_data tegra_sdhci_platform_data3 = {
@@ -216,7 +228,9 @@ static struct tegra_sdhci_platform_data tegra_sdhci_platform_data3 = {
 	.power_gpio = -1,
 	.is_8bit = 1,
 	.tap_delay = 0x4,
+	.power_off_rail = true,
 	.trim_delay = 0x4,
+	.is_ddr_trim_delay = true,
 	.ddr_trim_delay = 0x0,
 	.mmc_data = {
 		.built_in = 1,
@@ -386,6 +400,9 @@ static int ardbeg_wifi_get_mac_addr(unsigned char *buf)
 static int __init ardbeg_wifi_init(void)
 {
 	int rc;
+	struct board_info board_info;
+
+	tegra_get_board_info(&board_info);
 
 	rc = gpio_request(ARDBEG_WLAN_PWR, "wlan_power");
 	if (rc)
@@ -423,7 +440,8 @@ static int __init ardbeg_wifi_prepower(void)
 		!of_machine_is_compatible("nvidia,tn8") &&
 		!of_machine_is_compatible("nvidia,mocha") &&
 		!of_machine_is_compatible("nvidia,norrin") &&
-		!of_machine_is_compatible("nvidia,bowmore"))
+		!of_machine_is_compatible("nvidia,bowmore") &&
+		!of_machine_is_compatible("nvidia,jetson-tk1"))
 		return 0;
 	ardbeg_wifi_power(1);
 
@@ -442,14 +460,14 @@ int __init ardbeg_sdhci_init(void)
 	struct board_info board_info;
 
 	nominal_core_mv =
-		tegra_dvfs_rail_get_nominal_millivolts(tegra_core_rail);
+		tegra_dvfs_get_core_nominal_millivolts();
 	if (nominal_core_mv) {
 		tegra_sdhci_platform_data0.nominal_vcore_mv = nominal_core_mv;
 		tegra_sdhci_platform_data2.nominal_vcore_mv = nominal_core_mv;
 		tegra_sdhci_platform_data3.nominal_vcore_mv = nominal_core_mv;
 	}
 	min_vcore_override_mv =
-		tegra_dvfs_rail_get_override_floor(tegra_core_rail);
+		tegra_dvfs_get_core_override_floor();
 	if (min_vcore_override_mv) {
 		tegra_sdhci_platform_data0.min_vcore_override_mv =
 			min_vcore_override_mv;
@@ -458,30 +476,48 @@ int __init ardbeg_sdhci_init(void)
 		tegra_sdhci_platform_data3.min_vcore_override_mv =
 			min_vcore_override_mv;
 	}
-	boot_vcore_mv = tegra_dvfs_rail_get_boot_level(tegra_core_rail);
+	boot_vcore_mv = tegra_dvfs_get_core_boot_level();
 	if (boot_vcore_mv) {
 		tegra_sdhci_platform_data0.boot_vcore_mv = boot_vcore_mv;
 		tegra_sdhci_platform_data2.boot_vcore_mv = boot_vcore_mv;
 		tegra_sdhci_platform_data3.boot_vcore_mv = boot_vcore_mv;
 	}
 
-	if (of_machine_is_compatible("nvidia,laguna"))
+	if (of_machine_is_compatible("nvidia,laguna") ||
+	    of_machine_is_compatible("nvidia,jetson-tk1"))
 		tegra_sdhci_platform_data2.wp_gpio = ARDBEG_SD_WP;
 
 	tegra_get_board_info(&board_info);
-	if (board_info.board_id == BOARD_E1780)
+	if (board_info.board_id == BOARD_E1780 ||
+			board_info.board_id == BOARD_P2267)
 		tegra_sdhci_platform_data2.max_clk_limit = 204000000;
 
+<<<<<<< HEAD
 	/* E1780 and E1784 are using interposer E1816, Due to this the
 	 * SDIO trace length got increased. So hard coding the drive
 	 * strength to type A for these boards to support 204 Mhz */
 	if ((board_info.board_id == BOARD_E1780) ||
 		(board_info.board_id == BOARD_E1784)) {
+=======
+	/* E1780, E2141, E1784 are using interposer E1816, Due to this the
+	 * SDIO trace length got increased. So hard coding the drive
+	 * strength to type A for these boards to support 204 Mhz */
+	if ((board_info.board_id == BOARD_E1780) ||
+		(board_info.board_id == BOARD_E2141) ||
+		(board_info.board_id == BOARD_E1784) ||
+		(board_info.board_id == BOARD_P2267)) {
+>>>>>>> update/master
 		tegra_sdhci_platform_data0.default_drv_type =
 			MMC_SET_DRIVER_TYPE_A;
 	}
 
+<<<<<<< HEAD
 	tegra_sdhci_platform_data0.max_clk_limit = 204000000;
+=======
+	if (board_info.board_id == BOARD_P1761 ||
+			board_info.board_id == BOARD_P2267)
+		tegra_sdhci_platform_data0.max_clk_limit = 204000000;
+>>>>>>> update/master
 
 	if (board_info.board_id == BOARD_E1781)
 		tegra_sdhci_platform_data3.uhs_mask = MMC_MASK_HS200;
@@ -491,6 +527,14 @@ int __init ardbeg_sdhci_init(void)
 		board_info.board_id == BOARD_PM363 ||
 		board_info.board_id == BOARD_PM359)
 			tegra_sdhci_platform_data0.disable_clock_gate = 1;
+
+	/*
+	 * FIXME: Set max clk limit to 200MHz for SDMMC3 for PM375.
+	 * Requesting 208MHz results in getting 204MHz from PLL_P
+	 * and CRC errors are seen with same.
+	 */
+	if (board_info.board_id == BOARD_PM375)
+		tegra_sdhci_platform_data2.max_clk_limit = 200000000;
 
 	speedo = tegra_fuse_readl(FUSE_SOC_SPEEDO_0);
 	tegra_sdhci_platform_data0.cpu_speedo = speedo;
@@ -504,6 +548,10 @@ int __init ardbeg_sdhci_init(void)
 			tegra_sdhci_platform_data2.uhs_mask =
 				MMC_UHS_MASK_SDR50;
 	}
+
+	if (board_info.board_id == BOARD_E1991)
+		tegra_sdhci_platform_data0.max_clk_limit = 204000000;
+
 	if (board_info.board_id == BOARD_PM374 ||
 		board_info.board_id == BOARD_PM359) {
 			tegra_sdhci_platform_data2.uhs_mask =
@@ -514,11 +562,24 @@ int __init ardbeg_sdhci_init(void)
 			tegra_sdhci_platform_data2.max_clk_limit = 204000000;
 	}
 
+	/*
+	 * To enable pm domain disable_clock_gate and
+	 * enable_pm_domain should be set to one
+	 */
+
 	platform_device_register(&tegra_sdhci_device3);
 	if (!is_uart_over_sd_enabled())
 		platform_device_register(&tegra_sdhci_device2);
+<<<<<<< HEAD
 	platform_device_register(&tegra_sdhci_device0);
 	ardbeg_wifi_init();
+=======
+	if (board_info.board_id != BOARD_PM359 &&
+			board_info.board_id != BOARD_PM375) {
+		platform_device_register(&tegra_sdhci_device0);
+		ardbeg_wifi_init();
+	}
+>>>>>>> update/master
 
 	return 0;
 }

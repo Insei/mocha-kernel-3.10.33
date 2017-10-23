@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2010 Google, Inc.
- * Copyright (c) 2010-2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2010-2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -45,6 +45,7 @@ enum tegra_usb_id_detection {
 };
 
 /**
+<<<<<<< HEAD
  * Set the maximum voltage that can be supplied
  * over USB vbus that the board supports if we use
  * a quick charge 2 wall charger.
@@ -69,6 +70,8 @@ enum tegra_usb_qc2_voltage {
 
 
 /**
+=======
+>>>>>>> update/master
  * configuration structure for setting up utmi phy
  */
 struct tegra_utmi_config {
@@ -125,7 +128,6 @@ struct tegra_usb_phy_platform_ops {
  */
 struct tegra_usb_dev_mode_data {
 	int vbus_pmu_irq;
-	int vbus_gpio;
 	int dcp_current_limit_ma;
 	int qc2_current_limit_ma;
 	bool charging_supported;
@@ -137,7 +139,6 @@ struct tegra_usb_dev_mode_data {
  * defines structure for platform dependent host parameters
  */
 struct tegra_usb_host_mode_data {
-	int vbus_gpio;
 	bool hot_plug;
 	bool remote_wakeup_supported;
 	bool power_off_on_suspend;
@@ -159,7 +160,7 @@ struct tegra_usb_platform_data {
 	enum tegra_usb_id_detection id_det_type;
 	enum tegra_usb_phy_interface phy_intf;
 	enum tegra_usb_operation_mode op_mode;
-	enum tegra_usb_qc2_voltage qc2_voltage;
+	u32 qc2_voltage;
 
 	union {
 		struct tegra_usb_dev_mode_data dev;

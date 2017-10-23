@@ -1,6 +1,10 @@
 /*
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+>>>>>>> update/master
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -29,14 +33,21 @@
 
 #define	EPI_MAJOR_VERSION	1
 
+<<<<<<< HEAD
 #define	EPI_MINOR_VERSION	141
 
 #define	EPI_RC_NUMBER		46
+=======
+#define	EPI_MINOR_VERSION	201
+
+#define	EPI_RC_NUMBER		82
+>>>>>>> update/master
 
 #define	EPI_INCREMENTAL_NUMBER	0
 
 #define	EPI_BUILD_NUMBER	0
 
+<<<<<<< HEAD
 #define	EPI_VERSION		1, 141, 46, 0
 
 #define	EPI_VERSION_NUM		0x018d2e00
@@ -45,5 +56,15 @@
 
 /* Driver Version String, ASCII, 32 chars max */
 #define	EPI_VERSION_STR		"1.141.46 (r)"
+=======
+#define	EPI_VERSION		1, 201, 82, 0
+
+#define	EPI_VERSION_NUM		0x01c95200
+
+#define EPI_VERSION_DEV		1.201.82
+
+/* Driver Version String, ASCII, 32 chars max */
+#define	EPI_VERSION_STR		"1.201.82 (r)"
+>>>>>>> update/master
 
 #endif /* _epivers_h_ */

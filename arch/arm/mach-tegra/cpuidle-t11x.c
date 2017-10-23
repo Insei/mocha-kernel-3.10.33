@@ -3,7 +3,7 @@
  *
  * CPU idle driver for Tegra11x CPUs
  *
- * Copyright (c) 2012-2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2012-2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -44,25 +44,34 @@
 #include <linux/tegra-timer.h>
 #include <linux/tegra-cpuidle.h>
 #include <linux/irqchip/tegra.h>
+<<<<<<< HEAD
 #include <linux/tegra_sm.h>
+=======
+#include <uapi/linux/psci.h>
+>>>>>>> update/master
 
 #include <asm/cacheflush.h>
 #include <asm/localtimer.h>
 #include <asm/suspend.h>
 #include <asm/cputype.h>
 #include <asm/psci.h>
+<<<<<<< HEAD
+=======
+#include <asm/smp_plat.h>
+>>>>>>> update/master
 
 #include <mach/irqs.h>
 
 #include <trace/events/nvpower.h>
 
-#include "clock.h"
-#include "dvfs.h"
+#include <linux/platform/tegra/clock.h>
+#include <linux/platform/tegra/dvfs.h>
+#include <linux/platform/tegra/common.h>
 #include "iomap.h"
 #include "pm.h"
-#include "reset.h"
+#include <linux/platform/tegra/reset.h>
 #include "sleep.h"
-#include "tegra_ptm.h"
+#include <linux/tegra_ptm.h>
 
 #define CLK_RST_CONTROLLER_CPU_CMPLX_STATUS \
 	(IO_ADDRESS(TEGRA_CLK_RESET_BASE) + 0x470)
@@ -417,6 +426,27 @@ static void tegra11x_restore_vmin(void)
 	spin_unlock(&vmin_lock);
 }
 
+static inline int tegra_cpu_core_power_down_fin(unsigned long v2p)
+{
+#if defined(CONFIG_ARM_PSCI)
+	struct psci_power_state pps = {
+		.id = TEGRA_ID_CPU_SUSPEND_STDBY,
+		.type = PSCI_POWER_STATE_TYPE_POWER_DOWN,
+	};
+
+	/* the monitor takes care of CPU suspend */
+	if (tegra_cpu_is_secure()) {
+		psci_ops.cpu_suspend(pps, __pa(cpu_resume));
+
+		/* we must never reach here */
+		BUG();
+	}
+#endif
+
+	tegra3_sleep_cpu_secondary_finish(v2p);
+	return 0;
+}
+
 static int tegra_cpu_core_power_down(struct cpuidle_device *dev,
 			   struct cpuidle_state *state, s64 request)
 {
@@ -465,6 +495,7 @@ static int tegra_cpu_core_power_down(struct cpuidle_device *dev,
 	tegra_cpu_wake_by_time[dev->cpu] = ktime_to_us(entry_time) + request;
 	smp_wmb();
 
+<<<<<<< HEAD
 #ifdef CONFIG_TEGRA_USE_SECURE_KERNEL
 	if ((cpu == 0) || (cpu == 4)) {
 		tegra_sm_generic(0x84000001, ((1 << 16) | 5),
@@ -473,6 +504,10 @@ static int tegra_cpu_core_power_down(struct cpuidle_device *dev,
 	}
 #endif
 	cpu_suspend(0, tegra3_sleep_cpu_secondary_finish);
+=======
+	/* enter power down state */
+	cpu_suspend(0, tegra_cpu_core_power_down_fin);
+>>>>>>> update/master
 
 	tegra11x_restore_vmin();
 

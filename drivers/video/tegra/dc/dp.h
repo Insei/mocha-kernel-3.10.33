@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/dc/dp.h
  *
- * Copyright (c) 2011-2014, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2011-2016, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -19,178 +19,35 @@
 
 #include <linux/clk.h>
 #include <linux/delay.h>
+
 #include "sor.h"
 #include "dc_priv.h"
 #include "dpaux_regs.h"
-
+#include "hpd.h"
 #include "../../../../arch/arm/mach-tegra/iomap.h"
+#include "dp_lt.h"
 
-#define DP_AUX_DEFER_MAX_TRIES		7
-#define DP_AUX_TIMEOUT_MAX_TRIES	2
-#define DP_POWER_ON_MAX_TRIES		3
-#define DP_CLOCK_RECOVERY_MAX_TRIES	7
-#define DP_CLOCK_RECOVERY_TOT_TRIES	15
+#ifdef CONFIG_DEBUG_FS
+#include "dp_debug.h"
+extern struct tegra_dp_test_settings default_dp_test_settings;
+#endif
 
-#define DP_AUX_MAX_BYTES		16
+#define DP_AUX_MAX_BYTES 16
+#define DP_AUX_TIMEOUT_MS 1000
+#define DP_DPCP_RETRY_SLEEP_NS 400
+#define TEGRA_NVHDCP_MAX_DEVS 127
+#define DP_AUX_DEFER_MAX_TRIES 7
+#define DP_AUX_TIMEOUT_MAX_TRIES 2
+#define DP_POWER_ON_MAX_TRIES 3
+#define DP_CLOCK_RECOVERY_MAX_TRIES 7
+#define DP_CLOCK_RECOVERY_TOT_TRIES 15
 
-#define DP_AUX_TIMEOUT_MS		40
-#define DP_DPCP_RETRY_SLEEP_NS		400
-
-static const u32 tegra_dp_vs_regs[][4][4] = {
-	/* postcursor2 L0 */
-	{
-		/* pre-emphasis: L0, L1, L2, L3 */
-		{0x13, 0x19, 0x1e, 0x28}, /* voltage swing: L0 */
-		{0x1e, 0x25, 0x2d}, /* L1 */
-		{0x28, 0x32}, /* L2 */
-		{0x3c}, /* L3 */
-	},
-
-	/* postcursor2 L1 */
-	{
-		{0x12, 0x17, 0x1b, 0x25},
-		{0x1c, 0x23, 0x2a},
-		{0x25, 0x2f},
-		{0x39},
-	},
-
-	/* postcursor2 L2 */
-	{
-		{0x12, 0x16, 0x1a, 0x22},
-		{0x1b, 0x20, 0x27},
-		{0x24, 0x2d},
-		{0x36},
-	},
-
-	/* postcursor2 L3 */
-	{
-		{0x11, 0x14, 0x17, 0x1f},
-		{0x19, 0x1e, 0x24},
-		{0x22, 0x2a},
-		{0x32},
-	},
-};
-
-static const u32 tegra_dp_pe_regs[][4][4] = {
-	/* postcursor2 L0 */
-	{
-		/* pre-emphasis: L0, L1, L2, L3 */
-		{0x00, 0x09, 0x13, 0x25}, /* voltage swing: L0 */
-		{0x00, 0x0f, 0x1e}, /* L1 */
-		{0x00, 0x14}, /* L2 */
-		{0x00}, /* L3 */
-	},
-
-	/* postcursor2 L1 */
-	{
-		{0x00, 0x0a, 0x14, 0x28},
-		{0x00, 0x0f, 0x1e},
-		{0x00, 0x14},
-		{0x00},
-	},
-
-	/* postcursor2 L2 */
-	{
-		{0x00, 0x0a, 0x14, 0x28},
-		{0x00, 0x0f, 0x1e},
-		{0x00, 0x14},
-		{0x00},
-	},
-
-	/* postcursor2 L3 */
-	{
-		{0x00, 0x0a, 0x14, 0x28},
-		{0x00, 0x0f, 0x1e},
-		{0x00, 0x14},
-		{0x00},
-	},
-};
-
-static const u32 tegra_dp_pc_regs[][4][4] = {
-	/* postcursor2 L0 */
-	{
-		/* pre-emphasis: L0, L1, L2, L3 */
-		{0x00, 0x00, 0x00, 0x00}, /* voltage swing: L0 */
-		{0x00, 0x00, 0x00}, /* L1 */
-		{0x00, 0x00}, /* L2 */
-		{0x00}, /* L3 */
-	},
-
-	/* postcursor2 L1 */
-	{
-		{0x02, 0x02, 0x04, 0x05},
-		{0x02, 0x04, 0x05},
-		{0x04, 0x05},
-		{0x05},
-	},
-
-	/* postcursor2 L2 */
-	{
-		{0x04, 0x05, 0x08, 0x0b},
-		{0x05, 0x09, 0x0b},
-		{0x08, 0x0a},
-		{0x0b},
-	},
-
-	/* postcursor2 L3 */
-	{
-		{0x05, 0x09, 0x0b, 0x12},
-		{0x09, 0x0d, 0x12},
-		{0x0b, 0x0f},
-		{0x12},
-	},
-};
-
-/* TX_PU upper nibble values */
-static const u32 tegra_dp_tx_pu[][4][4] = {
-	/* postcursor2 L0 */
-	{
-		/* pre-emphasis: L0, L1, L2, L3 */
-		{0x20, 0x30, 0x40, 0x60}, /* voltage swing: L0 */
-		{0x30, 0x40, 0x60}, /* L1 */
-		{0x40, 0x60}, /* L2 */
-		{0x60}, /* L3 */
-	},
-
-	/* postcursor2 L1 */
-	{
-		{0x20, 0x20, 0x30, 0x50},
-		{0x30, 0x40, 0x50},
-		{0x40, 0x50},
-		{0x60},
-	},
-
-	/* postcursor2 L2 */
-	{
-		{0x20, 0x20, 0x30, 0x40},
-		{0x30, 0x30, 0x40},
-		{0x40, 0x50},
-		{0x60},
-	},
-
-	/* postcursor2 L3 */
-	{
-		{0x20, 0x20, 0x20, 0x40},
-		{0x30, 0x30, 0x40},
-		{0x40, 0x40},
-		{0x60},
-	},
-};
-
-static inline int tegra_dp_is_max_vs(u32 pe, u32 vs)
-{
-	return (vs < (DRIVE_CURRENT_L3 - pe)) ? 0 : 1;
-}
-
-static inline int tegra_dp_is_max_pe(u32 pe, u32 vs)
-{
-	return (pe < (PRE_EMPHASIS_L3 - vs)) ? 0 : 1;
-}
-
-static inline int tegra_dp_is_max_pc(u32 pc)
-{
-	return (pc < POST_CURSOR2_L3) ? 0 : 1;
-}
+/*
+ * After hpd irq event, source must start
+ * reading dpdc offset 200h-205h within
+ * 100ms of rising edge hpd
+ */
+#define HPD_IRQ_EVENT_TIMEOUT_MS 70
 
 /* the +10ms is the time for power rail going up from 10-90% or
    90%-10% on powerdown */
@@ -202,52 +59,87 @@ static inline int tegra_dp_is_max_pc(u32 pc)
    poweron time) */
 #define EDP_PWR_OFF_TO_ON_TIME_MS	    (500+10)
 
+/*
+ * Receiver capability fields extend from 0 - 0x11fh.
+ * By default we read only more useful fields(offsets 0 - 0xb) as
+ * required by CTS.
+ */
+#define DP_DPCD_SINK_CAP_SIZE (0xc)
+
 struct tegra_dc_dp_data {
-	struct tegra_dc			*dc;
-	struct tegra_dc_sor_data	*sor;
+	struct tegra_dc *dc;
+	struct tegra_dc_sor_data *sor;
 
-	u32				irq;
+	u32 irq;
 
-	struct resource			*aux_base_res;
-	void __iomem			*aux_base;
-	struct clk			*clk;	/* dpaux clock */
-	struct clk			*parent_clk; /* pll_dp clock */
+	struct resource *res;
+	struct resource *aux_base_res;
+	void __iomem *aux_base;
+	struct clk *dpaux_clk;
+	struct clk *parent_clk; /* pll_dp clock */
 
-	struct work_struct		 lt_work;
-	u8				 revision;
+	u8 revision;
 
-	struct tegra_dc_mode		*mode;
-	struct tegra_dc_dp_link_config	 link_cfg;
-	struct tegra_dc_dp_link_config	max_link_cfg;
+	struct tegra_dc_mode *mode;
+	struct tegra_dc_dp_link_config link_cfg;
+	struct tegra_dc_dp_link_config max_link_cfg;
 
-	bool				 enabled;
-	bool				 suspended;
+	struct tegra_dp_lt_data lt_data;
 
-	struct tegra_edid		*dp_edid;
-	struct completion		hpd_plug;
-	struct completion		aux_tx;
+	bool enabled; /* Controller ready. LT not yet initiated. */
+	bool suspended;
 
-	struct tegra_dp_out		*pdata;
+	u8 edid_src;
+	struct tegra_hpd_data hpd_data;
+#ifdef CONFIG_SWITCH
+	struct switch_dev audio_switch;
+#endif
 
-	struct mutex			dpaux_lock;
+	struct delayed_work irq_evt_dwork;
+
+	struct tegra_dphdcp *dphdcp;
+
+	struct completion aux_tx;
+	struct completion hpd_plug;
+
+	struct tegra_dp_out *pdata;
+
+	struct mutex dpaux_lock;
+
+	struct tegra_prod_list *prod_list;
+
+	u8 sink_cap[DP_DPCD_SINK_CAP_SIZE];
+	bool sink_cap_valid;
+	u8 sink_cnt_cp_ready;
+
+#ifdef CONFIG_DEBUG_FS
+	struct tegra_dp_test_settings test_settings;
 };
 
-static inline u32 tegra_dp_wait_aux_training(struct tegra_dc_dp_data *dp,
-							bool is_clk_recovery)
-{
-	if (!dp->link_cfg.aux_rd_interval)
-		is_clk_recovery ? usleep_range(150, 200) :
-					usleep_range(450, 500);
-	else
-		msleep(dp->link_cfg.aux_rd_interval * 4);
+extern const struct file_operations test_settings_fops;
+#else
+};
+#endif
 
-	return dp->link_cfg.aux_rd_interval;
-}
-
+int tegra_dp_dpcd_write_field(struct tegra_dc_dp_data *dp, u32 cmd,
+	u8 mask, u8 data);
 int tegra_dc_dpaux_read(struct tegra_dc_dp_data *dp, u32 cmd, u32 addr,
 	u8 *data, u32 *size, u32 *aux_stat);
 int tegra_dc_dpaux_write(struct tegra_dc_dp_data *dp, u32 cmd, u32 addr,
 	u8 *data, u32 *size, u32 *aux_stat);
+void tegra_dc_dp_pre_disable_link(struct tegra_dc_dp_data *dp);
+void tegra_dc_dp_disable_link(struct tegra_dc_dp_data *dp, bool powerdown);
+void tegra_dc_dp_enable_link(struct tegra_dc_dp_data *dp);
+int tegra_dc_dpaux_read_chunk_locked(struct tegra_dc_dp_data *dp,
+	u32 cmd, u32 addr, u8 *data, u32 *size, u32 *aux_stat);
+int tegra_dc_dpaux_write_chunk_locked(struct tegra_dc_dp_data *dp,
+	u32 cmd, u32 addr, u8 *data, u32 *size, u32 *aux_stat);
+int tegra_dc_dp_dpcd_read(struct tegra_dc_dp_data *dp, u32 cmd, u8 *data_ptr);
+int tegra_dc_dp_dpcd_write(struct tegra_dc_dp_data *dp, u32 cmd, u8 data);
+void tegra_dp_tpg(struct tegra_dc_dp_data *dp, u32 tp, u32 n_lanes);
+bool tegra_dc_dp_calc_config(struct tegra_dc_dp_data *dp,
+				const struct tegra_dc_mode *mode,
+				struct tegra_dc_dp_link_config *cfg);
 
 /* DPCD definitions */
 #define NV_DPCD_REV					(0x00000000)
@@ -381,25 +273,37 @@ int tegra_dc_dpaux_write(struct tegra_dc_dp_data *dp, u32 cmd, u32 addr,
 #define NV_DPCD_HDCP_BINFO_OFFSET			(0x0006802A)
 #define NV_DPCD_HDCP_KSV_FIFO_OFFSET			(0x0006802C)
 #define NV_DPCD_HDCP_AINFO_OFFSET			(0x0006803B)
-
-static __maybe_unused
-void tegra_dpaux_pad_power(struct tegra_dc *dc, bool on)
-{
-	struct clk *clk;
-
-	clk = clk_get_sys("dpaux", NULL);
-	if (IS_ERR_OR_NULL(clk))
-		return;
-
-	clk_prepare_enable(clk);
-	tegra_dc_io_start(dc);
-
-	writel((on ? DPAUX_HYBRID_SPARE_PAD_PWR_POWERUP :
-		DPAUX_HYBRID_SPARE_PAD_PWR_POWERDOWN),
-		IO_ADDRESS(TEGRA_DPAUX_BASE + DPAUX_HYBRID_SPARE * 4));
-
-	tegra_dc_io_end(dc);
-	clk_disable_unprepare(clk);
-}
-
+#define NV_DPCP_HDCP_SHA_H0_OFFSET			(0x00068014)
+#define NV_DPCP_HDCP_SHA_H1_OFFSET			(0x00068018)
+#define NV_DPCP_HDCP_SHA_H2_OFFSET			(0x0006801C)
+#define NV_DPCP_HDCP_SHA_H3_OFFSET			(0x00068020)
+#define NV_DPCP_HDCP_SHA_H4_OFFSET			(0x00068024)
+/* DP 2.2 specific registers */
+#define NV_DPCD_HDCP_RTX_OFFSET				(0x00069000)
+#define NV_DPCD_HDCP_TXCAPS_OFFSET			(0x00069008)
+#define NV_DPCD_HDCP_CERT_RX_OFFSET			(0x0006900B)
+#define NV_DPCD_HDCP_CERT_RRX_OFFSET			(0x00069215)
+#define NV_DPCD_HDCP_CERT_RXCAPS_OFFSET			(0x0006921D)
+#define NV_DPCD_HDCP_EKM_NOSTORED			(0x69220)
+#define NV_DPCD_HDCP_EKM_STORED				(0x692A0)
+#define NV_DPCD_HDCP_M					(0x692B0)
+#define NV_DPCD_HDCP_HPRIME				(0x000692C0)
+#define NV_DPCD_HDCP_EKM_PAIRING			(0x0000692E0)
+#define NV_DPCD_HDCP_RN					(0x000692F0)
+#define NV_DPCD_HDCP_LPRIME				(0x000692F8)
+#define NV_DPCD_HDCP_EKS				(0x00069318)
+#define NV_DPCD_HDCP_RIV				(0x00069328)
+#define NV_DPCD_HDCP_RXINFO				(0x00069330)
+#define NV_DPCD_HDCP_SEQNUM_V				(0x00069332)
+#define NV_DPCD_HDCP_VPRIME				(0x00069335)
+#define NV_DPCD_HDCP_RX_ID_LIST				(0x00069345)
+#define NV_DPCD_HDCP_V					(0x000693E0)
+#define NV_DPCD_HDCP_SEQ_NUM_M				(0x000693F0)
+#define NV_DPCD_HDCP_K					(0x000693F3)
+#define NV_DPCD_HDCP_STRMID_TYPE			(0x000693F5)
+#define NV_DPCD_HDCP_MPRIME				(0x00069473)
+#define NV_DPCD_HDCP_RXSTATUS				(0x00069493)
+#define NV_DPCD_HDCP_RSVD				(0x00069494)
+#define NV_DPCD_HDCP_DBG				(0x00069518)
 #endif
+

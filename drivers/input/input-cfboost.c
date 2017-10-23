@@ -1,21 +1,19 @@
 /*
  * drivers/input/input-cfboost.c
  *
+<<<<<<< HEAD
  * Copyright (c) 2012-2014, NVIDIA CORPORATION.  All rights reserved.
+=======
+ * Copyright (c) 2012-2017, NVIDIA CORPORATION.  All rights reserved.
+>>>>>>> update/master
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; version 2 of the License.
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
  *
- * This program is distributed in the hope that it will be useful, but WITHOUT
+ * This program is distributed in the hope it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program; if not, write to the Free Software Foundation, Inc.,
- * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
- *
  */
 
 #include <linux/slab.h>
@@ -52,6 +50,14 @@ MODULE_DESCRIPTION("Input event CPU frequency booster");
 MODULE_LICENSE("GPL v2");
 
 
+<<<<<<< HEAD
+=======
+#define CPU_HOTWORD_BOOST_FREQ	(1912500)
+#define EMC_HOTWORD_BOOST_FREQ	(1600000000)
+#define GPU_HOTWORD_BOOST_FREQ	(921600000)
+#define HOTWORD_BOOST_TIME	(10*1000*1000) /* 10 seconds */
+
+>>>>>>> update/master
 static struct pm_qos_request freq_req, core_req, emc_req, gpu_req;
 static struct dev_pm_qos_request gpu_wakeup_req;
 static unsigned int boost_freq; /* kHz */
@@ -102,6 +108,7 @@ int cfb_add_device(struct device *dev)
 
 	return 0;
 }
+EXPORT_SYMBOL(cfb_add_device);
 
 void cfb_remove_device(struct device *dev)
 {
@@ -114,6 +121,7 @@ void cfb_remove_device(struct device *dev)
 
 	mutex_unlock(&gpu_device_lock);
 }
+EXPORT_SYMBOL(cfb_remove_device);
 
 static void cfb_boost(struct kthread_work *w)
 {
@@ -140,18 +148,44 @@ static void cfb_boost(struct kthread_work *w)
 	if (boost_gpu > 0)
 		pm_qos_update_request_timeout(&gpu_req, boost_gpu,
 			boost_time * 1000);
+<<<<<<< HEAD
+=======
+}
+
+static void cfb_hotword_boost(struct kthread_work *w)
+{
+	/* enable all 4 cpu cores */
+	pm_qos_update_request_timeout(&core_req, 4, HOTWORD_BOOST_TIME);
+	pm_qos_update_request_timeout(&freq_req, CPU_HOTWORD_BOOST_FREQ,
+			HOTWORD_BOOST_TIME);
+	pm_qos_update_request_timeout(&emc_req, EMC_HOTWORD_BOOST_FREQ,
+			HOTWORD_BOOST_TIME);
+	pm_qos_update_request_timeout(&gpu_req, GPU_HOTWORD_BOOST_FREQ,
+			HOTWORD_BOOST_TIME);
+>>>>>>> update/master
 }
 
 static struct task_struct *boost_kthread;
 static DEFINE_KTHREAD_WORKER(boost_worker);
 static DEFINE_KTHREAD_WORK(boost_work, &cfb_boost);
+static DEFINE_KTHREAD_WORK(boost_hotword_work, &cfb_hotword_boost);
 
 static void cfb_input_event(struct input_handle *handle, unsigned int type,
 			    unsigned int code, int value)
 {
 	trace_input_cfboost_event("event", type, code, value);
+<<<<<<< HEAD
 	if (jiffies < last_boost_jiffies ||
 		jiffies > last_boost_jiffies + msecs_to_jiffies(boost_time/2)) {
+=======
+	if ((code == BTN_TRIGGER_HAPPY14 || code == KEY_SEARCH) &&
+			time_after(jiffies, last_boost_jiffies)) {
+		queue_kthread_work(&boost_worker, &boost_hotword_work);
+		last_boost_jiffies = jiffies;
+	} else if (jiffies < last_boost_jiffies ||
+		jiffies > last_boost_jiffies + msecs_to_jiffies(boost_time/2)) {
+
+>>>>>>> update/master
 		queue_kthread_work(&boost_worker, &boost_work);
 		last_boost_jiffies = jiffies;
 	}
@@ -213,6 +247,10 @@ static const struct input_device_id cfb_ids[] = {
 		.evbit = { BIT_MASK(EV_REL) },
 		.keybit = {[BIT_WORD(BTN_MOUSE)] = BIT_MASK(BTN_MOUSE) },
 	},
+	{ /* any keyboard events */
+		.flags = INPUT_DEVICE_ID_MATCH_EVBIT,
+		.evbit = { BIT_MASK(EV_KEY) },
+	},
 	/* keypad */
 	{
 		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
@@ -231,6 +269,18 @@ static const struct input_device_id cfb_ids[] = {
 			INPUT_DEVICE_ID_MATCH_KEYBIT,
 		.evbit = { BIT_MASK(EV_KEY) },
 		.keybit = {[BIT_WORD(KEY_POWER)] = BIT_MASK(KEY_POWER) },
+	},
+	{ /* TS hotword */
+		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
+			INPUT_DEVICE_ID_MATCH_KEYBIT,
+		.evbit = { BIT_MASK(EV_KEY) },
+		.keybit = {[BIT_WORD(BTN_TRIGGER_HAPPY14)] = BIT_MASK(BTN_TRIGGER_HAPPY14) },
+	},
+	{ /* GA assist */
+		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
+			INPUT_DEVICE_ID_MATCH_KEYBIT,
+		.evbit = { BIT_MASK(EV_KEY) },
+		.keybit = {[BIT_WORD(KEY_SEARCH)] = BIT_MASK(KEY_SEARCH) },
 	},
 	/* joystick */
 	{

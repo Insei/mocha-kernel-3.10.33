@@ -3,7 +3,7 @@
  *
  * Tegra Graphics Host Channel
  *
- * Copyright (c) 2010-2014, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2010-2015, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -33,64 +33,66 @@
 struct nvhost_master;
 struct platform_device;
 struct nvhost_channel;
-struct nvhost_hwctx;
 
 struct nvhost_channel_ops {
 	const char *soc_name;
 	int (*init)(struct nvhost_channel *,
 		    struct nvhost_master *);
 	int (*submit)(struct nvhost_job *job);
-	int (*save_context)(struct nvhost_channel *channel);
 	int (*init_gather_filter)(struct nvhost_channel *ch);
+	int (*set_low_ch_prio)(struct nvhost_channel *ch);
 };
 
 struct nvhost_channel {
 	struct nvhost_channel_ops ops;
-	int refcount;
+	struct kref refcount;
 	int chid;
-	u32 syncpt_id;
-	struct mutex reflock;
+	int dev_chid;
 	struct mutex submitlock;
 	void __iomem *aperture;
-	struct nvhost_hwctx *cur_ctx;
 	struct platform_device *dev;
-	struct nvhost_hwctx_handler *ctxhandler;
 	struct nvhost_cdma cdma;
 
-	/* the address space block here
-	 * belongs to the module. but for
-	 * now just keep it here */
-	struct nvhost_as *as;
+	/* pointer to channel address space */
+	struct nvhost_vm *vm;
+
+	/* channel syncpoints */
+	struct mutex syncpts_lock;
+	u32 syncpts[NVHOST_MODULE_MAX_SYNCPTS];
+	u32 client_managed_syncpt;
+
+	bool cdma_initialized;
+	/* owner identifier */
+	void *identifier;
 };
 
 #define channel_op(ch)		(ch->ops)
 
+int nvhost_alloc_channels(struct nvhost_master *host);
+int nvhost_channel_remove_identifier(struct nvhost_device_data *pdata,
+			void *identifier);
+int nvhost_channel_unmap(struct nvhost_channel *ch);
+int nvhost_channel_release(struct nvhost_device_data *pdata);
+int nvhost_channel_list_free(struct nvhost_master *host);
+struct nvhost_channel *nvhost_check_channel(struct nvhost_device_data *pdata);
 int nvhost_channel_init(struct nvhost_channel *ch,
 	struct nvhost_master *dev);
 
-int nvhost_channel_submit(struct nvhost_job *job);
-
-struct nvhost_channel *nvhost_getchannel(struct nvhost_channel *ch,
-		bool force, bool init);
-void nvhost_putchannel(struct nvhost_channel *ch, bool deinit);
-int nvhost_channel_suspend(struct nvhost_channel *ch);
+void nvhost_getchannel(struct nvhost_channel *ch);
+int nvhost_channel_suspend(struct nvhost_master *host);
 
 int nvhost_channel_read_reg(struct nvhost_channel *channel,
-	struct nvhost_hwctx *hwctx,
 	u32 offset, u32 *value);
 
 struct nvhost_channel *nvhost_alloc_channel_internal(int chindex,
-	int max_channels, int *current_channel_count);
+	int max_channels);
 
-void nvhost_free_channel_internal(struct nvhost_channel *ch,
-	int *current_channel_count);
-
-int nvhost_channel_save_context(struct nvhost_channel *ch);
 void nvhost_channel_init_gather_filter(struct nvhost_channel *ch);
 
-struct nvhost_hwctx *nvhost_channel_get_file_hwctx(int fd);
-
-struct nvhost_hwctx_handler *nvhost_alloc_hwctx_handler(u32 syncpt,
-	u32 waitbase, struct nvhost_channel *ch);
+int nvhost_channel_nb_channels(struct nvhost_master *host);
+int nvhost_channel_ch_base(struct nvhost_master *host);
+int nvhost_channel_ch_limit(struct nvhost_master *host);
+int nvhost_channel_get_id_from_index(struct nvhost_master *host, int index);
+int nvhost_channel_get_index_from_id(struct nvhost_master *host, int chid);
 
 #endif

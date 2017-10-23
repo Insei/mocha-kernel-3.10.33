@@ -21,6 +21,7 @@
 #include <linux/platform_device.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/of.h>
 #define CREATE_TRACE_POINTS
 #include <trace/events/sysedp.h>
 
@@ -159,9 +160,11 @@ struct sysedp_consumer *sysedp_create_consumer(const char *specname,
 	struct sysedp_consumer *consumer;
 	struct sysedp_consumer_data *match;
 
+	if (!pdata || !pdata->consumer_data)
+		return NULL;
 	match = sysedp_find_consumer_data(specname);
 	if (!match) {
-		pr_info("sysedp_create_consumer: unable to create %s, no consumer_data for %s found",
+		pr_info("sysedp_create_consumer: unable to create %s, no consumer_data for %s found\n",
 			consumername, specname);
 		return NULL;
 	}
@@ -236,10 +239,127 @@ unsigned int sysedp_get_state(struct sysedp_consumer *consumer)
 }
 EXPORT_SYMBOL(sysedp_get_state);
 
+static int sysedp_get_consumer_data(struct platform_device *pdev,
+		struct sysedp_platform_data *obj_ptr, struct device_node *np_consumers)
+{
+	struct device_node *child;
+	int idx = 0;
+	int i;
+	u32 lenp;
+	int n;
+	u32 *u32_ptr;
+	const char *c_ptr;
+	const void *ptr;
+	int ret;
+
+	obj_ptr->consumer_data_size = of_get_child_count(np_consumers);
+	if (!obj_ptr->consumer_data_size)
+		return -EINVAL;
+
+	obj_ptr->consumer_data = devm_kzalloc(&pdev->dev,
+		sizeof(struct sysedp_consumer_data) *
+		obj_ptr->consumer_data_size, GFP_KERNEL);
+	if (!obj_ptr->consumer_data)
+		return -EINVAL;
+
+	for_each_child_of_node(np_consumers, child) {
+		ptr = of_get_property(child, "nvidia,consumer_name", &lenp);
+		if (!ptr)
+			return -EINVAL;
+		obj_ptr->consumer_data[idx].name = devm_kzalloc(&pdev->dev,
+			sizeof(char) * lenp, GFP_KERNEL);
+		if (!obj_ptr->consumer_data[idx].name)
+			return -EINVAL;
+		ret = of_property_read_string(child, "nvidia,consumer_name",
+					      &c_ptr);
+		if (ret) {
+			dev_err(&pdev->dev,
+				"The name of consumer %s is not set\n",
+				child->name);
+			return -EINVAL;
+		}
+		strncpy(obj_ptr->consumer_data[idx].name, c_ptr, lenp);
+
+		ptr = of_get_property(child, "nvidia,states", &lenp);
+		if (!ptr)
+			return -EINVAL;
+		n = lenp / sizeof(u32);
+		if (!n)
+			return -EINVAL;
+		obj_ptr->consumer_data[idx].states = devm_kzalloc(&pdev->dev,
+			sizeof(unsigned int) * n, GFP_KERNEL);
+		if (!obj_ptr->consumer_data[idx].states)
+			return -EINVAL;
+		u32_ptr = kzalloc(sizeof(u32) * n, GFP_KERNEL);
+		if (!u32_ptr)
+			return -EINVAL;
+		ret = of_property_read_u32_array(child, "nvidia,states",
+						 u32_ptr, n);
+		if (ret) {
+			dev_err(&pdev->dev,
+				"Fail to read states of consumer %s\n",
+				child->name);
+			kfree(u32_ptr);
+			return -EINVAL;
+		}
+		for (i = 0; i < n; ++i)
+			obj_ptr->consumer_data[idx].states[i] = u32_ptr[i];
+		obj_ptr->consumer_data[idx].num_states = n;
+		kfree(u32_ptr);
+
+		++idx;
+	}
+
+	return 0;
+}
+
+static void of_sysedp_get_pdata(struct platform_device *pdev,
+		      struct sysedp_platform_data **pdata)
+{
+	struct device_node *np = pdev->dev.of_node;
+	struct device_node *np_consumers;
+	struct sysedp_platform_data *obj_ptr;
+	u32 val;
+	int ret;
+
+	obj_ptr = devm_kzalloc(&pdev->dev, sizeof(struct sysedp_platform_data),
+		GFP_KERNEL);
+	if (!obj_ptr)
+		return;
+
+	np_consumers = of_get_child_by_name(np, "consumers");
+	if (np_consumers) {
+		ret = sysedp_get_consumer_data(pdev, obj_ptr, np_consumers);
+		if (ret) {
+			pr_err("sysedp_get_consumer_data: Failed to initialize consumers (%d).\n",
+					ret);
+			return;
+		}
+	}
+
+	ret = of_property_read_u32(np, "nvidia,margin", &val);
+	if (!ret)
+		obj_ptr->margin = (s32)val;
+
+	ret = of_property_read_u32(np, "nvidia,min_budget", &val);
+	if (!ret)
+		obj_ptr->min_budget = (s32)val;
+
+	ret = of_property_read_u32(np, "nvidia,initial_budget", &val);
+	if (!ret)
+		avail_budget = (s32)val;
+
+	*pdata = obj_ptr;
+
+	return;
+}
 
 static int sysedp_probe(struct platform_device *pdev)
 {
-	pdata = pdev->dev.platform_data;
+	if (pdev->dev.of_node)
+		of_sysedp_get_pdata(pdev, &pdata);
+	else
+		pdata = pdev->dev.platform_data;
 	if (!pdata)
 		return -EINVAL;
 
@@ -250,11 +370,18 @@ static int sysedp_probe(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct of_device_id sysedp_of_match[] = {
+	{ .compatible = "nvidia,tegra124-sysedp", },
+	{ },
+};
+MODULE_DEVICE_TABLE(of, sysedp_of_match);
+
 static struct platform_driver sysedp_driver = {
 	.probe = sysedp_probe,
 	.driver = {
 		.owner = THIS_MODULE,
-		.name = "sysedp"
+		.name = "sysedp",
+		.of_match_table = sysedp_of_match,
 	}
 };
 

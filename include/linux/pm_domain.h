@@ -2,6 +2,7 @@
  * pm_domain.h - Definitions and headers related to device power domains.
  *
  * Copyright (C) 2011 Rafael J. Wysocki <rjw@sisk.pl>, Renesas Electronics Corp.
+ * Copyright (c) 2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * This file is released under the GPLv2.
  */
@@ -123,6 +124,8 @@ struct generic_pm_domain_data {
 };
 
 #ifdef CONFIG_PM_GENERIC_DOMAINS
+struct generic_pm_domain *pm_genpd_lookup_name(const char *domain_name);
+
 static inline struct generic_pm_domain_data *to_gpd_data(struct pm_domain_data *pdd)
 {
 	return container_of(pdd, struct generic_pm_domain_data, base);
@@ -183,6 +186,11 @@ extern bool default_stop_ok(struct device *dev);
 extern struct dev_power_governor pm_domain_always_on_gov;
 #else
 
+static inline struct generic_pm_domain *pm_genpd_lookup_name
+				   (const char *domain_name)
+{
+	return NULL;
+}
 static inline void pm_genpd_set_poweroff_delay(struct generic_pm_domain *genpd,
 	s64 delay) {}
 static inline struct generic_pm_domain_data *dev_gpd_data(struct device *dev)
@@ -324,6 +332,74 @@ static inline void pm_genpd_syscore_poweroff(struct device *dev)
 static inline void pm_genpd_syscore_poweron(struct device *dev)
 {
 	pm_genpd_syscore_switch(dev, false);
+}
+
+/* OF PM domain providers */
+struct of_device_id;
+
+struct genpd_onecell_data {
+	struct generic_pm_domain **domains;
+	unsigned int num_domains;
+};
+
+typedef struct generic_pm_domain *(*genpd_xlate_t)(struct of_phandle_args *args,
+						void *data);
+
+#ifdef CONFIG_PM_GENERIC_DOMAINS_OF
+int __of_genpd_add_provider(struct device_node *np, genpd_xlate_t xlate,
+			void *data);
+void of_genpd_del_provider(struct device_node *np);
+
+struct generic_pm_domain *__of_genpd_xlate_simple(
+					struct of_phandle_args *genpdspec,
+					void *data);
+struct generic_pm_domain *__of_genpd_xlate_onecell(
+					struct of_phandle_args *genpdspec,
+					void *data);
+
+int genpd_dev_pm_attach(struct device *dev);
+int genpd_pm_subdomain_attach(struct generic_pm_domain *sd);
+int genpd_pm_subdomain_detach(struct generic_pm_domain *sd);
+int genpd_dev_pm_add(const struct of_device_id *dev_id, struct device *dev);
+#else /* !CONFIG_PM_GENERIC_DOMAINS_OF */
+static inline int __of_genpd_add_provider(struct device_node *np,
+					genpd_xlate_t xlate, void *data)
+{
+	return 0;
+}
+static inline void of_genpd_del_provider(struct device_node *np) {}
+
+#define __of_genpd_xlate_simple		NULL
+#define __of_genpd_xlate_onecell	NULL
+
+static inline int genpd_dev_pm_attach(struct device *dev)
+{
+	return -ENODEV;
+}
+static inline int genpd_pm_subdomain_attach(struct generic_pm_domain *sd)
+{
+	return -ENODEV;
+}
+static inline int genpd_pm_subdomain_detach(struct generic_pm_domain *sd)
+{
+	return -ENODEV;
+}
+static inline int genpd_dev_pm_add(const struct of_device_id *dev_id,
+						struct device *dev)
+{
+	return -ENODEV;
+}
+#endif /* CONFIG_PM_GENERIC_DOMAINS_OF */
+
+static inline int of_genpd_add_provider_simple(struct device_node *np,
+					struct generic_pm_domain *genpd)
+{
+	return __of_genpd_add_provider(np, __of_genpd_xlate_simple, genpd);
+}
+static inline int of_genpd_add_provider_onecell(struct device_node *np,
+					struct genpd_onecell_data *data)
+{
+	return __of_genpd_add_provider(np, __of_genpd_xlate_onecell, data);
 }
 
 #endif /* _LINUX_PM_DOMAIN_H */

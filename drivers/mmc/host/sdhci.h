@@ -4,7 +4,7 @@
  * Header file for Host Controller registers and I/O accessors.
  *
  *  Copyright (C) 2005-2008 Pierre Ossman, All Rights Reserved.
- *  Copyright (C) 2011-2012 NVIDIA Corporation
+ *  Copyright (c) 2011-2015, NVIDIA CORPORATION. All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,12 +21,16 @@
 
 #include <linux/mmc/sdhci.h>
 
+#define SDIO_HOSTNAME "mmc1"
+
 /*
  * Controller registers
  */
 
 #define SDHCI_DMA_ADDRESS	0x00
 #define SDHCI_ARGUMENT2		SDHCI_DMA_ADDRESS
+
+#define SDHCI_BLOCK_COUNT_32BIT	0x00
 
 #define SDHCI_BLOCK_SIZE	0x04
 #define  SDHCI_MAKE_BLKSZ(dma, blksz) (((dma & 0x7) << 12) | (blksz & 0xFFF))
@@ -207,7 +211,8 @@
 #define   SDHCI_CTRL_UHS_SDR50		0x0002
 #define   SDHCI_CTRL_UHS_SDR104		0x0003
 #define   SDHCI_CTRL_UHS_DDR50		0x0004
-#define   SDHCI_CTRL_HS_SDR200		0x0005 /* reserved value in SDIO spec */
+#define   SDHCI_CTRL_UHS_HS400		0x0005
+#define   SDHCI_CTRL_HS_SDR200		0x0006 /* reserved value in SDIO spec */
 #define  SDHCI_CTRL_VDD_180		0x0008
 #define  SDHCI_CTRL_DRV_TYPE_MASK	0x0030
 #define   SDHCI_CTRL_DRV_TYPE_B		0x0000
@@ -319,6 +324,7 @@
 #define   SDHCI_SPEC_200	1
 #define   SDHCI_SPEC_300	2
 #define   SDHCI_SPEC_400	3
+#define   SDHCI_SPEC_410	4
 
 /*
  * End of controller registers.
@@ -326,6 +332,9 @@
 
 #define SDHCI_MAX_DIV_SPEC_200	256
 #define SDHCI_MAX_DIV_SPEC_300	2046
+
+/* Time (in milli sec) interval to run auto calibration */
+#define SDHCI_PERIODIC_CALIB_TIMEOUT	100
 
 /*
  * Host SDMA buffer boundary. Valid values from 4K to 512K in powers of 2.
@@ -383,12 +392,38 @@ struct sdhci_ops {
 		struct devfreq_dev_status *dev_status);
 	int	(*get_drive_strength)(struct sdhci_host *host,
 		unsigned int max_dtr, int host_drv, int card_drv);
+<<<<<<< HEAD
+=======
+	void	(*post_init)(struct sdhci_host *host);
+	void	(*dump_host_cust_regs)(struct sdhci_host *host);
+	int	(*get_max_tuning_loop_counter)(struct sdhci_host *sdhci);
+	void	(*config_tap_delay)(struct sdhci_host *host, u8 option);
+	bool	(*is_tuning_done)(struct sdhci_host *sdhci);
+	bool	(*skip_register_dump)(struct sdhci_host *sdhci);
+	int	(*validate_sd2_0)(struct sdhci_host *sdhci);
+	void	(*get_max_pio_transfer_limits)(struct sdhci_host *sdhci);
+>>>>>>> update/master
 };
+
+static inline void sdhci_check_host_clock(struct sdhci_host *host)
+{
+	if (!host->is_clk_on) {
+		if (host->ops->set_clock) {
+			if (host->mmc->ios.clock) {
+				host->ops->set_clock(host,
+					host->mmc->ios.clock);
+			} else {
+				host->ops->set_clock(host, 400000);
+			}
+		}
+	}
+}
 
 #ifdef CONFIG_MMC_SDHCI_IO_ACCESSORS
 
 static inline void sdhci_writel(struct sdhci_host *host, u32 val, int reg)
 {
+	sdhci_check_host_clock(host);
 	if (unlikely(host->ops->write_l))
 		host->ops->write_l(host, val, reg);
 	else
@@ -397,6 +432,7 @@ static inline void sdhci_writel(struct sdhci_host *host, u32 val, int reg)
 
 static inline void sdhci_writew(struct sdhci_host *host, u16 val, int reg)
 {
+	sdhci_check_host_clock(host);
 	if (unlikely(host->ops->write_w))
 		host->ops->write_w(host, val, reg);
 	else
@@ -405,6 +441,7 @@ static inline void sdhci_writew(struct sdhci_host *host, u16 val, int reg)
 
 static inline void sdhci_writeb(struct sdhci_host *host, u8 val, int reg)
 {
+	sdhci_check_host_clock(host);
 	if (unlikely(host->ops->write_b))
 		host->ops->write_b(host, val, reg);
 	else
@@ -413,6 +450,7 @@ static inline void sdhci_writeb(struct sdhci_host *host, u8 val, int reg)
 
 static inline u32 sdhci_readl(struct sdhci_host *host, int reg)
 {
+	sdhci_check_host_clock(host);
 	if (unlikely(host->ops->read_l))
 		return host->ops->read_l(host, reg);
 	else
@@ -421,6 +459,7 @@ static inline u32 sdhci_readl(struct sdhci_host *host, int reg)
 
 static inline u16 sdhci_readw(struct sdhci_host *host, int reg)
 {
+	sdhci_check_host_clock(host);
 	if (unlikely(host->ops->read_w))
 		return host->ops->read_w(host, reg);
 	else
@@ -429,6 +468,7 @@ static inline u16 sdhci_readw(struct sdhci_host *host, int reg)
 
 static inline u8 sdhci_readb(struct sdhci_host *host, int reg)
 {
+	sdhci_check_host_clock(host);
 	if (unlikely(host->ops->read_b))
 		return host->ops->read_b(host, reg);
 	else
@@ -439,31 +479,37 @@ static inline u8 sdhci_readb(struct sdhci_host *host, int reg)
 
 static inline void sdhci_writel(struct sdhci_host *host, u32 val, int reg)
 {
+	sdhci_check_host_clock(host);
 	writel(val, host->ioaddr + reg);
 }
 
 static inline void sdhci_writew(struct sdhci_host *host, u16 val, int reg)
 {
+	sdhci_check_host_clock(host);
 	writew(val, host->ioaddr + reg);
 }
 
 static inline void sdhci_writeb(struct sdhci_host *host, u8 val, int reg)
 {
+	sdhci_check_host_clock(host);
 	writeb(val, host->ioaddr + reg);
 }
 
 static inline u32 sdhci_readl(struct sdhci_host *host, int reg)
 {
+	sdhci_check_host_clock(host);
 	return readl(host->ioaddr + reg);
 }
 
 static inline u16 sdhci_readw(struct sdhci_host *host, int reg)
 {
+	sdhci_check_host_clock(host);
 	return readw(host->ioaddr + reg);
 }
 
 static inline u8 sdhci_readb(struct sdhci_host *host, int reg)
 {
+	sdhci_check_host_clock(host);
 	return readb(host->ioaddr + reg);
 }
 
@@ -480,6 +526,7 @@ static inline void *sdhci_priv(struct sdhci_host *host)
 
 extern void sdhci_card_detect(struct sdhci_host *host);
 extern int sdhci_add_host(struct sdhci_host *host);
+extern void sdhci_runtime_forbid(struct sdhci_host *host);
 extern void sdhci_remove_host(struct sdhci_host *host, int dead);
 
 #ifdef CONFIG_PM
@@ -492,5 +539,6 @@ extern void sdhci_enable_irq_wakeups(struct sdhci_host *host);
 extern int sdhci_runtime_suspend_host(struct sdhci_host *host);
 extern int sdhci_runtime_resume_host(struct sdhci_host *host);
 #endif
+extern struct task_struct *suspend_task;
 
 #endif /* __SDHCI_HW_H */

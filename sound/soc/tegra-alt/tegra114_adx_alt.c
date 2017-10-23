@@ -16,6 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <linux/delay.h>
 #include <linux/clk.h>
 #include <linux/device.h>
 #include <linux/io.h>
@@ -35,6 +36,18 @@
 #include "tegra114_adx_alt.h"
 
 #define DRV_NAME "tegra114-adx"
+
+static const struct reg_default tegra114_adx_reg_defaults[] = {
+	{TEGRA_ADX_CTRL, 0x00000000},
+	{TEGRA_ADX_OUT_CH_CTRL, 0x00000000},
+	{TEGRA_ADX_IN_BYTE_EN0, 0x00000000},
+	{TEGRA_ADX_IN_BYTE_EN1, 0x00000000},
+	{TEGRA_ADX_AUDIOCIF_IN_CTRL, 0x00001100},
+	{TEGRA_ADX_AUDIOCIF_CH0_CTRL, 0x00001100},
+	{TEGRA_ADX_AUDIOCIF_CH1_CTRL, 0x00001100},
+	{TEGRA_ADX_AUDIOCIF_CH2_CTRL, 0x00001100},
+	{TEGRA_ADX_AUDIOCIF_CH3_CTRL, 0x00001100},
+};
 
 /**
  * tegra114_adx_enable_outstream - enable output stream
@@ -76,12 +89,12 @@ static void tegra114_adx_disable_outstream(struct tegra114_adx *adx,
  * @mask1: enable for bytes 31 ~ 0 of input frame
  * @mask2: enable for bytes 63 ~ 32 of input frame
  */
-static void tegra114_adx_set_in_byte_mask(struct tegra114_adx *adx,
-					unsigned int mask1,
-					unsigned int mask2)
+static void tegra114_adx_set_in_byte_mask(struct tegra114_adx *adx)
 {
-	regmap_write(adx->regmap, TEGRA_ADX_IN_BYTE_EN0, mask1);
-	regmap_write(adx->regmap, TEGRA_ADX_IN_BYTE_EN1, mask2);
+	regmap_write(adx->regmap,
+		TEGRA_ADX_IN_BYTE_EN0, adx->byte_mask[0]);
+	regmap_write(adx->regmap,
+		TEGRA_ADX_IN_BYTE_EN1, adx->byte_mask[1]);
 }
 
 /**
@@ -169,8 +182,23 @@ static int tegra114_adx_runtime_resume(struct device *dev)
 
 	regcache_cache_only(adx->regmap, false);
 
+	/* set ADX mapping table */
+	tegra114_adx_update_map_ram(adx);
+	tegra114_adx_set_in_byte_mask(adx);
+
 	return 0;
 }
+
+#ifdef CONFIG_PM_SLEEP
+static int tegra114_adx_suspend(struct device *dev)
+{
+	struct tegra114_adx *adx = dev_get_drvdata(dev);
+
+	regcache_mark_dirty(adx->regmap);
+
+	return 0;
+}
+#endif
 
 static int tegra114_adx_set_audio_cif(struct tegra114_adx *adx,
 				struct snd_pcm_hw_params *params,
@@ -180,7 +208,7 @@ static int tegra114_adx_set_audio_cif(struct tegra114_adx *adx,
 	struct tegra30_xbar_cif_conf cif_conf;
 
 	channels = params_channels(params);
-	if (channels < 2)
+	if (channels < 1 || channels > 16)
 		return -EINVAL;
 
 	switch (params_format(params)) {
@@ -274,7 +302,6 @@ int tegra114_adx_set_channel_map(struct snd_soc_dai *dai,
 {
 	struct device *dev = dai->dev;
 	struct tegra114_adx *adx = snd_soc_dai_get_drvdata(dai);
-	unsigned int byte_mask1 = 0, byte_mask2 = 0;
 	unsigned int out_stream_idx, out_ch_idx, out_byte_idx;
 	int i;
 
@@ -288,6 +315,9 @@ int tegra114_adx_set_channel_map(struct snd_soc_dai *dai,
 		dev_err(dev, "rx_slot is NULL\n");
 		return -EINVAL;
 	}
+
+	/* flush the mapping values if any */
+	memset(adx->map, 0, sizeof(adx->map));
 
 	for (i = 0; i < rx_num; i++) {
 		if (rx_slot[i] != 0) {
@@ -304,15 +334,11 @@ int tegra114_adx_set_channel_map(struct snd_soc_dai *dai,
 
 			/* making byte_mask */
 			if (i > 32)
-				byte_mask2 |= 1 << (32 - i);
+				adx->byte_mask[1] |= (1 << (i - 32));
 			else
-				byte_mask1 |= 1 << i;
+				adx->byte_mask[0] |= (1 << i);
 		}
 	}
-
-	tegra114_adx_update_map_ram(adx);
-
-	tegra114_adx_set_in_byte_mask(adx, byte_mask1, byte_mask2);
 
 	return 0;
 }
@@ -408,6 +434,7 @@ static struct snd_soc_codec_driver tegra114_adx_codec = {
 	.num_dapm_widgets = ARRAY_SIZE(tegra114_adx_widgets),
 	.dapm_routes = tegra114_adx_routes,
 	.num_dapm_routes = ARRAY_SIZE(tegra114_adx_routes),
+	.idle_bias_off = 1,
 };
 
 static bool tegra114_adx_wr_rd_reg(struct device *dev,
@@ -431,6 +458,19 @@ static bool tegra114_adx_wr_rd_reg(struct device *dev,
 	};
 }
 
+static bool tegra114_adx_volatile_reg(struct device *dev,
+				unsigned int reg)
+{
+	switch (reg) {
+	case TEGRA_ADX_CTRL:
+	case TEGRA_ADX_AUDIORAMCTL_ADX_CTRL:
+	case TEGRA_ADX_AUDIORAMCTL_ADX_DATA:
+		return true;
+	default:
+		return false;
+	};
+}
+
 static const struct regmap_config tegra114_adx_regmap_config = {
 	.reg_bits = 32,
 	.reg_stride = 4,
@@ -438,7 +478,10 @@ static const struct regmap_config tegra114_adx_regmap_config = {
 	.max_register = TEGRA_ADX_AUDIOCIF_CH3_CTRL,
 	.writeable_reg = tegra114_adx_wr_rd_reg,
 	.readable_reg = tegra114_adx_wr_rd_reg,
-	.cache_type = REGCACHE_RBTREE,
+	.volatile_reg = tegra114_adx_volatile_reg,
+	.cache_type = REGCACHE_FLAT,
+	.reg_defaults = tegra114_adx_reg_defaults,
+	.num_reg_defaults = ARRAY_SIZE(tegra114_adx_reg_defaults),
 };
 
 static const struct tegra114_adx_soc_data soc_data_tegra114 = {
@@ -566,6 +609,8 @@ static int tegra114_adx_platform_remove(struct platform_device *pdev)
 static const struct dev_pm_ops tegra114_adx_pm_ops = {
 	SET_RUNTIME_PM_OPS(tegra114_adx_runtime_suspend,
 			   tegra114_adx_runtime_resume, NULL)
+	SET_SYSTEM_SLEEP_PM_OPS(tegra114_adx_suspend,
+			   NULL)
 };
 
 static struct platform_driver tegra114_adx_driver = {

@@ -42,6 +42,7 @@
 #include <linux/sched/sysctl.h>
 #include <linux/slab.h>
 #include <linux/compat.h>
+#include <linux/poison.h>
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
@@ -939,8 +940,15 @@ void add_timer_on(struct timer_list *timer, int cpu)
 	 * with the timer by holding the timer base lock. This also
 	 * makes sure that a CPU on the way to stop its tick can not
 	 * evaluate the timer wheel.
+	 *
+	 * Spare the IPI for deferrable timers on idle targets though.
+	 * The next buzy ticks will take care of it. Except full dynticks
+	 * require special care against races with idle_cpu(), lets deal
+	 * with that later.
 	 */
-	wake_up_nohz_cpu(cpu);
+	if (!tbase_get_deferrable(timer->base) || tick_nohz_full_cpu(cpu))
+		wake_up_nohz_cpu(cpu);
+
 	spin_unlock_irqrestore(&base->lock, flags);
 }
 EXPORT_SYMBOL_GPL(add_timer_on);
@@ -1167,7 +1175,11 @@ static inline void __run_timers(struct tvec_base *base)
 			bool irqsafe;
 
 			timer = list_first_entry(head, struct timer_list,entry);
+			if (timer < INVALID_POISON_POINTER)
+				continue;
 			fn = timer->function;
+			if (fn < INVALID_POISON_POINTER)
+				continue;
 			data = timer->data;
 			irqsafe = tbase_get_irqsafe(timer->base);
 

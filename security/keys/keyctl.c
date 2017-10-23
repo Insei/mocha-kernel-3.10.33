@@ -753,7 +753,11 @@ can_read_key:
 		ret = key_validate(key);
 		if (ret == 0)
 			ret = key->type->read(key, buffer, buflen);
+<<<<<<< HEAD
 			up_read(&key->sem);
+=======
+		up_read(&key->sem);
+>>>>>>> update/master
 	}
 
 error2:

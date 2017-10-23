@@ -20,15 +20,15 @@
 #include "mods_internal.h"
 #include <linux/clk.h>
 #include <mach/clk.h>
-#include <../arch/arm/mach-tegra/clock.h>
+#include <linux/platform/tegra/clock.h>
 
 static struct list_head mods_clock_handles;
 static spinlock_t mods_clock_lock;
-static NvU32 last_handle;
+static u32 last_handle;
 
 struct clock_entry {
 	struct clk *pclk;
-	NvU32 handle;
+	u32 handle;
 	struct list_head list;
 };
 
@@ -51,18 +51,18 @@ void mods_shutdown_clock_api(void)
 		struct clock_entry *entry
 			= list_entry(iter, struct clock_entry, list);
 		list_del(iter);
-		MEMDBG_FREE(entry);
+		kfree(entry);
 	}
 
 	spin_unlock(&mods_clock_lock);
 }
 
-static NvU32 mods_get_clock_handle(struct clk *pclk)
+static u32 mods_get_clock_handle(struct clk *pclk)
 {
 	struct list_head *head = &mods_clock_handles;
 	struct list_head *iter;
 	struct clock_entry *entry = 0;
-	NvU32 handle = 0;
+	u32 handle = 0;
 
 	spin_lock(&mods_clock_lock);
 
@@ -77,7 +77,7 @@ static NvU32 mods_get_clock_handle(struct clk *pclk)
 	}
 
 	if (!entry) {
-		MEMDBG_ALLOC(entry, sizeof(*entry));
+		entry = kmalloc(sizeof(*entry), GFP_ATOMIC);
 		if (!unlikely(!entry)) {
 			entry->pclk = pclk;
 			entry->handle = ++last_handle;
@@ -91,7 +91,7 @@ static NvU32 mods_get_clock_handle(struct clk *pclk)
 	return handle;
 }
 
-static struct clk *mods_get_clock(NvU32 handle)
+static struct clk *mods_get_clock(u32 handle)
 {
 	struct list_head *head = &mods_clock_handles;
 	struct list_head *iter;

@@ -14,6 +14,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #include <linux/module.h>
+#include <linux/of.h>
 #include <linux/rtc.h>
 #include <linux/kdev_t.h>
 #include <linux/idr.h>
@@ -156,12 +157,27 @@ struct rtc_device *rtc_device_register(const char *name, struct device *dev,
 {
 	struct rtc_device *rtc;
 	struct rtc_wkalrm alrm;
-	int id, err;
+	int of_id = -1, id = -1, err;
 
-	id = ida_simple_get(&rtc_ida, 0, 0, GFP_KERNEL);
+	if (dev->of_node)
+		of_id = of_alias_get_id(dev->of_node, "rtc");
+	else if (dev->parent && dev->parent->of_node)
+		of_id = of_alias_get_id(dev->parent->of_node, "rtc");
+
+	if (of_id >= 0) {
+		id = ida_simple_get(&rtc_ida, of_id, of_id + 1,
+				    GFP_KERNEL);
+		if (id < 0)
+			dev_warn(dev, "/aliases ID %d not available\n",
+				    of_id);
+	}
+
 	if (id < 0) {
-		err = id;
-		goto exit;
+		id = ida_simple_get(&rtc_ida, 0, 0, GFP_KERNEL);
+		if (id < 0) {
+			err = id;
+			goto exit;
+		}
 	}
 
 	rtc = kzalloc(sizeof(struct rtc_device), GFP_KERNEL);
@@ -178,6 +194,7 @@ struct rtc_device *rtc_device_register(const char *name, struct device *dev,
 	rtc->dev.parent = dev;
 	rtc->dev.class = rtc_class;
 	rtc->dev.release = rtc_device_release;
+	rtc->system_shutting = false;
 
 	mutex_init(&rtc->ops_lock);
 	spin_lock_init(&rtc->irq_lock);
@@ -258,6 +275,18 @@ void rtc_device_unregister(struct rtc_device *rtc)
 	}
 }
 EXPORT_SYMBOL_GPL(rtc_device_unregister);
+
+/**
+ * rtc_device_shutdown - flush any pending irq workqueue
+ *
+ * @rtc: the RTC class device to cancel pending work
+ */
+void rtc_device_shutdown(struct rtc_device *rtc)
+{
+	cancel_work_sync(&rtc->irqwork);
+	rtc->system_shutting = true;
+}
+EXPORT_SYMBOL_GPL(rtc_device_shutdown);
 
 static void devm_rtc_device_release(struct device *dev, void *res)
 {

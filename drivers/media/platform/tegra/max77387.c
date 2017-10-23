@@ -999,10 +999,10 @@ static int max77387_enter_offmode(struct max77387_info *info, bool op_off)
 	return err;
 }
 
-#ifdef CONFIG_PM
-static int max77387_suspend(struct i2c_client *client, pm_message_t msg)
+#ifdef CONFIG_PM_SLEEP
+static int max77387_suspend(struct device *dev)
 {
-	struct max77387_info *info = i2c_get_clientdata(client);
+	struct max77387_info *info = dev_get_drvdata(dev);
 
 	dev_info(info->dev, "Suspending\n");
 	info->regs.regs_stale = true;
@@ -1010,15 +1010,16 @@ static int max77387_suspend(struct i2c_client *client, pm_message_t msg)
 	return 0;
 }
 
-static int max77387_resume(struct i2c_client *client)
+static int max77387_resume(struct device *dev)
 {
-	struct max77387_info *info = i2c_get_clientdata(client);
+	struct max77387_info *info = dev_get_drvdata(dev);
 
 	dev_info(info->dev, "Resuming\n");
 	info->regs.regs_stale = true;
 
 	return 0;
 }
+#endif /* CONFIG_PM_SLEEP */
 
 static void max77387_shutdown(struct i2c_client *client)
 {
@@ -1029,7 +1030,6 @@ static void max77387_shutdown(struct i2c_client *client)
 	max77387_enter_offmode(info, true);
 	info->regs.regs_stale = true;
 }
-#endif
 
 static int max77387_power_off(struct max77387_info *info)
 {
@@ -1311,8 +1311,8 @@ static int max77387_get_param(struct max77387_info *info, long arg)
 		err = -EINVAL;
 	}
 
-	if (!err && copy_to_user((void __user *)params.p_value,
-			 data_ptr, data_size)) {
+	if (!err && copy_to_user((void __user *)(uintptr_t)params.p_value,
+		data_ptr, data_size)) {
 		dev_err(info->dev, "%s copy_to_user err line %d\n",
 				__func__, __LINE__);
 		err = -EFAULT;
@@ -1329,8 +1329,9 @@ static int max77387_get_levels(struct max77387_info *info,
 	struct nvc_torch_timer_capabilities_v1 *p_tm;
 	u8 op_mode;
 
-	if (copy_from_user(plevels, (const void __user *)params->p_value,
-			   sizeof(*plevels))) {
+	if (copy_from_user(plevels,
+		(const void __user *)(uintptr_t)params->p_value,
+		sizeof(*plevels))) {
 		dev_err(info->dev, "%s %d copy_from_user err\n",
 				__func__, __LINE__);
 		return -EINVAL;
@@ -1418,8 +1419,9 @@ static int max77387_set_param(struct max77387_info *info, long arg)
 			led_levels.ledmask, curr1, curr2);
 		break;
 	case NVC_PARAM_FLASH_PIN_STATE:
-		if (copy_from_user(&val, (const void __user *)params.p_value,
-			   sizeof(val))) {
+		if (copy_from_user(&val,
+			(const void __user *)(uintptr_t)params.p_value,
+			sizeof(val))) {
 			dev_err(info->dev, "%s %d copy_from_user err\n",
 				__func__, __LINE__);
 			err = -EINVAL;
@@ -1530,8 +1532,8 @@ static int max77387_regulator_get(struct max77387_info *info,
 
 	reg = regulator_get(info->dev, vreg_name);
 	if (unlikely(IS_ERR(reg))) {
-		dev_err(info->dev, "%s %s ERR: %d\n",
-			__func__, vreg_name, (int)reg);
+		dev_err(info->dev, "%s %s ERR: %p\n",
+			__func__, vreg_name, reg);
 		err = PTR_ERR(reg);
 		reg = NULL;
 	} else
@@ -1610,10 +1612,11 @@ static void max77387_caps_layout(struct max77387_info *info)
 	info->torch_timeouts[1] = start_ptr + max77387_torch_cap_size;
 
 	info->torch_cap_size = MAX77387_TORCH_CAP_TIMEOUT_SIZE;
-	dev_dbg(info->dev, "%s: %d(%d + %d), %d(%d + %d)\n", __func__,
-		info->flash_cap_size, max77387_flash_cap_size,
-		max77387_flash_timeout_size, info->torch_cap_size,
-		max77387_torch_cap_size, max77387_torch_timeout_size);
+	dev_dbg(info->dev, "%s: %d(%lu + %lu), %d(%lu + %lu)\n", __func__,
+		info->flash_cap_size, (unsigned long)max77387_flash_cap_size,
+		(unsigned long)max77387_flash_timeout_size,
+		info->torch_cap_size, (unsigned long)max77387_torch_cap_size,
+		(unsigned long)max77387_torch_timeout_size);
 }
 
 static int max77387_probe(
@@ -1841,6 +1844,10 @@ static int max77387_debugfs_init(struct max77387_info *info)
 	return -EFAULT;
 }
 
+static const struct dev_pm_ops max77387_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(max77387_suspend, max77387_resume)
+};
+
 static const struct i2c_device_id max77387_id[] = {
 	{ "max77387", 0 },
 	{ },
@@ -1850,15 +1857,12 @@ static struct i2c_driver max77387_drv = {
 	.driver = {
 		.name = "max77387",
 		.owner = THIS_MODULE,
+		.pm = &max77387_pm_ops,
 	},
 	.id_table = max77387_id,
 	.probe = max77387_probe,
 	.remove = max77387_remove,
-#ifdef CONFIG_PM
 	.shutdown = max77387_shutdown,
-	.suspend  = max77387_suspend,
-	.resume   = max77387_resume,
-#endif
 };
 
 module_i2c_driver(max77387_drv);

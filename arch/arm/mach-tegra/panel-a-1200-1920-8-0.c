@@ -1,7 +1,7 @@
 /*
  * arch/arm/mach-tegra/panel-a-1200-1920-8-0.c
  *
- * Copyright (c) 2013-2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -19,38 +19,28 @@
 #include <mach/dc.h>
 #include <linux/delay.h>
 #include <linux/gpio.h>
-#include <linux/tegra_pwm_bl.h>
 #include <linux/regulator/consumer.h>
-#include <linux/pwm_backlight.h>
-#include <linux/max8831_backlight.h>
-#include <linux/leds.h>
-#include <linux/ioport.h>
-#include <linux/mfd/palmas.h>
-#include <generated/mach-types.h>
-#include <video/mipi_display.h>
 #include "board.h"
 #include "board-panel.h"
 #include "devices.h"
-#include "gpio-names.h"
-#include "tegra11_host1x_devices.h"
-
-#define TEGRA_DSI_GANGED_MODE	0
 
 #define DSI_PANEL_RESET		1
 
+<<<<<<< HEAD
 #define DC_CTRL_MODE	(TEGRA_DC_OUT_CONTINUOUS_MODE  |\
 			TEGRA_DC_OUT_INITIALIZED_MODE)
 
 #define PRISM_THRESHOLD		50
 #define HYST_VAL		25
 
+=======
+>>>>>>> update/master
 static bool reg_requested;
-static bool gpio_requested;
-static struct platform_device *disp_device;
 static struct regulator *avdd_lcd_3v3;
 static struct regulator *vdd_lcd_bl_en;
 static struct regulator *dvdd_lcd_1v8;
 static struct device *dc_dev;
+<<<<<<< HEAD
 
 static struct tegra_dc_sd_settings dsi_a_1200_1920_8_0_sd_settings = {
 	.enable = 0, /* disabled by default. */
@@ -190,6 +180,9 @@ static struct tegra_dsi_out dsi_a_1200_1920_8_0_pdata = {
 	.boardinfo = {BOARD_P1761, 0, 0, 1},
 	.ulpm_not_supported = true,
 };
+=======
+static u16 en_panel_rst;
+>>>>>>> update/master
 
 static int dsi_a_1200_1920_8_0_regulator_get(struct device *dev)
 {
@@ -216,42 +209,12 @@ static int dsi_a_1200_1920_8_0_regulator_get(struct device *dev)
 
 	vdd_lcd_bl_en = regulator_get(dev, "vdd_lcd_bl_en");
 	if (IS_ERR_OR_NULL(vdd_lcd_bl_en)) {
-		pr_err("vdd_lcd_bl_en regulator get failed\n");
 		err = PTR_ERR(vdd_lcd_bl_en);
+		pr_warn("warning: vdd_lcd_bl_en regulator get failed, err = %d\n", err);
 		vdd_lcd_bl_en = NULL;
-		goto fail;
 	}
 
 	reg_requested = true;
-	return 0;
-fail:
-	return err;
-}
-
-static int dsi_a_1200_1920_8_0_gpio_get(void)
-{
-	int err = 0;
-
-	if (gpio_requested)
-		return 0;
-
-	err = gpio_request(dsi_a_1200_1920_8_0_pdata.dsi_panel_rst_gpio,
-		"panel rst");
-	if (err < 0) {
-		pr_err("panel reset gpio request failed\n");
-		goto fail;
-	}
-
-	/* free pwm GPIO */
-	err = gpio_request(dsi_a_1200_1920_8_0_pdata.dsi_panel_bl_pwm_gpio,
-		"panel pwm");
-	if (err < 0) {
-		pr_err("panel pwm gpio request failed\n");
-		goto fail;
-	}
-
-	gpio_free(dsi_a_1200_1920_8_0_pdata.dsi_panel_bl_pwm_gpio);
-	gpio_requested = true;
 	return 0;
 fail:
 	return err;
@@ -270,11 +233,17 @@ static int dsi_a_1200_1920_8_0_enable(struct device *dev)
 		goto fail;
 	}
 
-	err = dsi_a_1200_1920_8_0_gpio_get();
+	err = tegra_panel_gpio_get_dt("a,wuxga-8-0", &panel_of);
 	if (err < 0) {
 		pr_err("dsi gpio request failed\n");
 		goto fail;
 	}
+
+	/* If panel rst gpio is specified in device tree,
+	 * use that
+	 */
+	if (gpio_is_valid(panel_of.panel_gpio[TEGRA_GPIO_RESET]))
+		en_panel_rst = panel_of.panel_gpio[TEGRA_GPIO_RESET];
 
 	if (avdd_lcd_3v3) {
 		err = regulator_enable(avdd_lcd_3v3);
@@ -300,6 +269,7 @@ static int dsi_a_1200_1920_8_0_enable(struct device *dev)
 		}
 	}
 
+<<<<<<< HEAD
 	msleep(100);
 #if DSI_PANEL_RESET
 	if (!(disp_out->flags & TEGRA_DC_OUT_INITIALIZED_MODE)) {
@@ -311,6 +281,16 @@ static int dsi_a_1200_1920_8_0_enable(struct device *dev)
 		msleep(150);
 		gpio_set_value(
 			dsi_a_1200_1920_8_0_pdata.dsi_panel_rst_gpio, 1);
+=======
+	msleep(20);
+#if DSI_PANEL_RESET
+	if (!tegra_dc_initialized(dev)) {
+		gpio_direction_output(en_panel_rst, 1);
+		usleep_range(1000, 5000);
+		gpio_set_value(en_panel_rst, 0);
+		usleep_range(1000, 5000);
+		gpio_set_value(en_panel_rst, 1);
+>>>>>>> update/master
 		msleep(20);
 	}
 #endif
@@ -320,8 +300,9 @@ fail:
 	return err;
 }
 
-static int dsi_a_1200_1920_8_0_disable(void)
+static int dsi_a_1200_1920_8_0_disable(struct device *dev)
 {
+<<<<<<< HEAD
 	if (gpio_is_valid(dsi_a_1200_1920_8_0_pdata.dsi_panel_rst_gpio)) {
 		/* Wait for 50ms before triggering panel reset */
 		msleep(50);
@@ -329,6 +310,13 @@ static int dsi_a_1200_1920_8_0_disable(void)
 	}
 
 	msleep(120);
+=======
+	if (gpio_is_valid(en_panel_rst)) {
+		/* Wait for 50ms before triggering panel reset */
+		msleep(50);
+		gpio_set_value(en_panel_rst, 0);
+	}
+>>>>>>> update/master
 
 	if (vdd_lcd_bl_en)
 		regulator_disable(vdd_lcd_bl_en);
@@ -348,6 +336,7 @@ static int dsi_a_1200_1920_8_0_postsuspend(void)
 	return 0;
 }
 
+<<<<<<< HEAD
 static struct tegra_dc_mode dsi_a_1200_1920_8_0_modes[] = {
 	{
 		.pclk = 155774400,
@@ -545,6 +534,25 @@ static int dsi_a_1200_1920_8_0_bl_notify(struct device *unused, int brightness)
 		else if (brightness > PRISM_THRESHOLD + HYST_VAL)
 			nvsd_enbl_dsbl_prism(dc_dev, true);
 	}
+=======
+static int dsi_a_1200_1920_8_0_bl_notify(struct device *dev, int brightness)
+{
+	int cur_sd_brightness;
+	struct backlight_device *bl = NULL;
+	struct pwm_bl_data *pb = NULL;
+	bl = (struct backlight_device *)dev_get_drvdata(dev);
+	pb = (struct pwm_bl_data *)dev_get_drvdata(&bl->dev);
+
+	/* apply the non-linear curve adjustment */
+	if (brightness > 255)
+		pr_info("Error: Brightness > 255!\n");
+	else if (pb->bl_nonlinear)
+		brightness = pb->bl_nonlinear[brightness];
+
+	if (dc_dev)
+		nvsd_check_prism_thresh(dc_dev, brightness);
+
+>>>>>>> update/master
 	cur_sd_brightness = atomic_read(&sd_brightness);
 	/* SD brightness is a percentage */
 	brightness = (brightness * cur_sd_brightness) / 255;
@@ -552,8 +560,8 @@ static int dsi_a_1200_1920_8_0_bl_notify(struct device *unused, int brightness)
 	/* Apply any backlight response curve */
 	if (brightness > 255)
 		pr_info("Error: Brightness > 255!\n");
-	else
-		brightness = dsi_a_1200_1920_8_0_bl_output_measured[brightness];
+	else if (pb->bl_measured)
+		brightness = pb->bl_measured[brightness];
 
 	return brightness;
 }
@@ -561,9 +569,13 @@ static int dsi_a_1200_1920_8_0_bl_notify(struct device *unused, int brightness)
 static int dsi_a_1200_1920_8_0_check_fb(struct device *dev,
 	struct fb_info *info)
 {
-	return info->device == &disp_device->dev;
+	struct platform_device *pdev = NULL;
+	pdev = to_platform_device(bus_find_device_by_name(
+		&platform_bus_type, NULL, "tegradc.0"));
+	return info->device == &pdev->dev;
 }
 
+<<<<<<< HEAD
 static struct platform_pwm_backlight_data dsi_a_1200_1920_8_0_bl_data = {
 	.pwm_id		= 1,
 	.max_brightness	= 255,
@@ -658,6 +670,16 @@ struct tegra_panel __initdata dsi_a_1200_1920_8_0 = {
 	.register_bl_dev = dsi_a_1200_1920_8_0_register_bl_dev,
 	.init_cmu_data = dsi_a_1200_1920_8_0_cmu_init,
 	.set_disp_device = dsi_a_1200_1920_8_0_set_disp_device,
+=======
+static struct pwm_bl_data_dt_ops dsi_a_1200_1920_8_0_pwm_bl_ops = {
+	.notify = dsi_a_1200_1920_8_0_bl_notify,
+	.check_fb = dsi_a_1200_1920_8_0_check_fb,
+	.blnode_compatible = "a,wuxga-8-0-bl",
 };
-EXPORT_SYMBOL(dsi_a_1200_1920_8_0);
-
+struct tegra_panel_ops dsi_a_1200_1920_8_0_ops = {
+	.enable = dsi_a_1200_1920_8_0_enable,
+	.disable = dsi_a_1200_1920_8_0_disable,
+	.postsuspend = dsi_a_1200_1920_8_0_postsuspend,
+	.pwm_bl_ops = &dsi_a_1200_1920_8_0_pwm_bl_ops,
+>>>>>>> update/master
+};

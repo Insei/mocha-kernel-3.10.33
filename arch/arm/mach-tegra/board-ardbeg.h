@@ -20,9 +20,6 @@
 #ifndef _MACH_TEGRA_BOARD_ARDBEG_H
 #define _MACH_TEGRA_BOARD_ARDBEG_H
 
-#include <linux/mfd/as3722-plat.h>
-#include <linux/mfd/as3722.h>
-#include <mach/gpio-tegra.h>
 #include <mach/irqs.h>
 #include "gpio-names.h"
 
@@ -30,17 +27,14 @@ int ardbeg_emc_init(void);
 int ardbeg_display_init(void);
 int ardbeg_panel_init(void);
 int ardbeg_sdhci_init(void);
-int ardbeg_sata_init(void);
-void arbdeg_sata_clk_gate(void);
 int ardbeg_sensors_init(void);
 int ardbeg_regulator_init(void);
 int ardbeg_suspend_init(void);
 int ardbeg_rail_alignment_init(void);
 int ardbeg_soctherm_init(void);
 int ardbeg_edp_init(void);
-void shield_new_sysedp_init(void);
 void shield_sysedp_dynamic_capping_init(void);
-void shield_sysedp_batmon_init(void);
+void ardbeg_camera_auxdata(void *);
 
 
 /* Invensense MPU Definitions */
@@ -61,23 +55,7 @@ void shield_sysedp_batmon_init(void);
 #define TEGRA_SOC_OC_IRQ_BASE	TEGRA_NR_IRQS
 #define TEGRA_SOC_OC_NUM_IRQ	TEGRA_SOC_OC_IRQ_MAX
 
-#define PALMAS_TEGRA_GPIO_BASE	TEGRA_NR_GPIOS
-#define PALMAS_TEGRA_IRQ_BASE	(TEGRA_SOC_OC_IRQ_BASE + TEGRA_SOC_OC_NUM_IRQ)
-#define AS3722_GPIO_BASE	TEGRA_NR_GPIOS
-#define AS3722_GPIO_END	(AS3722_GPIO_BASE + AS3722_NUM_GPIO)
-
-/* PMU_TCA6416 GPIOs */
-#define PMU_TCA6416_GPIO_BASE   (AS3722_GPIO_END)
-#define PMU_TCA6416_GPIO(x)     (PMU_TCA6416_GPIO_BASE + x)
-#define PMU_TCA6416_NR_GPIOS    18
 /* External peripheral act as interrupt controller */
-/* AS3720 IRQs */
-#define AS3722_IRQ_BASE         (TEGRA_SOC_OC_IRQ_BASE + TEGRA_SOC_OC_NUM_IRQ)
-#define AS3722_IRQ_END		(AS3722_IRQ_BASE + AS3722_IRQ_MAX)
-
-/* TCA6416 IRQ */
-#define PMU_TCA6416_IRQ_BASE	AS3722_IRQ_END
-#define PMU_TCA6416_IRQ_END	(PMU_TCA6416_IRQ_BASE + 16)
 
 #define CAM_RSTN TEGRA_GPIO_PBB3
 #define CAM_FLASH_STROBE TEGRA_GPIO_PBB4
@@ -87,6 +65,7 @@ void shield_sysedp_batmon_init(void);
 #define CAM_AF_PWDN TEGRA_GPIO_PBB7
 #define CAM_BOARD_E1806
 
+<<<<<<< HEAD
 /* Modem related GPIOs */
 #define MODEM_EN		TEGRA_GPIO_PS4
 #define MDM_RST			TEGRA_GPIO_PS3
@@ -94,6 +73,8 @@ void shield_sysedp_batmon_init(void);
 #define MDM_SAR0		TEGRA_GPIO_PG2
 #define MDM_POWER_REPORT	TEGRA_GPIO_PK0
 
+=======
+>>>>>>> update/master
 /* Baseband IDs */
 enum tegra_bb_type {
 	TEGRA_BB_BRUCE = 1,
@@ -108,10 +89,12 @@ enum tegra_bb_type {
 /* Touchscreen definitions */
 #define TOUCH_GPIO_IRQ_RAYDIUM_SPI	TEGRA_GPIO_PK2
 #define TOUCH_GPIO_RST_RAYDIUM_SPI	TEGRA_GPIO_PK4
+#define E2141_TOUCH_GPIO_RST_RAYDIUM_SPI	TEGRA_GPIO_PR1 /* Interposer */
 #define TOUCH_SPI_ID			0	/*SPI 1 on ardbeg_interposer*/
 #define TOUCH_SPI_CS			0	/*CS  0 on ardbeg_interposer*/
-#define NORRIN_TOUCH_SPI_ID			2	/*SPI 2 on Norrin*/
-#define NORRIN_TOUCH_SPI_CS			1	/*CS  1 on Norrin*/
+#define NORRIN_TOUCH_SPI_ID		2	/*SPI 2 on Norrin*/
+#define NORRIN_TOUCH_SPI_CS		1	/*CS  1 on Norrin*/
+#define E2141_TOUCH_SPI_ID		3	/*SPI 4 on T210_interposer*/
 
 #define TOUCH_GPIO_IRQ_MAXIM_STI_SPI	TEGRA_GPIO_PK2
 #define TOUCH_GPIO_RST_MAXIM_STI_SPI	TEGRA_GPIO_PK4
@@ -145,16 +128,13 @@ enum tegra_bb_type {
 
 int laguna_pinmux_init(void);
 int laguna_regulator_init(void);
-int laguna_edp_init(void);
 
 /* Norrin specific */
 int norrin_regulator_init(void);
-int norrin_kbc_init(void);
 int norrin_soctherm_init(void);
 int norrin_emc_init(void);
 
 /* loki specific */
-int loki_pinmux_init(void);
 int loki_regulator_init(void);
 int loki_emc_init(void);
 int loki_sdhci_init(void);
@@ -163,8 +143,6 @@ int loki_panel_init(void);
 int loki_kbc_init(void);
 int loki_sensors_init(void);
 int loki_soctherm_init(void);
-int loki_edp_init(void);
-int loki_fan_init(void);
 int loki_rail_alignment_init(void);
 
 /* AUO Display related GPIO */
@@ -183,9 +161,6 @@ int loki_rail_alignment_init(void);
 
 /* TN8 specific */
 
-int tn8_regulator_init(void);
-int tn8_fixed_regulator_init(void);
-int tn8_edp_init(void);
 void tn8_new_sysedp_init(void);
 void tn8_sysedp_dynamic_capping_init(void);
 

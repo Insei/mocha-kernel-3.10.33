@@ -9,6 +9,7 @@ Optional properties:
 - regulator-max-microamp: largest current consumers may set
 - regulator-always-on: boolean, regulator should never be disabled
 - regulator-boot-on: bootloader/firmware enabled regulator
+- regulator-boot-off: Off the regulator during init.
 - <name>-supply: phandle to the parent supply/regulator node
 - regulator-ramp-delay: ramp delay for regulator(in uV/uS)
 - regulator-init-microvolt: Initial microvolt need to be set during registration
@@ -17,6 +18,14 @@ Optional properties:
   design requires. This property describes the total system ramp time
   required due to the combination of internal ramping of the regulator itself,
   and board design issues such as trace capacitance and load on the supply.
+-regulator-disable-on-shutdown: Disable regulator on system shutdown.
+-regulator-disable-on-suspend: Disable regulator on system suspend. This is
+ applicable for always ON rail.
+-regulator-enable-active-discharge: Boolean, to enable active discharge.
+-regulator-disable-active-discharge: Boolean, to disable active discharge.
+ Both active discharge enable and disable can not be possible together.
+ Also absence of these properties will leave the configuration as POR default.
+
 
 Deprecated properties:
 - regulator-compatible: If a regulator chip contains multiple

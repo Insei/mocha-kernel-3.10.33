@@ -3,7 +3,7 @@
  *
  * Tegra Graphics Host Chip Support
  *
- * Copyright (c) 2011-2014, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2011-2015, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -31,7 +31,6 @@ struct nvhost_intr;
 struct nvhost_syncpt;
 struct nvhost_userctx_timeout;
 struct nvhost_channel;
-struct nvhost_hwctx;
 struct nvhost_cdma;
 struct nvhost_job;
 struct push_buffer;
@@ -45,6 +44,9 @@ struct mem_handle;
 struct mem_mgr;
 struct platform_device;
 struct host1x_actmon;
+struct nvhost_vm;
+struct nvhost_vm_buffer;
+struct nvhost_vm_static_buffer;
 
 struct nvhost_cdma_ops {
 	void (*start)(struct nvhost_cdma *);
@@ -58,6 +60,17 @@ struct nvhost_cdma_ops {
 				     u32 getptr);
 	void (*timeout_pb_cleanup)(struct nvhost_cdma *,
 				 u32 getptr, u32 nr_slots);
+	void (*make_adjacent_space)(struct nvhost_cdma *, u32 words);
+};
+
+struct nvhost_vm_ops {
+	int (*init)(struct nvhost_vm *vm);
+	void (*deinit)(struct nvhost_vm *vm);
+	int (*pin_static_buffer)(struct platform_device *pdev,
+				 void *vaddr, dma_addr_t paddr,
+				 size_t size);
+	int (*get_id)(struct nvhost_vm *vm);
+	int (*init_device)(struct platform_device *pdev);
 };
 
 struct nvhost_pushbuffer_ops {
@@ -89,13 +102,10 @@ struct nvhost_debug_ops {
 
 struct nvhost_syncpt_ops {
 	void (*reset)(struct nvhost_syncpt *, u32 id);
-	void (*reset_wait_base)(struct nvhost_syncpt *, u32 id);
-	void (*read_wait_base)(struct nvhost_syncpt *, u32 id);
 	u32 (*update_min)(struct nvhost_syncpt *, u32 id);
 	void (*cpu_incr)(struct nvhost_syncpt *, u32 id);
 	int (*patch_wait)(struct nvhost_syncpt *sp,
-			void *patch_addr);
-	void (*debug)(struct nvhost_syncpt *);
+			void __iomem *patch_addr);
 	const char * (*name)(struct nvhost_syncpt *, u32 id);
 	int (*mutex_try_lock)(struct nvhost_syncpt *,
 			      unsigned int idx);
@@ -105,6 +115,8 @@ struct nvhost_syncpt_ops {
 			    unsigned int idx,
 			    bool *cpu, bool *ch,
 			    unsigned int *chid);
+	int (*mark_used)(struct nvhost_syncpt *, u32 chid, u32 syncptid);
+	int (*mark_unused)(struct nvhost_syncpt *, u32 syncptid);
 };
 
 struct nvhost_intr_ops {
@@ -119,18 +131,25 @@ struct nvhost_intr_ops {
 	int  (*request_host_general_irq)(struct nvhost_intr *);
 	void (*free_host_general_irq)(struct nvhost_intr *);
 	int (*free_syncpt_irq)(struct nvhost_intr *);
+	int (*debug_dump)(struct nvhost_intr *, struct output *);
+	void (*enable_host_irq)(struct nvhost_intr *, int irq);
+	void (*disable_host_irq)(struct nvhost_intr *, int irq);
 };
 
 struct nvhost_dev_ops {
 	struct nvhost_channel *(*alloc_nvhost_channel)(
 			struct platform_device *dev);
 	void (*free_nvhost_channel)(struct nvhost_channel *ch);
+	void (*set_nvhost_chanops)(struct nvhost_channel *ch);
 };
 
 struct nvhost_actmon_ops {
+	 void __iomem * (*get_actmon_regs)(struct host1x_actmon *actmon);
 	int (*init)(struct host1x_actmon *actmon);
 	void (*deinit)(struct host1x_actmon *actmon);
 	int (*read_avg)(struct host1x_actmon *actmon, u32 *val);
+	int (*read_count)(struct host1x_actmon *actmon, u32 *val);
+	int (*read_count_norm)(struct host1x_actmon *actmon, u32 *val);
 	int (*above_wmark_count)(struct host1x_actmon *actmon);
 	int (*below_wmark_count)(struct host1x_actmon *actmon);
 	int (*read_avg_norm)(struct host1x_actmon *actmon, u32 *val);
@@ -142,6 +161,8 @@ struct nvhost_actmon_ops {
 	void (*set_k)(struct host1x_actmon *actmon, u32 k);
 	u32 (*get_k)(struct host1x_actmon *actmon);
 	void (*debug_init)(struct host1x_actmon *actmon, struct dentry *de);
+	int (*set_high_wmark)(struct host1x_actmon *actmon, u32 val);
+	int (*set_low_wmark)(struct host1x_actmon *actmon, u32 val);
 };
 
 struct nvhost_chip_support {
@@ -153,6 +174,7 @@ struct nvhost_chip_support {
 	struct nvhost_intr_ops intr;
 	struct nvhost_dev_ops nvhost_dev;
 	struct nvhost_actmon_ops actmon;
+	struct nvhost_vm_ops vm;
 	void (*remove_support)(struct nvhost_chip_support *op);
 	void *priv;
 };
@@ -190,6 +212,15 @@ struct nvhost_chip_support {
 #define TEGRA_2X_OR_HIGHER_CONFIG
 #endif
 
+#ifdef CONFIG_ARCH_TEGRA_21x_SOC
+#define TEGRA_21X_OR_HIGHER_CONFIG
+#define TEGRA_12X_OR_HIGHER_CONFIG
+#define TEGRA_14X_OR_HIGHER_CONFIG
+#define TEGRA_11X_OR_HIGHER_CONFIG
+#define TEGRA_3X_OR_HIGHER_CONFIG
+#define TEGRA_2X_OR_HIGHER_CONFIG
+#endif
+
 struct nvhost_chip_support *nvhost_get_chip_ops(void);
 
 #define host_device_op()	(nvhost_get_chip_ops()->nvhost_dev)
@@ -198,6 +229,7 @@ struct nvhost_chip_support *nvhost_get_chip_ops(void);
 #define intr_op()		(nvhost_get_chip_ops()->intr)
 #define cdma_op()		(nvhost_get_chip_ops()->cdma)
 #define cdma_pb_op()		(nvhost_get_chip_ops()->push_buffer)
+#define vm_op()			(nvhost_get_chip_ops()->vm)
 
 #define actmon_op()		(nvhost_get_chip_ops()->actmon)
 #define tickctrl_op()		(nvhost_get_chip_ops()->tickctrl)

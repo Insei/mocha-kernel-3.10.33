@@ -1,7 +1,11 @@
 /*
  * drivers/misc/tegra-profiler/hrt.c
  *
+<<<<<<< HEAD
  * Copyright (c) 2015, NVIDIA CORPORATION.  All rights reserved.
+=======
+ * Copyright (c) 2016, NVIDIA CORPORATION.  All rights reserved.
+>>>>>>> update/master
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -50,10 +54,13 @@ struct hrt_event_value {
 	u32 value;
 };
 
+<<<<<<< HEAD
 #ifndef ARCH_TIMER_USR_VCT_ACCESS_EN
 #define ARCH_TIMER_USR_VCT_ACCESS_EN	(1 << 1) /* virtual counter */
 #endif
 
+=======
+>>>>>>> update/master
 static inline u32 get_task_state(struct task_struct *task)
 {
 	return (u32)(task->state | task->exit_state);
@@ -156,7 +163,11 @@ quadd_put_sample(struct quadd_record_data *data,
 	__put_sample(data, vec, vec_count, 0);
 }
 
+<<<<<<< HEAD
 static void put_header(void)
+=======
+static void put_header(int cpuid)
+>>>>>>> update/master
 {
 	int cpu_id;
 	int nr_events = 0, max_events = QUADD_MAX_COUNTERS;
@@ -165,10 +176,11 @@ static void put_header(void)
 	struct quadd_header_data *hdr = &record.hdr;
 	struct quadd_parameters *param = &hrt.quadd_ctx->param;
 	unsigned int extra = param->reserved[QUADD_PARAM_IDX_EXTRA];
-	struct quadd_iovec vec;
+	struct quadd_iovec vec[2];
 	struct quadd_ctx *ctx = hrt.quadd_ctx;
 	struct quadd_event_source_interface *pmu = ctx->pmu;
 	struct quadd_event_source_interface *pl310 = ctx->pl310;
+	u32 cpuid_data = cpuid;
 
 	record.record_type = QUADD_RECORD_TYPE_HEADER;
 
@@ -211,20 +223,34 @@ static void put_header(void)
 	if (hrt.get_stack_offset)
 		hdr->reserved |= QUADD_HDR_STACK_OFFSET;
 
+<<<<<<< HEAD
+=======
+	hdr->reserved |= QUADD_HDR_HAS_CPUID;
+
+>>>>>>> update/master
 	if (pmu)
-		nr_events += pmu->get_current_events(events, max_events);
+		nr_events += pmu->get_current_events(cpuid, events + nr_events,
+						     max_events - nr_events);
 
 	if (pl310)
-		nr_events += pl310->get_current_events(events + nr_events,
+		nr_events += pl310->get_current_events(cpuid,
+						       events + nr_events,
 						       max_events - nr_events);
 
 	hdr->nr_events = nr_events;
 
-	vec.base = events;
-	vec.len = nr_events * sizeof(events[0]);
+	vec[0].base = events;
+	vec[0].len = nr_events * sizeof(events[0]);
 
+<<<<<<< HEAD
 	for_each_possible_cpu(cpu_id)
 		__put_sample(&record, &vec, 1, cpu_id);
+=======
+	vec[1].base = &cpuid_data;
+	vec[1].len = sizeof(cpuid_data);
+
+	__put_sample(&record, &vec[0], 2, cpuid);
+>>>>>>> update/master
 }
 
 static void
@@ -243,6 +269,10 @@ put_sched_sample(struct task_struct *task, int is_sched_in)
 	s->sched_in = is_sched_in ? 1 : 0;
 	s->time = quadd_get_time();
 	s->pid = task->pid;
+<<<<<<< HEAD
+=======
+	s->tgid = task->tgid;
+>>>>>>> update/master
 
 	s->reserved = 0;
 
@@ -276,6 +306,7 @@ static int get_sample_data(struct quadd_sample_data *sample,
 	sample->time = quadd_get_time();
 	sample->reserved = 0;
 	sample->pid = task->pid;
+	sample->tgid = task->tgid;
 	sample->in_interrupt = in_interrupt() ? 1 : 0;
 
 	return 0;
@@ -309,6 +340,7 @@ static int read_source(struct quadd_event_source_interface *source,
 
 		if (s->event_source == QUADD_EVENT_SOURCE_PL310) {
 			int nr_active = atomic_read(&hrt.nr_active_all_core);
+
 			if (nr_active > 1)
 				res_val /= nr_active;
 		}
@@ -366,7 +398,7 @@ read_all_sources(struct pt_regs *regs, struct task_struct *task)
 	if (task->flags & PF_EXITING)
 		return;
 
-	if (ctx->pmu && ctx->pmu_info.active)
+	if (ctx->pmu && ctx->get_pmu_info()->active)
 		nr_events += read_source(ctx->pmu, regs,
 					 events, QUADD_MAX_COUNTERS);
 
@@ -450,8 +482,15 @@ read_all_sources(struct pt_regs *regs, struct task_struct *task)
 
 	if (hrt.get_stack_offset) {
 		long offset = get_stack_offset(task, user_regs, cc);
+<<<<<<< HEAD
 		if (offset > 0) {
 			u32 off = offset >> 2;
+=======
+
+		if (offset > 0) {
+			u32 off = offset >> 2;
+
+>>>>>>> update/master
 			off = min_t(u32, off, 0xffff);
 			extra_data |= off << QUADD_SED_STACK_OFFSET_SHIFT;
 		}
@@ -462,6 +501,7 @@ read_all_sources(struct pt_regs *regs, struct task_struct *task)
 	s->events_flags = 0;
 	for (i = 0; i < nr_events; i++) {
 		u32 value = events[i].value;
+
 		if (value > 0) {
 			s->events_flags |= 1 << i;
 			events_extra[nr_positive_events++] = value;
@@ -489,7 +529,7 @@ read_all_sources(struct pt_regs *regs, struct task_struct *task)
 }
 
 static inline int
-is_profile_process(struct task_struct *task)
+is_sample_process(struct task_struct *task)
 {
 	int i;
 	pid_t pid, profile_pid;
@@ -506,6 +546,32 @@ is_profile_process(struct task_struct *task)
 			return 1;
 	}
 	return 0;
+}
+
+static inline int
+is_swapper_task(struct task_struct *task)
+{
+	if (task->pid == 0)
+		return 1;
+
+	return 0;
+}
+
+static inline int
+is_trace_process(struct task_struct *task)
+{
+	struct quadd_ctx *ctx = hrt.quadd_ctx;
+
+	if (!task)
+		return 0;
+
+	if (is_swapper_task(task))
+		return 0;
+
+	if (ctx->param.trace_all_tasks)
+		return 1;
+
+	return is_sample_process(task);
 }
 
 static int
@@ -559,9 +625,16 @@ void __quadd_task_sched_in(struct task_struct *prev,
 			(unsigned int)task->tgid);
 */
 
+<<<<<<< HEAD
 	if (is_profile_process(task)) {
 		put_sched_sample(task, 1);
 
+=======
+	if (is_trace_process(task))
+		put_sched_sample(task, 1);
+
+	if (is_sample_process(task)) {
+>>>>>>> update/master
 		add_active_thread(cpu_ctx, task->pid, task->tgid);
 		atomic_inc(&cpu_ctx->nr_active);
 
@@ -597,7 +670,7 @@ void __quadd_task_sched_out(struct task_struct *prev,
 			(unsigned int)next->tgid);
 */
 
-	if (is_profile_process(prev)) {
+	if (is_sample_process(prev)) {
 		user_regs = task_pt_regs(prev);
 		if (user_regs)
 			read_all_sources(user_regs, prev);
@@ -615,6 +688,9 @@ void __quadd_task_sched_out(struct task_struct *prev,
 
 		put_sched_sample(prev, 0);
 	}
+
+	if (is_trace_process(prev))
+		put_sched_sample(prev, 0);
 }
 
 void __quadd_event_mmap(struct vm_area_struct *vma)
@@ -624,7 +700,7 @@ void __quadd_event_mmap(struct vm_area_struct *vma)
 	if (likely(!atomic_read(&hrt.active)))
 		return;
 
-	if (!is_profile_process(current))
+	if (!is_sample_process(current))
 		return;
 
 	param = &hrt.quadd_ctx->param;
@@ -651,6 +727,7 @@ static void reset_cpu_ctx(void)
 int quadd_hrt_start(void)
 {
 	int err;
+	int cpuid;
 	u64 period;
 	long freq;
 	unsigned int extra;
@@ -696,7 +773,12 @@ int quadd_hrt_start(void)
 	hrt.get_stack_offset =
 		(extra & QUADD_PARAM_EXTRA_STACK_OFFSET) ? 1 : 0;
 
+<<<<<<< HEAD
 	put_header();
+=======
+	for_each_possible_cpu(cpuid)
+		put_header(cpuid);
+>>>>>>> update/master
 
 	if (extra & QUADD_PARAM_EXTRA_GET_MMAP) {
 		err = quadd_get_current_mmap(param->pids[0]);

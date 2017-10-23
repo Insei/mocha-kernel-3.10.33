@@ -1,9 +1,7 @@
 /*
- * drivers/video/tegra/host/vi/vi.h
- *
  * Tegra Graphics Host ISP
  *
- * Copyright (c) 2014, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2014-2015, NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -26,7 +24,7 @@
 typedef void (*callback)(void *);
 
 struct tegra_isp_mfi {
-	struct work_struct my_isp_work;
+	struct work_struct work;
 };
 
 struct isp {
@@ -38,14 +36,28 @@ struct isp {
 	void __iomem    *base;
 	spinlock_t lock;
 	int irq;
-
+	uint max_bw;
 	struct workqueue_struct *isp_workqueue;
 	struct tegra_isp_mfi *my_isr_work;
 };
 
 extern const struct file_operations tegra_isp_ctrl_ops;
 int nvhost_isp_t124_finalize_poweron(struct platform_device *);
+int nvhost_isp_t124_prepare_poweroff(struct platform_device *);
+int nvhost_isp_t210_finalize_poweron(struct platform_device *);
+void nvhost_isp_queue_isr_work(struct isp *tegra_isp);
+
+#ifdef CONFIG_TEGRA_GRHOST_ISP
 int tegra_isp_register_mfi_cb(callback cb, void *cb_arg);
 int tegra_isp_unregister_mfi_cb(void);
-
+#else
+static inline int tegra_isp_register_mfi_cb(callback cb, void *cb_arg)
+{
+	return -ENOSYS;
+}
+static inline int tegra_isp_unregister_mfi_cb(void)
+{
+	return -ENOSYS;
+}
+#endif
 #endif

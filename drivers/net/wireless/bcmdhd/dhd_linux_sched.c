@@ -1,8 +1,12 @@
 /*
  * Expose some of the kernel scheduler routines
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+>>>>>>> update/master
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -22,7 +26,11 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
+<<<<<<< HEAD
  * $Id: dhd_linux_sched.c 457596 2014-02-24 02:24:14Z $
+=======
+ * $Id: dhd_linux_sched.c 457570 2014-02-23 13:54:46Z $
+>>>>>>> update/master
  */
 #include <linux/kernel.h>
 #include <linux/module.h>

@@ -1,7 +1,7 @@
 /*
  * arch/arm/mach-tegra/kfuse.c
  *
- * Copyright (C) 2010-2011 NVIDIA Corporation.
+ * Copyright (c) 2010-2014, NVIDIA CORPORATION.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -27,19 +27,22 @@
 
 #include <mach/kfuse.h>
 
-#include "clock.h"
+#include <linux/platform/tegra/clock.h>
 #include "apbio.h"
 #include "iomap.h"
 
 static struct clk *kfuse_clk = NULL;
 
 /* register definition */
-#define KFUSE_STATE			0x80
-#define  KFUSE_STATE_DONE		(1u << 16)
-#define  KFUSE_STATE_CRCPASS		(1u << 17)
-#define KFUSE_KEYADDR			0x88
-#define  KFUSE_KEYADDR_AUTOINC		(1u << 16)
-#define KFUSE_KEYS			0x8c
+#define KFUSE_PD                0x24
+#define KFUSE_PD_PU             (0u << 0)
+#define KFUSE_PD_PD             (1u << 0)
+#define KFUSE_STATE             0x80
+#define KFUSE_STATE_DONE        (1u << 16)
+#define KFUSE_STATE_CRCPASS     (1u << 17)
+#define KFUSE_KEYADDR           0x88
+#define KFUSE_KEYADDR_AUTOINC   (1u << 16)
+#define KFUSE_KEYS              0x8c
 
 static inline u32 tegra_kfuse_readl(unsigned long offset)
 {
@@ -88,6 +91,10 @@ int tegra_kfuse_read(void *dest, size_t len)
 	if (err)
 		return err;
 
+#ifdef CONFIG_ARCH_TEGRA_21x_SOC
+	tegra_kfuse_writel(KFUSE_PD_PU, KFUSE_PD);
+	udelay(2);
+#endif
 	tegra_kfuse_writel(KFUSE_KEYADDR_AUTOINC, KFUSE_KEYADDR);
 
 	err = wait_for_done();
@@ -108,7 +115,11 @@ int tegra_kfuse_read(void *dest, size_t len)
 		memcpy(dest + cnt, &v, sizeof v);
 	}
 
+#ifdef CONFIG_ARCH_TEGRA_21x_SOC
+	tegra_kfuse_writel(KFUSE_PD_PD, KFUSE_PD);
+#endif
 	clk_disable_unprepare(kfuse_clk);
 
 	return 0;
 }
+EXPORT_SYMBOL(tegra_kfuse_read);

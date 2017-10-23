@@ -1,8 +1,12 @@
 /*
  * Broadcom Dongle Host Driver (DHD), Linux monitor network interface
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+>>>>>>> update/master
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -22,7 +26,11 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
+<<<<<<< HEAD
  * $Id: wl_linux_mon.c 425343 2013-09-23 23:04:47Z $
+=======
+ * $Id: wl_linux_mon.c 467328 2014-04-03 01:23:40Z $
+>>>>>>> update/master
  */
 
 #include <osl.h>
@@ -355,6 +363,7 @@ int dhd_del_monitor(struct net_device *ndev)
 	for (i = 0; i < DHD_MAX_IFS; i++) {
 		if (g_monitor.mon_if[i].mon_ndev == ndev ||
 			g_monitor.mon_if[i].real_ndev == ndev) {
+
 			g_monitor.mon_if[i].real_ndev = NULL;
 			unregister_netdevice(g_monitor.mon_if[i].mon_ndev);
 			free_netdev(g_monitor.mon_if[i].mon_ndev);

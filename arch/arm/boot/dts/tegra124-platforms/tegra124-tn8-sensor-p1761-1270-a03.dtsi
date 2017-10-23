@@ -1,8 +1,29 @@
+<<<<<<< HEAD
+=======
+/* Copyright (c) 2015, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
+>>>>>>> update/master
 #include <dt-bindings/gpio/tegra-gpio.h>
 
 / {
 	i2c@7000c000 {
 		mpu6515@69 {
+<<<<<<< HEAD
 			compatible = "invensense,mpu6515";
 			reg = <0x69>;
 			interrupt-parent = <&gpio>;
@@ -13,15 +34,29 @@
 			invensense,sec_slave_type = <0>;
 			invensense,key = [4e cc 7e eb f6 1e 35 22
 					  00 34 0d 65 32 e9 94 89];
+=======
+			compatible = "invensense,mpu6xxx";
+			reg = <0x69>;
+			interrupt-parent = <&gpio>;
+			interrupts = <TEGRA_GPIO(S, 0) 0x01>;
+			accelerometer_matrix = [ff 00 00 00 01 00 00 00 ff];
+			gyroscope_matrix = [ff 00 00 00 01 00 00 00 ff];
+>>>>>>> update/master
 			vlogic-supply = <&palmas_smps8>;
 			vdd-supply = <&palmas_smps9>;
 		};
 
 		ak8963c@0d {
+<<<<<<< HEAD
 			compatible = "ak,ak8963";
 			reg = <0x0d>;
 			orientation = [ff 00 00 00 01 00 00 00 ff];
 			config = "mpu";
+=======
+			compatible = "ak,ak89xx";
+			reg = <0x0d>;
+			magnetic_field_matrix = [ff 00 00 00 01 00 00 00 ff];
+>>>>>>> update/master
 			vid-supply = <&palmas_smps8>;
 			vdd-supply = <&palmas_smps9>;
 		};
@@ -30,6 +65,7 @@
 			compatible = "capella,cm3217";
 			reg = <0x10>;
 			vdd-supply = <&palmas_smps9>;
+<<<<<<< HEAD
 			illuminance,resolution = "8740";
 			illuminance,max-range  = "681613.7";
 			illuminance,power-consumed = "0.09";
@@ -41,6 +77,34 @@
 			threshold = <80>;
 			vdd-supply = <&palmas_smps9>;
 			vled-supply = <&palmas_smps8>;
+=======
+			light_dynamic_resolution_index_limit_low = <0>;
+			light_dynamic_resolution_index_limit_high = <3>;
+			light_lux_maximum = <3000000>;
+			light_report_count = <2>;
+			light_threshold_lo = <0>;
+			light_threshold_hi = <1>;
+			light_nld_thr_i_hi_0 = <40>;
+			light_nld_thr_i_lo_1 = <18>;
+			light_nld_thr_i_hi_1 = <55>;
+			light_nld_thr_i_lo_2 = <24>;
+			light_nld_thr_i_hi_2 = <50>;
+			light_nld_thr_i_lo_3 = <23>;
+			light_uncalibrated_lo = <60>;
+			light_uncalibrated_hi = <1845>;
+			light_calibrated_lo = <8900>;
+			light_calibrated_hi = <312000>;
+		};
+
+		ltr659@23 {
+			status = "disabled";
+			compatible = "liteon,ltrX5X";
+			reg = <0x23>;
+			vdd-supply = <&palmas_smps9>;
+			vled-supply = <&palmas_smps8>;
+			proximity_threshold_lo = <120>;
+			proximity_threshold_hi = <130>;
+>>>>>>> update/master
 		};
 	};
 

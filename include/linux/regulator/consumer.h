@@ -129,6 +129,8 @@ struct notifier_block;
 #define REGULATOR_EVENT_POST_ENABLE		0x200
 #define REGULATOR_EVENT_OUT_PRECHANGE		0x400
 #define REGULATOR_EVENT_OUT_POSTCHANGE		0x800
+#define REGULATOR_EVENT_PRE_DISABLE 		0x1000
+#define REGULATOR_EVENT_POST_DISABLE 		REGULATOR_EVENT_DISABLE
 
 struct regulator;
 
@@ -192,7 +194,11 @@ int regulator_is_supported_voltage(struct regulator *regulator,
 int regulator_set_voltage(struct regulator *regulator, int min_uV, int max_uV);
 int regulator_set_voltage_time(struct regulator *regulator,
 			       int old_uV, int new_uV);
+int regulator_set_sleep_voltage(struct regulator *regulator,
+				int min_uV, int max_uV);
 int regulator_get_voltage(struct regulator *regulator);
+int regulator_get_constraint_voltages(struct regulator *regulator,
+	int *min_uV, int *max_uV);
 int regulator_sync_voltage(struct regulator *regulator);
 int regulator_set_current_limit(struct regulator *regulator,
 			       int min_uA, int max_uA);
@@ -200,6 +206,7 @@ int regulator_get_current_limit(struct regulator *regulator);
 
 int regulator_can_set_mode(struct regulator *regulator);
 int regulator_set_mode(struct regulator *regulator, unsigned int mode);
+int regulator_set_sleep_mode(struct regulator *regulator, unsigned int mode);
 unsigned int regulator_get_mode(struct regulator *regulator);
 int regulator_set_optimum_mode(struct regulator *regulator, int load_uA);
 
@@ -379,6 +386,11 @@ static inline int regulator_set_mode(struct regulator *regulator,
 static inline unsigned int regulator_get_mode(struct regulator *regulator)
 {
 	return REGULATOR_MODE_NORMAL;
+}
+
+static inline int regulator_can_set_mode(struct regulator *regulator)
+{
+	return 0;
 }
 
 static inline int regulator_set_optimum_mode(struct regulator *regulator,

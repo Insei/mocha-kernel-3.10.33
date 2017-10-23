@@ -41,7 +41,7 @@
 #define USB_CHARGING_DCP_CURRENT_LIMIT_UA 1500000u
 #define USB_CHARGING_CDP_CURRENT_LIMIT_UA 1500000u
 #define USB_CHARGING_SDP_CURRENT_LIMIT_UA 500000u
-#define USB_CHARGING_NV_CHARGER_CURRENT_LIMIT_UA 2000000u
+#define USB_CHARGING_NV_CHARGER_CURRENT_LIMIT_UA 3000000u
 #define USB_CHARGING_NON_STANDARD_CHARGER_CURRENT_LIMIT_UA 500000u
 #define USB_CHARGING_ACA_NV_CHARGER_CURRENT_LIMIT_UA 2000000u
 #define USB_CHARGING_ACA_RID_B_CHARGER_CURRENT_LIMIT_UA 2000000u
@@ -466,7 +466,11 @@ struct tegra_udc {
 	enum tegra_connect_type connect_type;
 	enum tegra_connect_type prev_connect_type;
 	enum tegra_connect_type connect_type_lp0;
+<<<<<<< HEAD
 	enum tegra_usb_qc2_voltage qc2_voltage;
+=======
+	u32 qc2_voltage;
+>>>>>>> update/master
 	void __iomem *regs;
 	size_t ep_qh_size;		/* size after alignment adjustment*/
 	dma_addr_t ep_qh_dma;		/* dma address of QH */

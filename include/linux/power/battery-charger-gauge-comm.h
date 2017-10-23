@@ -49,8 +49,16 @@ struct battery_charging_ops {
 	int (*thermal_configure)(struct battery_charger_dev *bct_dev,
 		int temp, bool enable_charger, bool enable_charg_half_current,
 		int battery_voltage);
+<<<<<<< HEAD
 	int (*input_voltage_configure)(struct battery_charger_dev *bc_dev,
 		int soc);
+=======
+	int (*charge_term_configure)(struct battery_charger_dev *bc_dev,
+		int fc_state);
+	int (*input_voltage_configure)(struct battery_charger_dev *bc_dev,
+		int soc);
+	int (*get_input_current_limit)(struct battery_charger_dev *bc_dev);
+>>>>>>> update/master
 };
 
 struct battery_charger_info {
@@ -65,6 +73,10 @@ struct battery_gauge_info {
 	int cell_id;
 	const char *tz_name;
 	const char *current_channel_name;
+<<<<<<< HEAD
+=======
+	const char *input_power_channel_name;
+>>>>>>> update/master
 	struct battery_gauge_ops *bg_ops;
 };
 
@@ -101,18 +113,23 @@ void battery_charger_set_drvdata(struct battery_charger_dev *bc_dev,
 			void *data);
 void *battery_gauge_get_drvdata(struct battery_gauge_dev *bg_dev);
 void battery_gauge_set_drvdata(struct battery_gauge_dev *bg_dev, void *data);
-int battery_gauge_record_voltage_value(struct battery_gauge_dev *bg_dev,
-								int voltage);
-int battery_gauge_record_capacity_value(struct battery_gauge_dev *bg_dev,
-								int capacity);
-int battery_gauge_record_snapshot_values(struct battery_gauge_dev *bg_dev,
-								int interval);
 int battery_gauge_get_scaled_soc(struct battery_gauge_dev *bg_dev,
 		int actual_soc_semi, int thresod_soc);
 int battery_gauge_get_adjusted_soc(struct battery_gauge_dev *bg_dev,
 		int min_soc, int max_soc, int actual_soc_semi);
+<<<<<<< HEAD
 int battery_gauge_report_battery_soc(struct battery_gauge_dev *bg_dev,
 		int battery_soc);
 int battery_gauge_get_battery_soc(struct battery_charger_dev *bc_dev);
+=======
+int battery_gauge_fc_state(struct battery_gauge_dev *bg_dev,
+					int fullcharge_state);
+int battery_gauge_report_battery_soc(struct battery_gauge_dev *bg_dev,
+		int battery_soc);
+int battery_gauge_get_battery_soc(struct battery_charger_dev *bc_dev);
+int battery_gauge_get_input_current_limit(struct battery_gauge_dev *bg_dev);
+int battery_gauge_get_input_power(struct battery_gauge_dev *bg_dev,
+		int *power_mw);
+>>>>>>> update/master
 
 #endif /* _LINUX_POWER_BATTERY_CHARGER_GAUGE_COMM_H */

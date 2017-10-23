@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2013, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2012-2014, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -58,6 +58,14 @@ static inline u32 actmon_ctrl_actmon_enable_f(u32 v)
 {
 	return (v & 0x1) << 31;
 }
+static inline u32 actmon_ctrl_avg_above_wmark_en_f(u32 v)
+{
+	return (v & 0x1) << 17;
+}
+static inline u32 actmon_ctrl_avg_below_wmark_en_f(u32 v)
+{
+	return (v & 0x1) << 16;
+}
 static inline u32 actmon_ctrl_enb_periodic_f(u32 v)
 {
 	return (v & 0x1) << 13;
@@ -78,6 +86,22 @@ static inline u32 actmon_ctrl_sample_period_m(void)
 {
 	return 0xff << 0;
 }
+static inline u32 actmon_upper_wmark_r(void)
+{
+	return 0x4;
+}
+static inline u32 actmon_lower_wmark_r(void)
+{
+	return 0x8;
+}
+static inline u32 actmon_avg_upper_wmark_r(void)
+{
+	return 0xc;
+}
+static inline u32 actmon_avg_lower_wmark_r(void)
+{
+	return 0x10;
+}
 static inline u32 actmon_init_avg_r(void)
 {
 	return 0x14;
@@ -93,5 +117,29 @@ static inline u32 actmon_avg_count_r(void)
 static inline u32 actmon_intr_status_r(void)
 {
 	return 0x20;
+}
+static inline u32 actmon_intr_status_intr_status_avg_above_v(u32 r)
+{
+	return (r >> 28) & 0x1;
+}
+static inline u32 actmon_intr_status_intr_status_avg_below_v(u32 r)
+{
+	return (r >> 29) & 0x1;
+}
+static inline u32 actmon_count_weight_r(void)
+{
+	return 0x24;
+}
+static inline u32 actmon_sample_ctrl_r(void)
+{
+	return 0x28;
+}
+static inline u32 actmon_sample_ctrl_tick_range_f(u32 v)
+{
+	return (v & 0x1) << 2;
+}
+static inline u32 actmon_sample_ctrl_tick_range_m(void)
+{
+	return 0x1 << 2;
 }
 #endif

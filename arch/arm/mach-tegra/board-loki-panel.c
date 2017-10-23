@@ -19,7 +19,6 @@
  */
 #include <linux/ioport.h>
 #include <linux/fb.h>
-#include <linux/nvmap.h>
 #include <linux/nvhost.h>
 #include <linux/init.h>
 #include <linux/delay.h>
@@ -28,10 +27,13 @@
 #include <linux/regulator/consumer.h>
 #include <linux/pwm_backlight.h>
 #include <linux/dma-mapping.h>
+<<<<<<< HEAD
+=======
+#include <linux/pinctrl/pinconf-tegra.h>
+>>>>>>> update/master
 
 #include <mach/irqs.h>
 #include <mach/dc.h>
-#include <mach/pinmux-t12.h>
 #include <mach/io_dpd.h>
 
 #include "board.h"
@@ -40,7 +42,8 @@
 #include "iomap.h"
 #include "tegra12_host1x_devices.h"
 #include "board-panel.h"
-#include "common.h"
+#include "board-common.h"
+#include <linux/platform/tegra/common.h>
 #include "tegra-board-id.h"
 
 struct platform_device * __init loki_host1x_init(void)
@@ -175,7 +178,7 @@ static int loki_hdmi_enable(struct device *dev)
 	return 0;
 }
 
-static int loki_hdmi_disable(void)
+static int loki_hdmi_disable(struct device *dev)
 {
 	if (loki_hdmi_reg) {
 		regulator_disable(loki_hdmi_reg);
@@ -253,17 +256,25 @@ struct tegra_hdmi_out loki_hdmi_out = {
 
 static void loki_hdmi_hotplug_report(bool state)
 {
-	if (state) {
-		tegra_pinmux_set_pullupdown(TEGRA_PINGROUP_DDC_SDA,
-						TEGRA_PUPD_PULL_DOWN);
-		tegra_pinmux_set_pullupdown(TEGRA_PINGROUP_DDC_SCL,
-						TEGRA_PUPD_PULL_DOWN);
-	} else {
-		tegra_pinmux_set_pullupdown(TEGRA_PINGROUP_DDC_SDA,
-						TEGRA_PUPD_NORMAL);
-		tegra_pinmux_set_pullupdown(TEGRA_PINGROUP_DDC_SCL,
-						TEGRA_PUPD_NORMAL);
-	}
+	struct pinctrl_dev *pctl_dev;
+	unsigned long conf;
+	int val = (state) ? TEGRA_PIN_PULL_DOWN : TEGRA_PIN_PULL_NONE;
+	int ret;
+
+	pctl_dev = tegra_get_pinctrl_device_handle();
+	if (!pctl_dev)
+		return;
+
+	conf = TEGRA_PINCONF_PACK(TEGRA_PINCONF_PARAM_PULL, val);
+	ret = pinctrl_set_config_for_group_name(pctl_dev, "ddc_sda_pv5", conf);
+	if (ret < 0)
+		pr_err("%s(): ERROR: ddc_sda_pv5 config failed: %d\n",
+			__func__, ret);
+
+	ret = pinctrl_set_config_for_group_name(pctl_dev, "ddc_scl_pv4", conf);
+	if (ret < 0)
+		pr_err("%s(): ERROR: ddc_scl_pv4 config failed: %d\n",
+			__func__, ret);
 }
 
 static struct tegra_dc_out loki_disp2_out = {
@@ -340,6 +351,7 @@ static struct platform_device loki_disp1_device = {
 	},
 };
 
+<<<<<<< HEAD
 static struct nvmap_platform_carveout loki_carveouts[] = {
 	[0] = {
 		.name		= "iram",
@@ -376,6 +388,8 @@ static struct platform_device loki_nvmap_device = {
 		.platform_data = &loki_nvmap_data,
 	},
 };
+=======
+>>>>>>> update/master
 static struct tegra_io_dpd dsic_io = {
 	.name			= "DSIC",
 	.io_dpd_reg_index	= 1,
@@ -423,6 +437,11 @@ static void loki_panel_select(void)
 		break;
 	}
 
+	/*
+	 * TODO
+	 * dpd enabling for dsi pads in board
+	 * will be deprecated.
+	 */
 	tegra_io_dpd_enable(&dsic_io);
 	tegra_io_dpd_enable(&dsid_io);
 
@@ -465,6 +484,11 @@ int __init loki_panel_init(int board_id)
 	struct dma_declare_info generic_dma_info;
 #endif
 
+	struct device_node *dc1_node = NULL;
+	struct device_node *dc2_node = NULL;
+
+	find_dc_node(&dc1_node, &dc2_node);
+
 	tegra_get_board_info(&bi);
 	if ((bi.sku == BOARD_SKU_FOSTER) && (bi.board_id == BOARD_P2530)) {
 		res = platform_get_resource_byname(&loki_disp2_device,
@@ -485,6 +509,7 @@ int __init loki_panel_init(int board_id)
 	} else
 		loki_panel_select();
 
+<<<<<<< HEAD
 #ifdef CONFIG_TEGRA_NVMAP
 	loki_carveouts[1].base = tegra_carveout_start;
 	loki_carveouts[1].size = tegra_carveout_size;
@@ -539,6 +564,8 @@ int __init loki_panel_init(int board_id)
 	}
 #endif
 
+=======
+>>>>>>> update/master
 	phost1x = loki_host1x_init();
 	if (!phost1x) {
 		pr_err("host1x devices registration failed\n");
@@ -552,20 +579,20 @@ int __init loki_panel_init(int board_id)
 
 	/* Copy the bootloader fb to the fb. */
 	if (tegra_bootloader_fb_size)
-		__tegra_move_framebuffer(&loki_nvmap_device,
+		__tegra_move_framebuffer(NULL,
 			tegra_fb_start, tegra_bootloader_fb_start,
 			min(tegra_fb_size, tegra_bootloader_fb_size));
 	else
-		__tegra_clear_framebuffer(&loki_nvmap_device,
+		__tegra_clear_framebuffer(NULL,
 				tegra_fb_start, tegra_fb_size);
 
 	/* Copy the bootloader fb2 to the fb2. */
 	if (tegra_bootloader_fb2_size)
-		__tegra_move_framebuffer(&loki_nvmap_device,
+		__tegra_move_framebuffer(NULL,
 			tegra_fb2_start, tegra_bootloader_fb2_start,
 			min(tegra_fb2_size, tegra_bootloader_fb2_size));
 	else
-		__tegra_clear_framebuffer(&loki_nvmap_device,
+		__tegra_clear_framebuffer(NULL,
 				tegra_fb2_start, tegra_fb2_size);
 
 	res = platform_get_resource_byname(&loki_disp2_device,
@@ -574,21 +601,42 @@ int __init loki_panel_init(int board_id)
 	res->end = tegra_fb2_start + tegra_fb2_size - 1;
 
 	loki_disp1_device.dev.parent = &phost1x->dev;
-
-	if ((bi.sku != BOARD_SKU_FOSTER) || (bi.board_id != BOARD_P2530)) {
-		err = platform_device_register(&loki_disp1_device);
-		if (err) {
-			pr_err("disp1 device registration failed\n");
-			return err;
-		}
-	}
-
 	loki_disp2_device.dev.parent = &phost1x->dev;
 	loki_disp2_out.hdmi_out = &loki_hdmi_out;
-	err = platform_device_register(&loki_disp2_device);
-	if (err) {
-		pr_err("disp2 device registration failed\n");
-		return err;
+
+	if ((bi.sku != BOARD_SKU_FOSTER) || (bi.board_id != BOARD_P2530)) {
+		if (!of_have_populated_dt() || !dc1_node ||
+			!of_device_is_available(dc1_node)) {
+			err = platform_device_register(&loki_disp1_device);
+			if (err) {
+				pr_err("disp1 device registration failed\n");
+				return err;
+			}
+		}
+		if (!of_have_populated_dt() || !dc2_node ||
+			!of_device_is_available(dc2_node)) {
+			err = platform_device_register(&loki_disp2_device);
+			if (err) {
+				pr_err("disp2 device registration failed\n");
+				return err;
+			}
+		}
+	} else {
+		if (!of_have_populated_dt() || !dc1_node ||
+			!of_device_is_available(dc1_node)) {
+			/*
+			 * TODO
+			 * For non-DT, Why foster uses res tegra_fb2,
+			 * whereas it is connected to dc0?
+			 * If DT is used, driver uses res tegra_fb,
+			 * in case dc0 is connected.
+			 */
+			err = platform_device_register(&loki_disp2_device);
+			if (err) {
+				pr_err("disp2 device registration failed\n");
+				return err;
+			}
+		}
 	}
 
 	return err;

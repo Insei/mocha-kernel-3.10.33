@@ -933,7 +933,7 @@ megasas_issue_blocked_abort_cmd(struct megasas_instance *instance,
 	abort_fr->abort_mfi_phys_addr_hi = 0;
 
 	cmd->sync_cmd = 1;
-	cmd->cmd_status = 0xFF;
+	cmd->cmd_status = ENODATA;
 
 	instance->instancet->issue_dcmd(instance, cmd);
 
@@ -4220,7 +4220,6 @@ static int megasas_probe_one(struct pci_dev *pdev,
 	megasas_mgmt_info.instance[megasas_mgmt_info.max_index] = NULL;
 	megasas_mgmt_info.max_index--;
 
-	pci_set_drvdata(pdev, NULL);
 	instance->instancet->disable_intr(instance->reg_set);
 	if (instance->msix_vectors)
 		for (i = 0 ; i < instance->msix_vectors; i++)
@@ -4574,8 +4573,6 @@ static void megasas_detach_one(struct pci_dev *pdev)
 		}
 	}
 
-	pci_set_drvdata(instance->pdev, NULL);
-
 	instance->instancet->disable_intr(instance->reg_set);
 
 	if (instance->msix_vectors)
@@ -4616,8 +4613,6 @@ static void megasas_detach_one(struct pci_dev *pdev)
 	}
 
 	scsi_host_put(host);
-
-	pci_set_drvdata(pdev, NULL);
 
 	pci_disable_device(pdev);
 

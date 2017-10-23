@@ -1,7 +1,7 @@
 /*
  * Nvhost event logging to ftrace.
  *
- * Copyright (c) 2010-2014, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2010-2015, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -162,8 +162,94 @@ TRACE_EVENT(nvhost_channel_write_cmdbuf,
 	),
 
 	TP_printk("name=%s, mem_id=%08x, words=%u, offset=%d",
-	  __entry->name, __entry->mem_id,
-	  __entry->words, __entry->offset)
+		__entry->name, __entry->mem_id,
+		__entry->words, __entry->offset)
+);
+
+TRACE_EVENT(nvhost_channel_map,
+	TP_PROTO(const char *devname, int chid,
+		int num_mapped_chs),
+
+	TP_ARGS(devname, chid, num_mapped_chs),
+
+	TP_STRUCT__entry(
+		__field(const char *, devname)
+		__field(int, chid)
+		__field(int, num_mapped_chs)
+	),
+
+	TP_fast_assign(
+		__entry->devname = devname;
+		__entry->chid = chid;
+		__entry->num_mapped_chs = num_mapped_chs;
+	),
+
+	TP_printk("device=%s, channel_id=%d, num_mapped_chs=%d",
+		__entry->devname, __entry->chid, __entry->num_mapped_chs)
+);
+
+TRACE_EVENT(nvhost_channel_unmap_locked,
+	TP_PROTO(const char *devname, int chid,
+		int num_mapped_chs),
+
+	TP_ARGS(devname, chid, num_mapped_chs),
+
+	TP_STRUCT__entry(
+		__field(const char *, devname)
+		__field(int, chid)
+		__field(int, num_mapped_chs)
+	),
+
+	TP_fast_assign(
+		__entry->devname = devname;
+		__entry->chid = chid;
+		__entry->num_mapped_chs = num_mapped_chs;
+	),
+
+	TP_printk("device=%s, channel_id=%d, num_mapped_chs=%d",
+		__entry->devname, __entry->chid, __entry->num_mapped_chs)
+);
+
+TRACE_EVENT(nvhost_putchannel,
+	TP_PROTO(const char *devname, int refcount, int chid),
+
+	TP_ARGS(devname, refcount, chid),
+
+	TP_STRUCT__entry(
+		__field(const char *, devname)
+		__field(int, refcount)
+		__field(int, chid)
+	),
+
+	TP_fast_assign(
+		__entry->devname = devname;
+		__entry->refcount = refcount;
+		__entry->chid = chid;
+	),
+
+	TP_printk("dev_name=%s, refcount=%d, chid=%d",
+		__entry->devname, __entry->refcount, __entry->chid)
+);
+
+TRACE_EVENT(nvhost_getchannel,
+	TP_PROTO(const char *devname, int refcount, int chid),
+
+	TP_ARGS(devname, refcount, chid),
+
+	TP_STRUCT__entry(
+		__field(const char *, devname)
+		__field(int, refcount)
+		__field(int, chid)
+	),
+
+	TP_fast_assign(
+		__entry->devname = devname;
+		__entry->refcount = refcount;
+		__entry->chid = chid;
+	),
+
+	TP_printk("dev_name=%s, refcount=%d, chid=%d",
+		__entry->devname, __entry->refcount, __entry->chid)
 );
 
 TRACE_EVENT(nvhost_cdma_end,
@@ -787,6 +873,106 @@ TRACE_EVENT(nvhost_as_ioctl_unmap_buffer,
 		       __entry->name = name;
 		       ),
 	TP_printk("name=%s ",  __entry->name)
+);
+
+TRACE_EVENT(nvhost_module_enable_clk,
+	TP_PROTO(const char *devname, int num_clks),
+
+	TP_ARGS(devname, num_clks),
+
+	TP_STRUCT__entry(
+		__field(const char *, devname)
+		__field(int, num_clks)
+	),
+
+	TP_fast_assign(
+		__entry->devname = devname;
+		__entry->num_clks = num_clks;
+	),
+
+	TP_printk("dev=%s, num_clks=%d",
+		__entry->devname, __entry->num_clks)
+);
+
+TRACE_EVENT(nvhost_module_disable_clk,
+	TP_PROTO(const char *devname, int num_clks),
+
+	TP_ARGS(devname, num_clks),
+
+	TP_STRUCT__entry(
+		__field(const char *, devname)
+		__field(int, num_clks)
+	),
+
+	TP_fast_assign(
+		__entry->devname = devname;
+		__entry->num_clks = num_clks;
+	),
+
+	TP_printk("dev=%s, num_clks=%d",
+		__entry->devname, __entry->num_clks)
+);
+
+TRACE_EVENT(nvhost_module_power_on,
+	TP_PROTO(const char *devname, int powergate_id),
+
+	TP_ARGS(devname, powergate_id),
+
+	TP_STRUCT__entry(
+		__field(const char *, devname)
+		__field(int, powergate_id)
+	),
+
+	TP_fast_assign(
+		__entry->devname = devname;
+		__entry->powergate_id = powergate_id;
+	),
+
+	TP_printk("dev=%s, powergate_id=%d",
+		__entry->devname, __entry->powergate_id)
+);
+
+TRACE_EVENT(nvhost_module_power_off,
+	TP_PROTO(const char *devname, int powergate_id),
+
+	TP_ARGS(devname, powergate_id),
+
+	TP_STRUCT__entry(
+		__field(const char *, devname)
+		__field(int, powergate_id)
+	),
+
+	TP_fast_assign(
+		__entry->devname = devname;
+		__entry->powergate_id = powergate_id;
+	),
+
+	TP_printk("dev=%s, powergate_id=%d",
+		__entry->devname, __entry->powergate_id)
+);
+
+TRACE_EVENT(nvhost_scale_notify,
+	TP_PROTO(const char *devname,
+		unsigned long load,
+		bool busy),
+
+	TP_ARGS(devname, load, busy),
+
+	TP_STRUCT__entry(
+		__field(const char *, devname)
+		__field(unsigned long, load)
+		__field(bool, busy)
+	),
+
+	TP_fast_assign(
+		__entry->devname = devname;
+		__entry->load = load;
+		__entry->busy = busy;
+	),
+
+	TP_printk("dev=%s load=%ld, busy=%d",
+		__entry->devname, __entry->load,
+		__entry->busy)
 );
 
 DECLARE_EVENT_CLASS(nvhost_map,

@@ -10,6 +10,8 @@
  * All Rights Reserved.
  *
  * This software is licensed under the GNU GPL version 2.
+ *
+ * Copyright (c) 2014-2015, NVIDIA CORPORATION.  All rights reserved.
  */
 
 #ifndef __LINUX_USB_GADGET_H
@@ -471,6 +473,7 @@ struct usb_gadget_ops {
 			struct usb_gadget_driver *);
 	int	(*udc_stop)(struct usb_gadget *,
 			struct usb_gadget_driver *);
+	int	(*set_port_state)(struct usb_gadget *, u8);
 };
 
 /**
@@ -538,8 +541,10 @@ struct usb_gadget {
 	unsigned			is_otg:1;
 	unsigned			is_a_peripheral:1;
 	unsigned			b_hnp_enable:1;
+	unsigned			rcvd_otg_hnp_reqd:1;
 	unsigned			a_hnp_support:1;
 	unsigned			a_alt_hnp_support:1;
+	unsigned			request_hnp:1;
 	const char			*name;
 	struct device			dev;
 	unsigned			out_epnum;

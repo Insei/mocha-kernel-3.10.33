@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2010 Google, Inc.
- * Copyright (c) 2010-2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2010-2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * Author:
  *	Erik Gilling <konkers@google.com>
@@ -35,9 +35,9 @@
 /* HACK -- need to pass this through DT */
 #include "../../../arch/arm/mach-tegra/iomap.h"
 
-#include "../../../arch/arm/mach-tegra/clock.h"
+#include <linux/platform/tegra/clock.h>
 #include "tegra_usb_phy.h"
-#include "../../../arch/arm/mach-tegra/common.h"
+#include <linux/platform/tegra/common.h>
 
 /* HACK! This needs to come from DT */
 #include "../../../arch/arm/mach-tegra/iomap.h"
@@ -52,10 +52,10 @@
 #define AHB_MEM_PREFETCH_CFG2		0xf0
 #define PREFETCH_ENB			(1 << 31)
 
-#ifdef CONFIG_ARCH_TEGRA_12x_SOC
-#define USB_PLL_REG "avdd_pll_utmip"
-#else
+#if defined(CONFIG_ARCH_TEGRA_11x_SOC) || defined(CONFIG_ARCH_TEGRA_14x_SOC)
 #define USB_PLL_REG "avdd_usb_pll"
+#else
+#define USB_PLL_REG "avdd_pll_utmip"
 #endif
 
 #ifdef DEBUG
@@ -87,13 +87,11 @@ static void print_usb_plat_data_info(struct tegra_usb_phy *phy)
 	pr_info("qc2_voltage: %d\n", pdata->qc2_voltage);
 	if (pdata->op_mode == TEGRA_USB_OPMODE_DEVICE) {
 		pr_info("vbus_pmu_irq: %d\n", pdata->u_data.dev.vbus_pmu_irq);
-		pr_info("vbus_gpio: %d\n", pdata->u_data.dev.vbus_gpio);
 		pr_info("charging: %s\n", pdata->u_data.dev.charging_supported ?
 				"enabled" : "disabled");
 		pr_info("remote_wakeup: %s\n", pdata->u_data.dev.remote_wakeup_supported
 				? "enabled" : "disabled");
 	} else {
-		pr_info("vbus_gpio: %d\n", pdata->u_data.host.vbus_gpio);
 		pr_info("hot_plug: %s\n", pdata->u_data.host.hot_plug ?
 				"enabled" : "disabled");
 		pr_info("remote_wakeup: %s\n", pdata->u_data.host.remote_wakeup_supported
@@ -101,7 +99,7 @@ static void print_usb_plat_data_info(struct tegra_usb_phy *phy)
 	}
 }
 
-struct tegra_usb_phy *get_tegra_phy(struct usb_phy *x)
+static struct tegra_usb_phy *get_tegra_phy(struct usb_phy *x)
 {
 	return (struct tegra_usb_phy *)x;
 }
@@ -118,16 +116,11 @@ static void usb_host_vbus_enable(struct tegra_usb_phy *phy, bool enable)
 		if (enable) {
 			ret = regulator_enable(phy->vbus_reg);
 			if (ret)
-				ERR("can't enable regulator vbus_reg, err %d\n",
-						ret);
+				ERR("can't enable regulator vbus_reg,err %d\n",
+				ret);
 		}
 		else
 			regulator_disable(phy->vbus_reg);
-	} else {
-		int gpio = phy->pdata->u_data.host.vbus_gpio;
-		if (gpio == -1)
-			return;
-		gpio_set_value_cansleep(gpio, enable ? 1 : 0);
 	}
 }
 
@@ -157,15 +150,7 @@ static int tegra_usb_phy_init_ops(struct tegra_usb_phy *phy)
 	DBG("%s(%d) inst:[%d]\n", __func__, __LINE__, phy->inst);
 
 	if (phy->pdata->has_hostpc)
-#if defined(CONFIG_ARCH_TEGRA_3x_SOC)
-		err = tegra3_usb_phy_init_ops(phy);
-#else
 		err = tegra11x_usb_phy_init_ops(phy);
-#endif
-#if defined (CONFIG_ARCH_TEGRA_2x_SOC)
-	else
-		err = tegra2_usb_phy_init_ops(phy);
-#endif
 	return err;
 }
 
@@ -215,18 +200,23 @@ static int tegra_usb_phy_get_clocks(struct tegra_usb_phy *phy)
 	int err = 0, ret;
 
 	if (tegra_platform_is_silicon()) {
-		phy->pllu_reg = regulator_get(&phy->pdev->dev, USB_PLL_REG);
-		if (IS_ERR_OR_NULL(phy->pllu_reg)) {
-			ERR("Couldn't get regulator %s: %ld\n", USB_PLL_REG,
-				PTR_ERR(phy->pllu_reg));
-			err = PTR_ERR(phy->pllu_reg);
-			phy->pllu_reg = NULL;
-			return err;
+		if (phy->pdata->phy_intf == TEGRA_USB_PHY_INTF_UTMI) {
+			phy->pllu_reg =
+				regulator_get(&phy->pdev->dev, USB_PLL_REG);
+			if (IS_ERR_OR_NULL(phy->pllu_reg)) {
+				ERR("Couldn't get regulator %s: %ld\n",
+					USB_PLL_REG, PTR_ERR(phy->pllu_reg));
+				err = phy->pllu_reg ? PTR_ERR(phy->pllu_reg) :
+						-ENODEV;
+				phy->pllu_reg = NULL;
+				return err;
+			}
+			ret = regulator_enable(phy->pllu_reg);
+			if (ret)
+				ERR(
+				"can't enable regulator pllu_reg, error %d\n",
+				ret);
 		}
-		ret = regulator_enable(phy->pllu_reg);
-		if (ret)
-			ERR("can't enable regulator pllu_reg, error %d\n", ret);
-
 		phy->pllu_clk = clk_get_sys(NULL, "pll_u");
 		if (IS_ERR(phy->pllu_clk)) {
 			ERR("inst:[%d] Can't get pllu_clk clock\n", phy->inst);
@@ -312,13 +302,6 @@ void tegra_usb_phy_close(struct usb_phy *x)
 
 		if (phy->vbus_reg)
 			regulator_put(phy->vbus_reg);
-		else {
-			int gpio = phy->pdata->u_data.host.vbus_gpio;
-			if (gpio != -1) {
-				gpio_set_value_cansleep(gpio, 0);
-				gpio_free(gpio);
-			}
-		}
 	}
 
 	if (phy->vdd_reg) {
@@ -335,6 +318,7 @@ void tegra_usb_phy_close(struct usb_phy *x)
 		regulator_put(phy->pllu_reg);
 	}
 }
+EXPORT_SYMBOL_GPL(tegra_usb_phy_close);
 
 irqreturn_t tegra_usb_phy_irq(struct tegra_usb_phy *phy)
 {
@@ -347,7 +331,7 @@ irqreturn_t tegra_usb_phy_irq(struct tegra_usb_phy *phy)
 }
 EXPORT_SYMBOL_GPL(tegra_usb_phy_irq);
 
-int tegra_usb_phy_init(struct usb_phy *x)
+static int tegra_usb_phy_init(struct usb_phy *x)
 {
 	int status = 0;
 	struct tegra_usb_phy *phy = get_tegra_phy(x);
@@ -422,14 +406,12 @@ int tegra_usb_phy_power_on(struct tegra_usb_phy *phy)
 	if (phy->phy_power_on)
 		return status;
 
-#ifndef CONFIG_ARCH_TEGRA_2x_SOC
 	if (phy->vdd_reg && !phy->vdd_reg_on) {
 		ret = regulator_enable(phy->vdd_reg);
 		if (ret)
 			ERR("can't enable regulator vdd_reg, error %d\n", ret);
 		phy->vdd_reg_on = true;
 	}
-#endif
 
 	/* In device mode clock is turned on by pmu irq handler
 	 * if pmu irq is not available clocks will not be turned off/on
@@ -504,6 +486,7 @@ int tegra_usb_phy_suspend(struct tegra_usb_phy *phy)
 
 	return err;
 }
+EXPORT_SYMBOL_GPL(tegra_usb_phy_suspend);
 
 int tegra_usb_phy_post_suspend(struct tegra_usb_phy *phy)
 {
@@ -553,6 +536,7 @@ int tegra_usb_phy_resume(struct tegra_usb_phy *phy)
 	return err;
 
 }
+EXPORT_SYMBOL_GPL(tegra_usb_phy_resume);
 
 int tegra_usb_phy_post_resume(struct tegra_usb_phy *phy)
 {
@@ -606,6 +590,19 @@ bool tegra_usb_phy_charger_detected(struct tegra_usb_phy *phy)
 
 	return status;
 }
+EXPORT_SYMBOL_GPL(tegra_usb_phy_charger_detected);
+
+bool tegra_usb_phy_cdp_charger_detected(struct tegra_usb_phy *phy)
+{
+	bool status = 0;
+
+	DBG("%s(%d) inst:[%d]\n", __func__, __LINE__, phy->inst);
+	if (phy->ops && phy->ops->cdp_charger_detect)
+		status = phy->ops->cdp_charger_detect(phy);
+
+	return status;
+}
+EXPORT_SYMBOL_GPL(tegra_usb_phy_cdp_charger_detected);
 
 bool tegra_usb_phy_cdp_charger_detected(struct tegra_usb_phy *phy)
 {
@@ -630,6 +627,19 @@ bool tegra_usb_phy_qc2_charger_detected(struct tegra_usb_phy *phy,
 
 	return status;
 }
+EXPORT_SYMBOL_GPL(tegra_usb_phy_qc2_charger_detected);
+
+bool tegra_usb_phy_maxim_charger_detected(struct tegra_usb_phy *phy)
+{
+	bool status = 0;
+
+	DBG("%s(%d) inst:[%d]\n", __func__, __LINE__, phy->inst);
+	if (phy->ops && phy->ops->maxim_charger_14675)
+		status = phy->ops->maxim_charger_14675(phy);
+
+	return status;
+}
+EXPORT_SYMBOL_GPL(tegra_usb_phy_maxim_charger_detected);
 
 bool tegra_usb_phy_maxim_charger_detected(struct tegra_usb_phy *phy)
 {
@@ -652,6 +662,7 @@ bool tegra_usb_phy_nv_charger_detected(struct tegra_usb_phy *phy)
 
 	return status;
 }
+EXPORT_SYMBOL_GPL(tegra_usb_phy_nv_charger_detected);
 
 bool tegra_usb_phy_apple_1000ma_charger_detected(struct tegra_usb_phy *phy)
 {
@@ -662,6 +673,7 @@ bool tegra_usb_phy_apple_1000ma_charger_detected(struct tegra_usb_phy *phy)
 
 	return status;
 }
+EXPORT_SYMBOL_GPL(tegra_usb_phy_apple_1000ma_charger_detected);
 
 bool tegra_usb_phy_apple_2000ma_charger_detected(struct tegra_usb_phy *phy)
 {
@@ -672,6 +684,7 @@ bool tegra_usb_phy_apple_2000ma_charger_detected(struct tegra_usb_phy *phy)
 
 	return status;
 }
+EXPORT_SYMBOL_GPL(tegra_usb_phy_apple_2000ma_charger_detected);
 
 bool tegra_usb_phy_apple_500ma_charger_detected(struct tegra_usb_phy *phy)
 {
@@ -682,6 +695,7 @@ bool tegra_usb_phy_apple_500ma_charger_detected(struct tegra_usb_phy *phy)
 
 	return status;
 }
+EXPORT_SYMBOL_GPL(tegra_usb_phy_apple_500ma_charger_detected);
 
 bool tegra_usb_phy_hw_accessible(struct tegra_usb_phy *phy)
 {
@@ -713,6 +727,7 @@ void tegra_usb_phy_memory_prefetch_on(struct tegra_usb_phy *phy)
 		ahb_gizmo_writel(val, ahb_gizmo + AHB_MEM_PREFETCH_CFG2);
 	}
 }
+EXPORT_SYMBOL_GPL(tegra_usb_phy_memory_prefetch_on);
 
 void tegra_usb_phy_memory_prefetch_off(struct tegra_usb_phy *phy)
 {
@@ -728,6 +743,7 @@ void tegra_usb_phy_memory_prefetch_off(struct tegra_usb_phy *phy)
 		ahb_gizmo_writel(val, ahb_gizmo + AHB_MEM_PREFETCH_CFG2);
 	}
 }
+EXPORT_SYMBOL_GPL(tegra_usb_phy_memory_prefetch_off);
 
 int tegra_usb_phy_set_suspend(struct usb_phy *x, int suspend)
 {
@@ -738,6 +754,7 @@ int tegra_usb_phy_set_suspend(struct usb_phy *x, int suspend)
 	else
 		return tegra_usb_phy_resume(phy);
 }
+EXPORT_SYMBOL_GPL(tegra_usb_phy_set_suspend);
 
 static int tegra_usb_phy_set_clk_freq(struct tegra_usb_phy *phy,
 		enum usb_device_speed speed)
@@ -819,6 +836,12 @@ struct tegra_usb_phy *tegra_usb_phy_open(struct platform_device *pdev)
 
 	if (pdev->dev.of_node && phy->pdata->op_mode == TEGRA_USB_OPMODE_DEVICE)
 		phy->inst = of_alias_get_id(pdev->dev.of_node, "udc");
+<<<<<<< HEAD
+=======
+	else if (pdev->dev.of_node &&
+			phy->pdata->op_mode == TEGRA_USB_OPMODE_HOST)
+		phy->inst = of_alias_get_id(pdev->dev.of_node, "ehci");
+>>>>>>> update/master
 	else
 		phy->inst = pdev->id;
 
@@ -869,32 +892,21 @@ struct tegra_usb_phy *tegra_usb_phy_open(struct platform_device *pdev)
 			tegra_clk_prepare_enable(phy->ctrlr_clk);
 		}
 	} else {
-		int gpio = phy->pdata->u_data.host.vbus_gpio;
-		if (gpio != -1) {
-			if (gpio_request(gpio, "usb_host_vbus") < 0) {
-				ERR("inst:[%d] host vbus gpio req failed\n",
-								phy->inst);
-				goto fail_init;
-			}
-			if (gpio_direction_output(gpio, 1) < 0) {
-				ERR("inst:[%d] host vbus gpio dir failed\n",
-								phy->inst);
-				goto fail_init;
-			}
-		} else {
+		if (phy->pdata->phy_intf == TEGRA_USB_PHY_INTF_UTMI) {
 			phy->vbus_reg = regulator_get(&pdev->dev, "usb_vbus");
 			if (IS_ERR_OR_NULL(phy->vbus_reg)) {
-				ERR("failed to get regulator vdd_vbus_usb:" \
-				"%ld,instance : %d\n", PTR_ERR(phy->vbus_reg),
-				phy->inst);
+				ERR(
+				"failed regulator_get vdd_vbus_usb:%ld, inst:%d\n",
+				PTR_ERR(phy->vbus_reg), phy->inst);
 				phy->vbus_reg = NULL;
 			}
+
+			usb_host_vbus_enable(phy, true);
+			/* Fixme: Need delay to stablize the vbus on USB1
+			   this must be fixed properly */
+			if (phy->inst == 0)
+				msleep(1000);
 		}
-		usb_host_vbus_enable(phy, true);
-		/* Fixme: Need delay to stablize the vbus on USB1
-		   this must be fixed properly */
-		if (phy->inst == 0)
-			msleep(1000);
 	}
 	err = tegra_usb_phy_init_ops(phy);
 	if (err) {
@@ -933,13 +945,6 @@ fail_init:
 
 		if (phy->vbus_reg)
 			regulator_put(phy->vbus_reg);
-		else {
-			int gpio = phy->pdata->u_data.host.vbus_gpio;
-			if (gpio != -1) {
-				gpio_set_value_cansleep(gpio, 0);
-				gpio_free(gpio);
-			}
-		}
 	}
 
 fail_clk:
@@ -967,4 +972,8 @@ bool tegra_usb_phy_is_pmc_wake(struct tegra_usb_phy *phy)
 		status = phy->ops->is_pmc_wakeup(phy);
 	return status;
 }
+<<<<<<< HEAD
 EXPORT_SYMBOL_GPL(tegra_usb_phy_is_pmc_wake);
+=======
+EXPORT_SYMBOL_GPL(tegra_usb_phy_is_pmc_wake);
+>>>>>>> update/master

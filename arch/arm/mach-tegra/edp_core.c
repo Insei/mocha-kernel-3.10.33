@@ -24,10 +24,9 @@
 #include <linux/tegra-soc.h>
 
 #include <mach/edp.h>
-#include <mach/thermal.h>
 
-#include "clock.h"
-#include "common.h"
+#include <linux/platform/tegra/clock.h>
+#include <linux/platform/tegra/common.h>
 
 static DEFINE_MUTEX(core_edp_lock);
 
@@ -175,11 +174,6 @@ void __init tegra_init_core_edp_limits(unsigned int regulator_mA)
 	switch (tegra_chip_id) {
 	case TEGRA_CHIPID_TEGRA11:
 		if (tegra11x_select_core_edp_table(
-			regulator_mA, &core_edp_limits))
-			return;
-		break;
-	case TEGRA_CHIPID_TEGRA14:
-		if (tegra14x_select_core_edp_table(
 			regulator_mA, &core_edp_limits))
 			return;
 		break;

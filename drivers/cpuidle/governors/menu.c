@@ -21,6 +21,9 @@
 #include <linux/math64.h>
 #include <linux/module.h>
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/idle.h>
+
 #define BUCKETS 12
 #define INTERVALS 8
 #define RESOLUTION 1024
@@ -269,7 +272,7 @@ static int menu_select(struct cpuidle_driver *drv, struct cpuidle_device *dev)
 		data->needs_update = 0;
 	}
 
-	data->last_state_idx = 0;
+	data->last_state_idx = CPUIDLE_DRIVER_STATE_START - 1;
 	data->exit_us = 0;
 
 	/* Special case when user has set very strict latency requirement */
@@ -298,6 +301,7 @@ static int menu_select(struct cpuidle_driver *drv, struct cpuidle_device *dev)
 					 RESOLUTION * DECAY);
 
 	get_typical_interval(data);
+	trace_idle_entry(data->predicted_us);
 
 	/*
 	 * We want to default to C1 (hlt), not to busy polling

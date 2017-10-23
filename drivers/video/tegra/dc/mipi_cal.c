@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/dc/mipi_cal.c
  *
- * Copyright (c) 2012-2013, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2012-2015, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -98,16 +98,11 @@ static inline void dbg_dsi_mipi_dir_create(struct tegra_mipi_cal *mipi_cal)
 
 int tegra_mipi_cal_init_hw(struct tegra_mipi_cal *mipi_cal)
 {
-	unsigned cnt = MIPI_CAL_MIPI_CAL_CTRL_0;
-
 	BUG_ON(IS_ERR_OR_NULL(mipi_cal));
 
 	mutex_lock(&mipi_cal->lock);
 
 	tegra_mipi_cal_clk_enable(mipi_cal);
-
-	for (; cnt <= MIPI_VALID_REG_LIMIT; cnt += 4)
-		tegra_mipi_cal_write(mipi_cal, 0, cnt);
 
 	/* Clear MIPI cal status register */
 	tegra_mipi_cal_write(mipi_cal,
@@ -138,13 +133,13 @@ struct tegra_mipi_cal *tegra_mipi_cal_init_sw(struct tegra_dc *dc)
 {
 	struct tegra_mipi_cal *mipi_cal;
 	struct resource *res;
-	struct resource mipi_res;
+	struct resource *mipi_res = NULL;
 	struct resource *base_res;
 	struct clk *clk;
-	struct clk *fixed_clk;
+	struct clk *fixed_clk = NULL;
 	void __iomem *base;
 	int err = 0;
-#ifdef CONFIG_USE_OF
+#ifdef CONFIG_OF
 	struct device_node *np_mipi_cal =
 		of_find_node_by_path("/mipical");
 #else
@@ -158,9 +153,18 @@ struct tegra_mipi_cal *tegra_mipi_cal_init_sw(struct tegra_dc *dc)
 	}
 
 	if (np_mipi_cal && of_device_is_available(np_mipi_cal)) {
-			of_address_to_resource(
-				np_mipi_cal, 0, &mipi_res);
-			res = &mipi_res;
+		mipi_res = kzalloc(sizeof(struct resource), GFP_KERNEL);
+		if (mipi_res == NULL) {
+			err = -ENOMEM;
+			goto fail_free_mipi_cal;
+		}
+
+		err = of_address_to_resource(np_mipi_cal, 0, mipi_res);
+		if (err)
+			goto fail_free_mipi_cal;
+
+		res = mipi_res;
+
 	} else {
 		res = platform_get_resource_byname(dc->ndev,
 				IORESOURCE_MEM, "mipi_cal");
@@ -187,13 +191,18 @@ struct tegra_mipi_cal *tegra_mipi_cal_init_sw(struct tegra_dc *dc)
 		err = PTR_ERR(clk);
 		goto fail_free_map;
 	}
+#if defined(CONFIG_ARCH_TEGRA_2x_SOC)   || \
+	defined(CONFIG_ARCH_TEGRA_3x_SOC)   || \
+	defined(CONFIG_ARCH_TEGRA_11x_SOC)  || \
+	defined(CONFIG_ARCH_TEGRA_14x_SOC)  || \
+	defined(CONFIG_ARCH_TEGRA_12x_SOC)
 	fixed_clk = clk_get_sys("mipi-cal-fixed", NULL);
 	if (IS_ERR_OR_NULL(fixed_clk)) {
 		dev_err(&dc->ndev->dev, "mipi_cal: fixed clk get failed\n");
 		err = PTR_ERR(fixed_clk);
 		goto fail_free_map;
 	}
-
+#endif
 	mutex_init(&mipi_cal->lock);
 	mipi_cal->dc = dc;
 	mipi_cal->res = res;
@@ -202,6 +211,7 @@ struct tegra_mipi_cal *tegra_mipi_cal_init_sw(struct tegra_dc *dc)
 	mipi_cal->clk = clk;
 	mipi_cal->fixed_clk = fixed_clk;
 	dbg_dsi_mipi_dir_create(mipi_cal);
+	of_node_put(np_mipi_cal);
 	return mipi_cal;
 
 fail_free_map:
@@ -213,14 +223,17 @@ fail_free_res:
 		release_resource(res);
 fail_free_mipi_cal:
 	devm_kfree(&dc->ndev->dev, mipi_cal);
+	if (np_mipi_cal)
+		kfree(mipi_res);
 fail:
+	of_node_put(np_mipi_cal);
 	return ERR_PTR(err);
 }
 EXPORT_SYMBOL(tegra_mipi_cal_init_sw);
 
 void tegra_mipi_cal_destroy(struct tegra_dc *dc)
 {
-#ifdef CONFIG_USE_OF
+#ifdef CONFIG_OF
 	struct device_node *np_mipi_cal =
 		of_find_node_by_path("/mipical");
 #else
@@ -241,12 +254,15 @@ void tegra_mipi_cal_destroy(struct tegra_dc *dc)
 		resource_size(mipi_cal->res));
 
 	if (!np_mipi_cal || !of_device_is_available(np_mipi_cal))
-		release_resource(mipi_cal->res);
+		release_resource(mipi_cal->base_res);
+	else
+		kfree(mipi_cal->res);
 
 	mutex_unlock(&mipi_cal->lock);
 
 	mutex_destroy(&mipi_cal->lock);
 	devm_kfree(&dc->ndev->dev, mipi_cal);
+	of_node_put(np_mipi_cal);
 #ifdef CONFIG_DEBUG_FS
 	debugfs_remove_recursive(mipidir);
 #endif

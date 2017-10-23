@@ -2,7 +2,7 @@
  * Copyright (C) 2009 Palm, Inc.
  * Author: Yvonne Yip <y@palm.com>
  *
- * Copyright (c) 2013-2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2016, NVIDIA CORPORATION.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -38,8 +38,22 @@
 #define MMC_UHS_MASK_DDR50	0x8
 #define MMC_UHS_MASK_SDR104	0x10
 #define MMC_MASK_HS200		0x20
+#define MMC_MASK_HS400		0x40
+
+/* runtime power management implementation type */
+enum {
+	RTPM_TYPE_DELAY_CG = 0,
+	RTPM_TYPE_MMC
+};
+
+#define IS_MMC_RTPM(type)	(type == RTPM_TYPE_MMC)
+#define IS_RTPM_DELAY_CG(type)	(type == RTPM_TYPE_DELAY_CG)
+#define GET_RTPM_TYPE(type) \
+		(IS_RTPM_DELAY_CG(type) ? "delayed clock gate rtpm" : \
+		"mmc rtpm coupled with clock gate")
 
 struct tegra_sdhci_platform_data {
+	bool pwrdet_support;
 	int cd_gpio;
 	int wp_gpio;
 	int power_gpio;
@@ -52,9 +66,15 @@ struct tegra_sdhci_platform_data {
 	unsigned int max_clk_limit;
 	unsigned int ddr_clk_limit;
 	unsigned int tap_delay;
+	bool is_ddr_tap_delay;
+	unsigned int ddr_tap_delay;
 	unsigned int trim_delay;
+	bool is_ddr_trim_delay;
 	unsigned int ddr_trim_delay;
+	unsigned int dqs_trim_delay;
+	unsigned int dqs_trim_delay_hs533;
 	unsigned int uhs_mask;
+	unsigned int id;
 	struct mmc_platform_data mmc_data;
 	bool power_off_rail;
 	bool en_freq_scaling;
@@ -62,9 +82,41 @@ struct tegra_sdhci_platform_data {
 	bool en_nominal_vcore_tuning;
 	unsigned int calib_3v3_offsets;	/* Format to be filled: 0xXXXXPDPU */
 	unsigned int calib_1v8_offsets;	/* Format to be filled: 0xXXXXPDPU */
+	unsigned int compad_vref_3v3;
+	unsigned int compad_vref_1v8;
 	bool disable_clock_gate; /* no clock gate when true */
+	bool update_pinctrl_settings;
 	u32 cpu_speedo;
+<<<<<<< HEAD
 	unsigned char default_drv_type;
+=======
+	unsigned int default_drv_type;
+	bool dll_calib_needed;
+	bool pwr_off_during_lp0;
+	bool disable_auto_cal;
+	unsigned int auto_cal_step;
+	bool en_io_trim_volt;
+	bool is_emmc;
+	bool is_sdio;
+	bool limit_vddio_max_volt;
+	bool enb_ext_loopback;
+	bool enable_hs533_mode;
+	bool dynamic_dma_pio_switch;
+	bool is_sd_device;
+	bool is_fix_clock_freq;
+	/*Index 0 is fixed for ID mode. Rest according the MMC_TIMINGS modes*/
+	unsigned int fixed_clk_freq_table[MMC_TIMINGS_MAX_MODES + 1];
+	bool enable_autocal_slew_override;
+	unsigned int rtpm_type;
+	bool enable_cq;
+	bool en_strobe; /* Enable enhance strobe mode for eMMC */
+	bool enb_feedback_clock;
+	bool en_periodic_calib;
+	/* Flag when true disables register dump after KSO sleep mode */
+	bool bcm_sdio_suppress_kso_dump;
+	int pin_count;
+	struct gpio gpios[6];
+>>>>>>> update/master
 };
 
 #endif

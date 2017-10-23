@@ -25,11 +25,12 @@
 #include <asm/cache.h>
 #include <asm/page.h>
 #include <asm/hardware/cache-l2x0.h>
+#include <asm/memory.h>
 
-#include "flowctrl.h"
+#include <linux/platform/tegra/flowctrl.h>
 #include "iomap.h"
 #include "sleep.h"
-#include "reset.h"
+#include <linux/platform/tegra/reset.h>
 
 #define APB_MISC_GP_HIDREV	0x804
 #define PMC_SCRATCH41	0x140
@@ -49,11 +50,19 @@
  */
 	__CPUINIT
 ENTRY(tegra_secondary_startup)
+	ldr	r0, =tegra_with_secure_firmware
+	sub	r0, #(PAGE_OFFSET - TEGRA_DRAM_BASE)
+	ldr	r12, [r0]
+
 	bl	__invalidate_cpu_state
 
+<<<<<<< HEAD
 	ldr	r0, =tegra_with_secure_firmware
 	ldr	r0, [r0]
 	cmp	r0, #1
+=======
+	cmp	r12, #1			@ secure firmware present?
+>>>>>>> update/master
 	beq	secondary_startup
 
 	/* enable user space perf counter access */
@@ -83,9 +92,16 @@ ENDPROC(tegra_secondary_startup)
  *	  re-enabling sdram.
  */
 ENTRY(tegra_resume)
+<<<<<<< HEAD
 	ldr	r1, =tegra_with_secure_firmware
 	ldr	r1, [r1]
 	cmp	r1, #1
+=======
+	ldr	r0, =tegra_with_secure_firmware
+	sub	r0, #(PAGE_OFFSET - TEGRA_DRAM_BASE)
+	ldr	r12, [r0]
+	cmp	r12, #1
+>>>>>>> update/master
 	bne	cpu_not_secure
 
 	mov32	r1, TEGRA_TMRUS_BASE
@@ -97,38 +113,37 @@ cpu_not_secure:
 	bl	__invalidate_cpu_state
 
 	cpu_id	r0
+	mov32   r2, TEGRA_FLOW_CTRL_BASE
+	mov     r3, #0
+	cpu_to_csr_reg r1, r0
+	str     r3, [r2, r1]
+	cpu_to_halt_reg r1, r0
+	str     r3, [r2, r1]
+	ldr     r3, [r2, r1]
+
 #ifndef CONFIG_TEGRA_VIRTUAL_CPUID
 	cmp	r0, #0				@ CPU0?
 	bne	cpu_resume			@ no
 #endif
 
-#ifndef CONFIG_ARCH_TEGRA_2x_SOC
-	@ Clear the flow controller flags for this CPU.
-	cpu_to_csr_reg	r1, r0
-	mov32	r2, TEGRA_FLOW_CTRL_BASE
-	ldr	r1, [r2, r1]
-	orr	r1, r1, #(1 << 15) | (1 << 14)	@ write to clear event & intr
-	movw	r0, #0x3FFD	@ enable, enable_ext, cluster_switch, immed, & bitmaps
-	bic	r1, r1, r0
-	str	r1, [r2]
-#endif /* !CONFIG_ARCH_TEGRA_2x_SOC */
 
 #if defined(CONFIG_HAVE_ARM_SCU)
 	/* enable SCU */
 	mov32	r0, TEGRA_ARM_PERIF_BASE
 	ldr	r1, [r0]
 	orr	r1, r1, #1
-#ifdef CONFIG_ARCH_TEGRA_14x_SOC
-	orr	r1, r1, #8
-#endif
 	str	r1, [r0]
 #endif /* CONFIG_HAVE_ARM_SCU */
 
 #ifdef CONFIG_CACHE_L2X0
+<<<<<<< HEAD
 #if !defined(CONFIG_ARCH_TEGRA_14x_SOC)
 	ldr	r1, =tegra_with_secure_firmware
 	ldr	r1, [r1]
 	cmp	r1, #1
+=======
+	cmp	r12, #1			@ secure firmware present?
+>>>>>>> update/master
 	beq	cpu_resume
 
 	adr	r0, tegra_resume_l2_init
@@ -142,7 +157,7 @@ cpu_not_secure:
 #if defined(CONFIG_ARCH_TEGRA_2x_SOC)
 	mov32	r0, 0x331			/* tag latency */
 	mov32	r1, 0x441			/* data latency */
-#elif defined(CONFIG_ARCH_TEGRA_3x_SOC) || defined(CONFIG_ARCH_TEGRA_14x_SOC)
+#elif defined(CONFIG_ARCH_TEGRA_3x_SOC)
 #ifdef CONFIG_TEGRA_SILICON_PLATFORM
 	mov32	r0, TEGRA_FLOW_CTRL_BASE + 0x2c	/* FLOW_CTRL_CLUSTER_CONTROL */
 	mov32	r2, RESET_DATA_PHYS
@@ -156,17 +171,11 @@ cpu_not_secure:
 	mov32	r0, #0x770			/* tag latency */
 	mov32	r1, #0x770			/* data latency */
 #endif /* ?CONFIG_TEGRA_SILICON_PLATFORM */
-#endif /* CONFIG_ARCH_TEGRA_3x_SOC || CONFIG_ARCH_TEGRA_14x_SOC */
+#endif /* CONFIG_ARCH_TEGRA_3x_SOC */
 	str	r0, [r3, #L2X0_TAG_LATENCY_CTRL]
 	str	r1, [r3, #L2X0_DATA_LATENCY_CTRL]
-#ifndef CONFIG_TEGRA_FPGA_PLATFORM
-#ifdef CONFIG_ARCH_TEGRA_14x_SOC
-	mov32	r0, 0x40000007	/* Enable double line fill */
-#else
 	mov	r0, #7
-#endif
 	str	r0, [r3, #L2X0_PREFETCH_CTRL]
-#endif /* !CONFIG_TEGRA_FPGA_PLATFORM */
 	mov	r0, #3
 	str	r0, [r3, #L2X0_POWER_CTRL]
 	/* figure out aux ctrl */
@@ -182,7 +191,10 @@ cpu_not_secure:
 	str	r2, [r3, #L2X0_AUX_CTRL]
 	mov	r2, #1
 	str	r2, [r3, #L2X0_CTRL]
+<<<<<<< HEAD
 #endif /* CONFIG_ARCH_TEGRA_14x_SOC */
+=======
+>>>>>>> update/master
 #endif /* CONFIG_CACHE_L2X0 */
 no_l2_init:
 	b	cpu_resume
@@ -237,9 +249,13 @@ __invalidate_cpu_state:
 	teq	r1, r0
 	beq	cortex_a9
 
+<<<<<<< HEAD
 	ldr	r0, =tegra_with_secure_firmware
 	ldr	r0, [r0]
 	cmp	r0, #1
+=======
+	cmp	r12, #1			@ secure firmware present?
+>>>>>>> update/master
 	beq	__enable_i_cache_branch_pred
 
 	mrc	p15, 0x1, r0, c15, c0, 3	@ L2 prefetch control reg
@@ -387,9 +403,15 @@ ENTRY(__tegra_cpu_reset_handler)
 	b	.
 #endif
 
+<<<<<<< HEAD
 	ldr	r0, =tegra_with_secure_firmware
 	ldr	r0, [r0]
 	cmp	r0, #1
+=======
+	adr	r12, __tegra_cpu_reset_handler_data
+	ldr	r7, [r12, #RESET_DATA(SECURE_FW_PRESENT)]
+	cmp	r7, #1 			@ if !secure
+>>>>>>> update/master
 	beq	cpu_is_secure
 
 	cpsid	aif, 0x13			@ SVC mode, interrupts disabled

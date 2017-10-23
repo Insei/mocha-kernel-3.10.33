@@ -246,7 +246,11 @@ read_source(struct power_clk_source *s, int cpu)
 
 	case QUADD_POWER_CLK_GPU:
 		/* update gpu frequency */
+<<<<<<< HEAD
 		s->clkp = clk_get_sys("3d", NULL);
+=======
+		s->clkp = clk_get_sys("gm20b", "gbus");
+>>>>>>> update/master
 		if (!IS_ERR_OR_NULL(s->clkp)) {
 			s->data[0].value =
 				clk_get_rate(s->clkp) / 1000;
@@ -440,14 +444,25 @@ static void
 read_all_sources_work_func(struct work_struct *work)
 {
 	int cpu_id;
+<<<<<<< HEAD
 
 	for_each_possible_cpu(cpu_id)
 		read_source(&power_ctx.cpu, cpu_id);
+=======
+	struct power_clk_source *s = &power_ctx.cpu;
+
+	for_each_possible_cpu(cpu_id)
+		read_source(s, cpu_id);
+>>>>>>> update/master
 
 	read_source(&power_ctx.gpu, -1);
 	read_source(&power_ctx.emc, -1);
 
 	check_clks();
+<<<<<<< HEAD
+=======
+	check_source(s);
+>>>>>>> update/master
 }
 
 static DECLARE_WORK(read_all_sources_work, read_all_sources_work_func);
@@ -475,7 +490,11 @@ int quadd_power_clk_start(void)
 
 	/* setup gpu frequency */
 	s = &power_ctx.gpu;
+<<<<<<< HEAD
 	s->clkp = clk_get_sys("3d", NULL);
+=======
+	s->clkp = clk_get_sys("gm20b", "gbus");
+>>>>>>> update/master
 	if (!IS_ERR_OR_NULL(s->clkp)) {
 #ifdef CONFIG_COMMON_CLK
 		status = clk_notifier_register(s->clkp, s->nb);
@@ -573,6 +592,7 @@ void quadd_power_clk_stop(void)
 int quadd_power_clk_init(struct quadd_ctx *quadd_ctx)
 {
 	struct power_clk_source *s;
+<<<<<<< HEAD
 
 	s = &power_ctx.gpu;
 	s->nb[PCLK_NB_GPU].notifier_call = gpu_notifier_call;
@@ -582,6 +602,17 @@ int quadd_power_clk_init(struct quadd_ctx *quadd_ctx)
 	s->nb[PCLK_NB_EMC].notifier_call = emc_notifier_call;
 	init_source(s, 1, QUADD_POWER_CLK_EMC);
 
+=======
+
+	s = &power_ctx.gpu;
+	s->nb[PCLK_NB_GPU].notifier_call = gpu_notifier_call;
+	init_source(s, 1, QUADD_POWER_CLK_GPU);
+
+	s = &power_ctx.emc;
+	s->nb[PCLK_NB_EMC].notifier_call = emc_notifier_call;
+	init_source(s, 1, QUADD_POWER_CLK_EMC);
+
+>>>>>>> update/master
 	s = &power_ctx.cpu;
 	s->nb[PCLK_NB_CPU_FREQ].notifier_call = cpufreq_notifier_call;
 	s->nb[PCLK_NB_CPU_HOTPLUG].notifier_call = cpu_hotplug_notifier_call;

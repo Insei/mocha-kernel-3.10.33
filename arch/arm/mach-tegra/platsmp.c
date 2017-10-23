@@ -7,7 +7,7 @@
  *  Copyright (C) 2009 Palm
  *  All Rights Reserved
  *
- *  Copyright (C) 2010-2014, NVIDIA Corporation. All rights reserved.
+ *  Copyright (C) 2010-2015, NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -25,20 +25,21 @@
 #include <linux/tegra-powergate.h>
 #include <linux/tegra-timer.h>
 #include <linux/tegra-fuse.h>
+#include <linux/fiq_glue.h>
 
 #include <asm/cputype.h>
 #include <asm/smp_plat.h>
 #include <asm/smp_scu.h>
-#include <asm/fiq_glue.h>
+#include <asm/psci.h>
 
-#include "flowctrl.h"
-#include "reset.h"
+#include <linux/platform/tegra/flowctrl.h>
+#include <linux/platform/tegra/reset.h>
 #include "pm.h"
-#include "clock.h"
+#include <linux/platform/tegra/clock.h>
 #include "sleep.h"
-#include "cpu-tegra.h"
+#include <linux/platform/tegra/cpu-tegra.h>
 
-#include "common.h"
+#include <linux/platform/tegra/common.h>
 #include "iomap.h"
 
 bool tegra_all_cpus_booted;
@@ -48,13 +49,9 @@ const struct cpumask *const tegra_cpu_init_mask = to_cpumask(tegra_cpu_init_bits
 #define tegra_cpu_init_map	(*(cpumask_t *)tegra_cpu_init_mask)
 
 static DECLARE_BITMAP(tegra_cpu_power_up_by_fc, CONFIG_NR_CPUS) __read_mostly;
-struct cpumask *tegra_cpu_power_mask =
+static struct cpumask *tegra_cpu_power_mask =
 				to_cpumask(tegra_cpu_power_up_by_fc);
 #define tegra_cpu_power_map	(*(cpumask_t *)tegra_cpu_power_mask)
-
-#if defined(CONFIG_ARCH_TEGRA_14x_SOC)
-static struct cpumask tegra_cpu_power_mask_saved;
-#endif
 
 #ifndef CONFIG_ARCH_TEGRA_2x_SOC
 #define CAR_BOND_OUT_V \
@@ -193,7 +190,7 @@ static int tegra30_power_up_cpu(unsigned int cpu)
 	unsigned long timeout;
 	bool booted = false;
 
-	BUG_ON(cpu == smp_processor_id());
+	BUG_ON(cpu == raw_smp_processor_id());
 	BUG_ON(is_lp_cluster());
 
 	if (cpu_isset(cpu, tegra_cpu_init_map))
@@ -255,10 +252,16 @@ fail:
 
 static int tegra11x_power_up_cpu(unsigned int cpu)
 {
-	BUG_ON(cpu == smp_processor_id());
+	BUG_ON(cpu == raw_smp_processor_id());
 	BUG_ON(is_lp_cluster());
 
 	cpu = cpu_logical_map(cpu);
+
+#if defined(CONFIG_ARM_PSCI)
+	/* monitor takes care of CPU_ON */
+	if (tegra_cpu_is_secure())
+		return psci_ops.cpu_on(cpu, __pa(tegra_secondary_startup));
+#endif
 
 	if (cpu_isset(cpu, tegra_cpu_power_map)) {
 		/* set SCLK as event trigger for flow conroller */
@@ -269,6 +272,7 @@ static int tegra11x_power_up_cpu(unsigned int cpu)
 
 		reg = PMC_TOGGLE_START | TEGRA_CPU_POWERGATE_ID(cpu);
 		pmc_writel(reg, PWRGATE_TOGGLE);
+		pmc_readl(PWRGATE_TOGGLE);
 	}
 
 	return 0;
@@ -416,19 +420,6 @@ void tegra_smp_clear_power_mask()
 	cpumask_set_cpu(0, tegra_cpu_power_mask);
 }
 #endif
-
-#if defined(CONFIG_ARCH_TEGRA_14x_SOC)
-void tegra_smp_save_power_mask()
-{
-	tegra_cpu_power_mask_saved = *((struct cpumask *)tegra_cpu_power_mask);
-}
-
-void tegra_smp_restore_power_mask()
-{
-	*tegra_cpu_power_mask = tegra_cpu_power_mask_saved;
-}
-#endif
-
 
 #ifdef CONFIG_HOTPLUG_CPU
 int tegra_cpu_disable(unsigned int cpu)

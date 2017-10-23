@@ -1,7 +1,7 @@
 /*
  * drivers/cpuidle/cpuidle-denver.c
  *
- * Copyright (C) 2013 NVIDIA Corporation. All rights reserved.
+ * Copyright (C) 2013-2014 NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -85,21 +85,16 @@ static int __init denver_power_states_init(void)
 			state->flags = CPUIDLE_FLAG_TIME_VALID;
 			state->target_residency = prop;
 		}
-		if (of_property_read_u32(child, "power", &prop) != 0)
+		if (of_property_read_u32(child, "power", &prop) == 0)
 			state->exit_latency = prop;
 
 		state->enter = denver_enter_c_state;
 
-		/* Bringup all states except clock gating in disabled mode */
-		if (of_property_read_u32(child, "pmstate", &prop) == 0) {
-			if (prop == 0)
-				state->disabled = false;
-			else
-				state->disabled = true;
-			if ((prop == 9) && (tegra_revision == TEGRA_REVISION_A01))
-				prop = 0;
-		} else
+		if (of_property_read_u32(child, "pmstate", &prop) != 0)
 			continue;
+
+		if ((prop == 9) && (tegra_revision == TEGRA_REVISION_A01))
+			prop = 0;
 
 		/* Map index to the actual LP state */
 		pmstate_map[state_count] = prop;
@@ -136,6 +131,12 @@ static int __init denver_cpuidle_devices_init(void)
 		if (!of_device_is_compatible(cpu, "nvidia,denver"))
 			continue;
 
+		/*
+		 * Check to see if the cpu is disabled.
+		 */
+		if (!of_device_is_available(cpu))
+			continue;
+
 		of_states = of_parse_phandle(cpu, "power-states", 0);
 		if (!of_states || !of_device_is_compatible(
 				of_states, "nvidia,denver"))
@@ -155,6 +156,9 @@ static int __init denver_cpuidle_devices_init(void)
 			kfree(dev);
 			return -EIO;
 		}
+		#ifndef CONFIG_SMP
+			break;
+		#endif
 	}
 
 	return 0;

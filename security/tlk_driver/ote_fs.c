@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014 NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2013-2016 NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,16 +27,29 @@
 
 #include "ote_protocol.h"
 
+/* SS operation timeout in milliseconds */
+#define SS_OP_TIME_OUT 5000
+
 static DECLARE_COMPLETION(req_ready);
 static DECLARE_COMPLETION(req_complete);
 
+<<<<<<< HEAD
 static struct te_ss_op *ss_op_shmem;
+=======
+static void tlk_ss_reset(void)
+{
+	/* reset completion vars to default state */
+	INIT_COMPLETION(req_ready);
+	INIT_COMPLETION(req_complete);
+}
+>>>>>>> update/master
 
 int te_handle_ss_ioctl(struct file *file, unsigned int ioctl_num,
 	unsigned long ioctl_param)
 {
 	int ss_cmd;
 
+<<<<<<< HEAD
 	switch (ioctl_num) {
 	case TE_IOCTL_SS_NEW_REQ:
 		/* wait for a new request */
@@ -79,22 +92,62 @@ int te_handle_ss_ioctl(struct file *file, unsigned int ioctl_num,
 			pr_err("%s: unknown ss_cmd 0x%x\n", __func__, ss_cmd);
 			return -EINVAL;
 		}
+=======
+	if (ioctl_num != TE_IOCTL_SS_CMD)
+		return -EINVAL;
+
+	if (copy_from_user(&ss_cmd, (void __user *)ioctl_param,
+				sizeof(ss_cmd))) {
+		pr_err("%s: copy from user space failed\n", __func__);
+		return -EFAULT;
+	}
+
+	switch (ss_cmd) {
+	case TE_IOCTL_SS_CMD_GET_NEW_REQ:
+		/* wait for a new request */
+		if (wait_for_completion_interruptible(&req_ready))
+			return -ENODATA;
+		break;
+	case TE_IOCTL_SS_CMD_REQ_COMPLETE:
+		/* signal the producer */
+		complete(&req_complete);
+		break;
+	default:
+		pr_err("%s: unknown ss_cmd 0x%x\n", __func__, ss_cmd);
+		return -EINVAL;
+>>>>>>> update/master
 	}
 
 	return 0;
 }
 
+<<<<<<< HEAD
 void tlk_ss_op(void)
+=======
+int tlk_ss_op(void)
+>>>>>>> update/master
 {
 	/* signal consumer */
 	complete(&req_ready);
 
 	/* wait for the consumer's signal */
+<<<<<<< HEAD
 	wait_for_completion(&req_complete);
+=======
+	if (!wait_for_completion_timeout(&req_complete,
+				msecs_to_jiffies(SS_OP_TIME_OUT))) {
+		/* daemon didn't respond */
+		tlk_ss_reset();
+		return OTE_ERROR_CANCEL;
+	}
+
+	return OTE_SUCCESS;
+>>>>>>> update/master
 }
 
 static int __init tlk_ss_init(void)
 {
+<<<<<<< HEAD
 	dma_addr_t ss_op_shmem_dma;
 	int32_t ret;
 
@@ -113,6 +166,15 @@ static int __init tlk_ss_init(void)
 			(void *)ss_op_shmem, ss_op_shmem_dma);
 		ss_op_shmem = NULL;
 		return -ENOTSUPP;
+=======
+	int ret;
+
+	/* storage disabled? */
+	ret = ote_property_is_disabled("storage");
+	if (ret) {
+		pr_warn("%s: tlk storage is disabled (%d)\n", __func__, ret);
+		return ret;
+>>>>>>> update/master
 	}
 
 	return 0;

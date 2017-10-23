@@ -64,6 +64,8 @@ struct regulator_linear_range {
  * @disable: Configure the regulator as disabled.
  * @is_enabled: Return 1 if the regulator is enabled, 0 if not.
  *		May also return negative errno.
+ * @post_enable: Post enable call, specially when it is GPIO controlled.
+ * @post_disable: Post disable call, specially when it is GPIO controlled.
  *
  * @set_voltage: Set the voltage for the regulator within the range specified.
  *               The driver should select the voltage closest to min_uV.
@@ -126,6 +128,8 @@ struct regulator_ops {
 			    unsigned *selector);
 	int (*map_voltage)(struct regulator_dev *, int min_uV, int max_uV);
 	int (*set_voltage_sel) (struct regulator_dev *, unsigned selector);
+	int (*set_sleep_voltage_sel) (struct regulator_dev *,
+				unsigned selector);
 	int (*get_voltage) (struct regulator_dev *);
 	int (*get_voltage_sel) (struct regulator_dev *);
 
@@ -138,6 +142,8 @@ struct regulator_ops {
 	int (*enable) (struct regulator_dev *);
 	int (*disable) (struct regulator_dev *);
 	int (*is_enabled) (struct regulator_dev *);
+	int (*post_enable) (struct regulator_dev *);
+	int (*post_disable) (struct regulator_dev *);
 
 	/* get/set regulator operating mode (defined in consumer.h) */
 	int (*set_mode) (struct regulator_dev *, unsigned int mode);
@@ -309,6 +315,15 @@ struct regulator_config {
 	unsigned int ena_gpio_flags;
 };
 
+/* Time profile for operations */
+struct regulator_time_profile {
+	int enable_profiling;
+	int max_index;
+	u32 min_time;
+	u32 max_time;
+	u64 occurance_count[150];
+};
+
 /*
  * struct regulator_dev
  *
@@ -339,6 +354,7 @@ struct regulator_dev {
 	struct regulation_constraints *constraints;
 	struct regulator *supply;	/* for tree */
 	struct regmap *regmap;
+	int machine_constraints;
 
 	struct delayed_work disable_work;
 	int deferred_disables;
@@ -346,6 +362,9 @@ struct regulator_dev {
 	void *reg_data;		/* regulator_dev data */
 
 	struct dentry *debugfs;
+	struct dentry *pdebugfs;
+
+	struct regulator_time_profile set_volt_profile;
 
 	struct regulator_enable_gpio *ena_pin;
 	unsigned int ena_gpio_state:1;
@@ -389,6 +408,8 @@ int regulator_set_voltage_sel_regmap(struct regulator_dev *rdev, unsigned sel);
 int regulator_is_enabled_regmap(struct regulator_dev *rdev);
 int regulator_enable_regmap(struct regulator_dev *rdev);
 int regulator_disable_regmap(struct regulator_dev *rdev);
+int regulator_get_enable_time(struct regulator_dev *rdev);
+void regulator_wait_for_enable_time(struct regulator_dev *rdev);
 int regulator_set_voltage_time_sel(struct regulator_dev *rdev,
 				   unsigned int old_selector,
 				   unsigned int new_selector);

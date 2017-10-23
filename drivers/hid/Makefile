@@ -111,6 +111,7 @@ obj-$(CONFIG_HID_TIVO)		+= hid-tivo.o
 obj-$(CONFIG_HID_TOPSEED)	+= hid-topseed.o
 obj-$(CONFIG_HID_TWINHAN)	+= hid-twinhan.o
 obj-$(CONFIG_HID_UCLOGIC)	+= hid-uclogic.o
+obj-$(CONFIG_HID_VALVE)		+= hid-steam.o
 obj-$(CONFIG_HID_ZEROPLUS)	+= hid-zpff.o
 obj-$(CONFIG_HID_ZYDACRON)	+= hid-zydacron.o
 obj-$(CONFIG_HID_WACOM)		+= hid-wacom.o
@@ -119,6 +120,13 @@ obj-$(CONFIG_HID_WIIMOTE)	+= hid-wiimote.o
 obj-$(CONFIG_HID_SENSOR_HUB)	+= hid-sensor-hub.o
 obj-$(CONFIG_HID_NVIDIA)	+= hid-nvidia.o \
 	hid-nvidia-blake.o
+<<<<<<< HEAD
+=======
+obj-$(CONFIG_HID_SHIELD_REMOTE)	+= hid-atv-jarvis.o
+obj-$(CONFIG_HID_SHIELD_REMOTE)	+= sbcdec.o
+obj-$(CONFIG_HID_ANDROIDTV_REMOTE)	+= hid-atv-remote.o
+obj-$(CONFIG_HID_ANDROIDTV_REMOTE)	+= sbcdec.o
+>>>>>>> update/master
 
 obj-$(CONFIG_USB_HID)		+= usbhid/
 obj-$(CONFIG_USB_MOUSE)		+= usbhid/

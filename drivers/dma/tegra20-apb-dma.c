@@ -1,7 +1,7 @@
 /*
  * DMA driver for Nvidia's Tegra20 APB DMA controller.
  *
- * Copyright (c) 2012-13, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2012-2014, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -29,13 +29,14 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/of_dma.h>
 #include <linux/platform_device.h>
 #include <linux/pm.h>
 #include <linux/pm_runtime.h>
 #include <linux/slab.h>
 #include <linux/clk/tegra.h>
+#include <linux/tegra_pm_domains.h>
 
-#include <mach/pm_domains.h>
 #include "dmaengine.h"
 
 #define TEGRA_APBDMA_GENERAL			0x0
@@ -175,6 +176,7 @@ struct tegra_dma_desc {
 	struct dma_async_tx_descriptor	txd;
 	int				bytes_requested;
 	int				bytes_transferred;
+	u32				dma_position;
 	enum dma_status			dma_status;
 	struct list_head		node;
 	struct list_head		tx_list;
@@ -213,6 +215,7 @@ struct tegra_dma_channel {
 	void			*callback_param;
 
 	/* Channel-slave specific configuration */
+	unsigned int slave_id;
 	struct dma_slave_config dma_sconfig;
 	struct tegra_dma_channel_regs	channel_reg;
 };
@@ -353,6 +356,8 @@ static int tegra_dma_slave_config(struct dma_chan *dc,
 	}
 
 	memcpy(&tdc->dma_sconfig, sconfig, sizeof(*sconfig));
+	if (!tdc->slave_id)
+		tdc->slave_id = sconfig->slave_id;
 	tdc->config_init = true;
 	return 0;
 }
@@ -590,7 +595,10 @@ static void handle_once_dma_done(struct tegra_dma_channel *tdc,
 	tdc->busy = false;
 	sgreq = list_first_entry(&tdc->pending_sg_req, typeof(*sgreq), node);
 	dma_desc = sgreq->dma_desc;
-	dma_desc->bytes_transferred += sgreq->req_len;
+	dma_desc->bytes_transferred = (dma_desc->bytes_transferred +
+					sgreq->req_len) %
+					dma_desc->bytes_requested;
+	dma_desc->dma_position = dma_desc->bytes_transferred;
 
 	list_del(&sgreq->node);
 	if (sgreq->last_sg) {
@@ -625,7 +633,10 @@ static void handle_cont_sngl_cycle_dma_done(struct tegra_dma_channel *tdc,
 
 	sgreq = list_first_entry(&tdc->pending_sg_req, typeof(*sgreq), node);
 	dma_desc = sgreq->dma_desc;
-	dma_desc->bytes_transferred += sgreq->req_len;
+	dma_desc->bytes_transferred = (dma_desc->bytes_transferred +
+					sgreq->req_len) %
+					dma_desc->bytes_requested;
+	dma_desc->dma_position = dma_desc->bytes_transferred;
 
 	/* Callback need to be call */
 	if (!dma_desc->cb_count)
@@ -757,10 +768,8 @@ static void tegra_dma_terminate_all(struct dma_chan *dc)
 	bool was_busy;
 
 	spin_lock_irqsave(&tdc->lock, flags);
-	if (list_empty(&tdc->pending_sg_req)) {
-		spin_unlock_irqrestore(&tdc->lock, flags);
-		return;
-	}
+	if (list_empty(&tdc->pending_sg_req))
+		goto empty_cblist;
 
 	if (!tdc->busy)
 		goto skip_dma_stop;
@@ -787,8 +796,11 @@ static void tegra_dma_terminate_all(struct dma_chan *dc)
 					typeof(*sgreq), node);
 		if (!tdc->tdma->chip_data->support_separate_wcount_reg)
 			wcount = status;
-		sgreq->dma_desc->bytes_transferred +=
-				get_current_xferred_count(tdc, sgreq, wcount);
+		sgreq->dma_desc->bytes_transferred =
+				(sgreq->dma_desc->bytes_transferred +
+				get_current_xferred_count(tdc, sgreq, wcount)) %
+				sgreq->dma_desc->bytes_requested;
+		sgreq->dma_desc->dma_position = sgreq->dma_desc->bytes_transferred;
 	}
 	tegra_dma_resume(tdc);
 	clk_disable(tdc->tdma->dma_clk);
@@ -797,6 +809,7 @@ static void tegra_dma_terminate_all(struct dma_chan *dc)
 skip_dma_stop:
 	tegra_dma_abort_all(tdc);
 
+empty_cblist:
 	while (!list_empty(&tdc->cb_desc)) {
 		dma_desc  = list_first_entry(&tdc->cb_desc,
 					typeof(*dma_desc), cb_node);
@@ -828,8 +841,7 @@ static enum dma_status tegra_dma_tx_status(struct dma_chan *dc,
 	list_for_each_entry(dma_desc, &tdc->free_dma_desc, node) {
 		if (dma_desc->txd.cookie == cookie) {
 			residual =  dma_desc->bytes_requested -
-					(dma_desc->bytes_transferred %
-						dma_desc->bytes_requested);
+					dma_desc->dma_position;
 			dma_set_residue(txstate, residual);
 			ret = dma_desc->dma_status;
 			spin_unlock_irqrestore(&tdc->lock, flags);
@@ -841,9 +853,19 @@ static enum dma_status tegra_dma_tx_status(struct dma_chan *dc,
 	list_for_each_entry(sg_req, &tdc->pending_sg_req, node) {
 		dma_desc = sg_req->dma_desc;
 		if (dma_desc->txd.cookie == cookie) {
+			if (tdc->tdma->chip_data->support_separate_wcount_reg) {
+				u32 wcount = tdc_read(tdc,
+					TEGRA_APBDMA_CHAN_WORD_TRANSFER);
+				u32 dma_pos = get_current_xferred_count(tdc,
+								sg_req, wcount);
+				dma_pos += dma_desc->bytes_transferred;
+
+				/* Ensure position does not move backwards */
+				if (dma_pos > dma_desc->dma_position)
+					dma_desc->dma_position = dma_pos;
+			}
 			residual =  dma_desc->bytes_requested -
-					(dma_desc->bytes_transferred %
-						dma_desc->bytes_requested);
+					dma_desc->dma_position;
 			dma_set_residue(txstate, residual);
 			ret = dma_desc->dma_status;
 			spin_unlock_irqrestore(&tdc->lock, flags);
@@ -992,7 +1014,7 @@ static struct dma_async_tx_descriptor *tegra_dma_prep_slave_sg(
 	ahb_seq |= TEGRA_APBDMA_AHBSEQ_BUS_WIDTH_32;
 
 	csr |= TEGRA_APBDMA_CSR_ONCE | TEGRA_APBDMA_CSR_FLOW;
-	csr |= tdc->dma_sconfig.slave_id << TEGRA_APBDMA_CSR_REQ_SEL_SHIFT;
+	csr |= tdc->slave_id << TEGRA_APBDMA_CSR_REQ_SEL_SHIFT;
 	if (flags & DMA_PREP_INTERRUPT)
 		csr |= TEGRA_APBDMA_CSR_IE_EOC;
 
@@ -1008,6 +1030,7 @@ static struct dma_async_tx_descriptor *tegra_dma_prep_slave_sg(
 	dma_desc->cb_count = 0;
 	dma_desc->bytes_requested = 0;
 	dma_desc->bytes_transferred = 0;
+	dma_desc->dma_position = 0;
 	dma_desc->dma_status = DMA_IN_PROGRESS;
 
 	/* Make transfer requests */
@@ -1075,7 +1098,7 @@ static struct dma_async_tx_descriptor *tegra_dma_prep_slave_sg(
 	return &dma_desc->txd;
 }
 
-struct dma_async_tx_descriptor *tegra_dma_prep_dma_cyclic(
+static struct dma_async_tx_descriptor *tegra_dma_prep_dma_cyclic(
 	struct dma_chan *dc, dma_addr_t buf_addr, size_t buf_len,
 	size_t period_len, enum dma_transfer_direction direction,
 	unsigned long flags, void *context)
@@ -1142,7 +1165,7 @@ struct dma_async_tx_descriptor *tegra_dma_prep_dma_cyclic(
 	csr |= TEGRA_APBDMA_CSR_FLOW;
 	if (flags & DMA_PREP_INTERRUPT)
 		csr |= TEGRA_APBDMA_CSR_IE_EOC;
-	csr |= tdc->dma_sconfig.slave_id << TEGRA_APBDMA_CSR_REQ_SEL_SHIFT;
+	csr |= tdc->slave_id << TEGRA_APBDMA_CSR_REQ_SEL_SHIFT;
 
 	apb_seq |= TEGRA_APBDMA_APBSEQ_WRAP_WORD_1;
 
@@ -1261,6 +1284,24 @@ static void tegra_dma_free_chan_resources(struct dma_chan *dc)
 		list_del(&sg_req->node);
 		kfree(sg_req);
 	}
+	tdc->slave_id = 0;
+}
+
+static struct dma_chan *tegra_dma_of_xlate(struct of_phandle_args *dma_spec,
+					   struct of_dma *ofdma)
+{
+	struct tegra_dma *tdma = ofdma->of_dma_data;
+	struct dma_chan *chan;
+	struct tegra_dma_channel *tdc;
+
+	chan = dma_get_any_slave_channel(&tdma->dma_dev);
+	if (!chan)
+		return NULL;
+
+	tdc = to_tegra_dma_chan(chan);
+	tdc->slave_id = dma_spec->args[0];
+
+	return chan;
 }
 
 /* Tegra20 specific DMA controller information */
@@ -1362,6 +1403,9 @@ static int tegra_dma_probe(struct platform_device *pdev)
 	int ret;
 	int i;
 	const struct tegra_dma_chip_data *cdata = NULL;
+	struct tegra_dma_chip_data *chip_data = NULL;
+	int start_chan_idx;
+	int nr_chans;
 
 	if (pdev->dev.of_node) {
 		const struct of_device_id *match;
@@ -1372,6 +1416,29 @@ static int tegra_dma_probe(struct platform_device *pdev)
 			return -ENODEV;
 		}
 		cdata = match->data;
+
+		ret = of_property_read_u32(pdev->dev.of_node, "dma-channels",
+							&nr_chans);
+		if (!ret) {
+			/* Allocate chip data and update number of channels */
+			chip_data =
+				devm_kzalloc(&pdev->dev,
+					sizeof(struct tegra_dma_chip_data),
+								GFP_KERNEL);
+			if(!chip_data) {
+				dev_err(&pdev->dev, "Error: memory allocation failed\n");
+				return -ENOMEM;
+			}
+			memcpy(chip_data, cdata,
+				sizeof(struct tegra_dma_chip_data));
+			chip_data->nr_channels = nr_chans;
+			cdata = chip_data;
+		}
+		ret = of_property_read_u32(pdev->dev.of_node,
+				"nvidia,start-dma-channel-index",
+						&start_chan_idx);
+		if (ret)
+			start_chan_idx = 0;
 	} else {
 		/* If no device tree then fallback to tegra20 */
 		cdata = (struct tegra_dma_chip_data *)pdev->id_entry->driver_data;
@@ -1395,6 +1462,7 @@ static int tegra_dma_probe(struct platform_device *pdev)
 	}
 
 	tdma->base_addr = devm_ioremap_resource(&pdev->dev, res);
+
 	if (IS_ERR(tdma->base_addr))
 		return PTR_ERR(tdma->base_addr);
 
@@ -1443,9 +1511,10 @@ static int tegra_dma_probe(struct platform_device *pdev)
 		struct tegra_dma_channel *tdc = &tdma->channels[i];
 
 		tdc->chan_base_offset = TEGRA_APBDMA_CHANNEL_BASE_ADD_OFFSET +
+				start_chan_idx * cdata->channel_reg_size +
 					i * cdata->channel_reg_size;
-
-		res = platform_get_resource(pdev, IORESOURCE_IRQ, i);
+		res = platform_get_resource(pdev, IORESOURCE_IRQ,
+							start_chan_idx + i);
 		if (!res) {
 			ret = -EINVAL;
 			dev_err(&pdev->dev, "No irq resource for chan %d\n", i);
@@ -1501,10 +1570,20 @@ static int tegra_dma_probe(struct platform_device *pdev)
 		goto err_irq;
 	}
 
+	ret = of_dma_controller_register(pdev->dev.of_node,
+					 tegra_dma_of_xlate, tdma);
+	if (ret < 0) {
+		dev_err(&pdev->dev,
+			"Tegra20 APB DMA OF registration failed %d\n", ret);
+		goto err_unregister_dma_dev;
+	}
+
 	dev_info(&pdev->dev, "Tegra20 APB DMA driver register %d channels\n",
 			cdata->nr_channels);
 	return 0;
 
+err_unregister_dma_dev:
+	dma_async_device_unregister(&tdma->dma_dev);
 err_irq:
 	while (--i >= 0) {
 		struct tegra_dma_channel *tdc = &tdma->channels[i];

@@ -3,7 +3,7 @@
  *
  * Tegra Graphics Host Driver Entrypoint
  *
- * Copyright (c) 2010-2014, NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2010-2017, NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -31,6 +31,8 @@
 #include <linux/of_device.h>
 #include <linux/of_platform.h>
 #include <linux/tegra-soc.h>
+#include <linux/tegra_pm_domains.h>
+#include <linux/vmalloc.h>
 
 #include "dev.h"
 #include <trace/events/nvhost.h>
@@ -38,13 +40,12 @@
 #include <linux/nvhost.h>
 #include <linux/nvhost_ioctl.h>
 
-#include <mach/pm_domains.h>
-
 #include "debug.h"
 #include "bus_client.h"
 #include "nvhost_acm.h"
 #include "nvhost_channel.h"
 #include "nvhost_job.h"
+#include "vhost/vhost.h"
 
 #ifdef CONFIG_TEGRA_GRHOST_SYNC
 #include "nvhost_sync.h"
@@ -52,18 +53,22 @@
 
 #include "nvhost_scale.h"
 #include "chip_support.h"
-#include "t114/t114.h"
-#include "t148/t148.h"
 #include "t124/t124.h"
+#include "t210/t210.h"
+
+#ifdef CONFIG_ARCH_TEGRA_18x_SOC
+#include "t186/t186.h"
+#endif
 
 #define DRIVER_NAME		"host1x"
 
 static const char *num_syncpts_name = "num_pts";
 static const char *num_mutexes_name = "num_mlocks";
-static const char *num_waitbases_name = "num_bases";
 static const char *gather_filter_enabled_name = "gather_filter_enabled";
-
-struct nvhost_master *nvhost;
+static const char *alloc_syncpts_per_apps_name = "alloc_syncpts_per_apps";
+static const char *alloc_chs_per_submits_name = "alloc_chs_per_submits";
+static const char *syncpts_pts_base_name = "pts_base";
+static const char *syncpts_pts_limit_name = "pts_limit";
 
 struct nvhost_ctrl_userctx {
 	struct nvhost_master *dev;
@@ -73,7 +78,8 @@ struct nvhost_ctrl_userctx {
 struct nvhost_capability_node {
 	struct kobj_attribute attr;
 	struct nvhost_master *host;
-	int (*func)(struct nvhost_syncpt *sp);
+	int (*read_func)(struct nvhost_syncpt *sp);
+	int (*store_func)(struct nvhost_syncpt *sp, const char *buf);
 };
 
 static int nvhost_ctrlrelease(struct inode *inode, struct file *filp)
@@ -123,7 +129,7 @@ static int nvhost_ctrlopen(struct inode *inode, struct file *filp)
 static int nvhost_ioctl_ctrl_syncpt_read(struct nvhost_ctrl_userctx *ctx,
 	struct nvhost_ctrl_syncpt_read_args *args)
 {
-	if (args->id >= nvhost_syncpt_nb_pts(&ctx->dev->syncpt))
+	if (!nvhost_syncpt_is_valid_hw_pt(&ctx->dev->syncpt, args->id))
 		return -EINVAL;
 	args->value = nvhost_syncpt_read(&ctx->dev->syncpt, args->id);
 	trace_nvhost_ioctl_ctrl_syncpt_read(args->id, args->value);
@@ -133,7 +139,7 @@ static int nvhost_ioctl_ctrl_syncpt_read(struct nvhost_ctrl_userctx *ctx,
 static int nvhost_ioctl_ctrl_syncpt_incr(struct nvhost_ctrl_userctx *ctx,
 	struct nvhost_ctrl_syncpt_incr_args *args)
 {
-	if (args->id >= nvhost_syncpt_nb_pts(&ctx->dev->syncpt))
+	if (!nvhost_syncpt_is_valid_pt(&ctx->dev->syncpt, args->id))
 		return -EINVAL;
 	trace_nvhost_ioctl_ctrl_syncpt_incr(args->id);
 	nvhost_syncpt_incr(&ctx->dev->syncpt, args->id);
@@ -145,7 +151,7 @@ static int nvhost_ioctl_ctrl_syncpt_waitex(struct nvhost_ctrl_userctx *ctx,
 {
 	u32 timeout;
 	int err;
-	if (args->id >= nvhost_syncpt_nb_pts(&ctx->dev->syncpt))
+	if (!nvhost_syncpt_is_valid_hw_pt(&ctx->dev->syncpt, args->id))
 		return -EINVAL;
 	if (args->timeout == NVHOST_NO_TIMEOUT)
 		/* FIXME: MAX_SCHEDULE_TIMEOUT is ulong which can be bigger
@@ -170,7 +176,7 @@ static int nvhost_ioctl_ctrl_syncpt_waitmex(struct nvhost_ctrl_userctx *ctx,
 	ulong timeout;
 	int err;
 	struct timespec ts;
-	if (args->id >= nvhost_syncpt_nb_pts(&ctx->dev->syncpt))
+	if (!nvhost_syncpt_is_valid_hw_pt(&ctx->dev->syncpt, args->id))
 		return -EINVAL;
 	if (args->timeout == NVHOST_NO_TIMEOUT)
 		timeout = MAX_SCHEDULE_TIMEOUT;
@@ -209,26 +215,26 @@ static int nvhost_ioctl_ctrl_sync_fence_create(struct nvhost_ctrl_userctx *ctx,
 		name[0] = '\0';
 	}
 
-	pts = kmalloc(sizeof(*pts) * args->num_pts, GFP_KERNEL);
+	pts = kmalloc_array(args->num_pts, sizeof(*pts), GFP_KERNEL);
 	if (!pts)
 		return -ENOMEM;
 
-
+	/* Multiplication overflow would have errored in kmalloc_array */
 	if (copy_from_user(pts, args_pts, sizeof(*pts) * args->num_pts)) {
 		err = -EFAULT;
 		goto out;
 	}
 
 	for (i = 0; i < args->num_pts; i++) {
-		if (pts[i].id >= nvhost_syncpt_nb_pts(&ctx->dev->syncpt) &&
-		    pts[i].id != NVSYNCPT_INVALID) {
+		if (!nvhost_syncpt_is_valid_hw_pt(&ctx->dev->syncpt,
+					pts[i].id)) {
 			err = -EINVAL;
 			goto out;
 		}
 	}
 
-	err = nvhost_sync_create_fence(&ctx->dev->syncpt, pts, args->num_pts,
-				       name, &args->fence_fd);
+	err = nvhost_sync_create_fence_fd(ctx->dev->dev, pts, args->num_pts,
+					  name, &args->fence_fd);
 out:
 	kfree(pts);
 	return err;
@@ -273,7 +279,7 @@ static int nvhost_ioctl_ctrl_module_mutex(struct nvhost_ctrl_userctx *ctx,
 	trace_nvhost_ioctl_ctrl_module_mutex(args->lock, args->id);
 	if (args->lock && !ctx->mod_locks[args->id]) {
 		if (args->id == 0)
-			nvhost_module_busy(ctx->dev->dev);
+			err = nvhost_module_busy(ctx->dev->dev);
 		else
 			err = nvhost_mutex_try_lock(&ctx->dev->syncpt,
 					args->id);
@@ -293,80 +299,89 @@ static int nvhost_ioctl_ctrl_module_regrdwr(struct nvhost_ctrl_userctx *ctx,
 	struct nvhost_ctrl_module_regrdwr_args *args)
 {
 	u32 num_offsets = args->num_offsets;
-	u32 __user *offsets = (u32 *)(uintptr_t)args->offsets;
-	u32 __user *values = (u32 *)(uintptr_t)args->values;
+	u32 __user *offsets = (u32 __user *)(uintptr_t)args->offsets;
+	u32 __user *values = (u32 __user *)(uintptr_t)args->values;
 	u32 *vals;
-	u32 *p1;
-	int remaining;
+	u32 count;
 	int err;
 
 	struct platform_device *ndev;
 	trace_nvhost_ioctl_ctrl_module_regrdwr(args->id,
 			args->num_offsets, args->write);
 
-	/* Check that there is something to read and that block size is
-	 * u32 aligned */
-	if (num_offsets == 0 || args->block_size & 3)
+	/* Check that there is something to read */
+	if (num_offsets == 0)
 		return -EINVAL;
 
 	ndev = nvhost_device_list_match_by_id(args->id);
 	if (!ndev)
 		return -ENODEV;
 
-	remaining = args->block_size >> 2;
+	err = validate_max_size(ndev, args->block_size);
+	if (err)
+		return err;
 
-	vals = kmalloc(num_offsets * args->block_size,
-				GFP_KERNEL);
-	if (!vals)
-		return -ENOMEM;
-	p1 = vals;
+	count = args->block_size >> 2;
+
+	if (nvhost_dev_is_virtual(ndev))
+		return vhost_rdwr_module_regs(ndev, num_offsets,
+				args->block_size, offsets, values, args->write);
+
+	vals = kmalloc(args->block_size, GFP_KERNEL);
+	if (!vals) {
+		vals = vmalloc(args->block_size);
+		if (!vals)
+			return -ENOMEM;
+	}
 
 	if (args->write) {
-		if (copy_from_user((char *)vals, (char *)values,
-				num_offsets * args->block_size)) {
-			kfree(vals);
-			return -EFAULT;
-		}
 		while (num_offsets--) {
 			u32 offs;
-			if (get_user(offs, offsets)) {
-				kfree(vals);
+
+			if (copy_from_user((char *)vals,
+					(char __user *)values,
+					args->block_size)) {
+				kvfree(vals);
 				return -EFAULT;
 			}
-			offsets++;
+			if (get_user(offs, offsets)) {
+				kvfree(vals);
+				return -EFAULT;
+			}
 			err = nvhost_write_module_regs(ndev,
-					offs, remaining, p1);
+					offs, count, vals);
 			if (err) {
-				kfree(vals);
+				kvfree(vals);
 				return err;
 			}
-			p1 += remaining;
+			offsets++;
+			values += count;
 		}
-		kfree(vals);
 	} else {
 		while (num_offsets--) {
 			u32 offs;
 			if (get_user(offs, offsets)) {
-				kfree(vals);
+				kvfree(vals);
+				return -EFAULT;
+			}
+			err = nvhost_read_module_regs(ndev,
+					offs, count, vals);
+			if (err) {
+				kvfree(vals);
+				return err;
+			}
+			if (copy_to_user((void __user *)values,
+					(void const *)vals,
+					args->block_size)) {
+				kvfree(vals);
 				return -EFAULT;
 			}
 			offsets++;
-			err = nvhost_read_module_regs(ndev,
-					offs, remaining, p1);
-			if (err) {
-				kfree(vals);
-				return err;
-			}
-			p1 += remaining;
+			values += count;
 		}
-
-		if (copy_to_user((char *)values, (char *)vals,
-				args->num_offsets * args->block_size)) {
-			kfree(vals);
-			return -EFAULT;
-		}
-		kfree(vals);
 	}
+
+	kvfree(vals);
 	return 0;
 }
 
@@ -380,10 +395,33 @@ static int nvhost_ioctl_ctrl_get_version(struct nvhost_ctrl_userctx *ctx,
 static int nvhost_ioctl_ctrl_syncpt_read_max(struct nvhost_ctrl_userctx *ctx,
 	struct nvhost_ctrl_syncpt_read_args *args)
 {
-	if (args->id >= nvhost_syncpt_nb_pts(&ctx->dev->syncpt))
+	if (!nvhost_syncpt_is_valid_hw_pt(&ctx->dev->syncpt, args->id))
 		return -EINVAL;
 	args->value = nvhost_syncpt_read_max(&ctx->dev->syncpt, args->id);
 	return 0;
+}
+
+static int nvhost_ioctl_ctrl_get_characteristics(struct nvhost_ctrl_userctx *ctx,
+	struct nvhost_ctrl_get_characteristics *args)
+{
+	struct nvhost_characteristics *nvhost_char = &ctx->dev->nvhost_char;
+	int err = 0;
+
+	if (args->nvhost_characteristics_buf_size > 0) {
+		size_t write_size = sizeof(*nvhost_char);
+
+		if (write_size > args->nvhost_characteristics_buf_size)
+			write_size = args->nvhost_characteristics_buf_size;
+
+		err = copy_to_user((void __user *)(uintptr_t)
+			args->nvhost_characteristics_buf_addr,
+			nvhost_char, write_size);
+	}
+
+	if (err == 0)
+		args->nvhost_characteristics_buf_size = sizeof(*nvhost_char);
+
+	return err;
 }
 
 static long nvhost_ctrlctl(struct file *filp,
@@ -464,6 +502,9 @@ static long nvhost_ctrlctl(struct file *filp,
 	case NVHOST_IOCTL_CTRL_SYNCPT_WAITMEX:
 		err = nvhost_ioctl_ctrl_syncpt_waitmex(priv, (void *)buf);
 		break;
+	case NVHOST_IOCTL_CTRL_GET_CHARACTERISTICS:
+		err = nvhost_ioctl_ctrl_get_characteristics(priv, (void *)buf);
+		break;
 	default:
 		err = -ENOTTY;
 		break;
@@ -485,7 +526,6 @@ static const struct file_operations nvhost_ctrlops = {
 #endif
 };
 
-#ifdef CONFIG_PM
 static int power_on_host(struct platform_device *dev)
 {
 	struct nvhost_master *host = nvhost_get_private_data(dev);
@@ -498,18 +538,20 @@ static int power_off_host(struct platform_device *dev)
 {
 	struct nvhost_master *host = nvhost_get_private_data(dev);
 
+	nvhost_channel_suspend(host);
 	nvhost_syncpt_save(&host->syncpt);
 	return 0;
 }
 
-static void clock_on_host(struct platform_device *dev)
+#ifdef CONFIG_PM
+static void enable_irq_host(struct platform_device *dev)
 {
 	struct nvhost_device_data *pdata = platform_get_drvdata(dev);
 	struct nvhost_master *host = nvhost_get_private_data(dev);
 	nvhost_intr_start(&host->intr, clk_get_rate(pdata->clk[0]));
 }
 
-static int clock_off_host(struct platform_device *dev)
+static int disable_irq_host(struct platform_device *dev)
 {
 	struct nvhost_master *host = nvhost_get_private_data(dev);
 	nvhost_intr_stop(&host->intr);
@@ -517,9 +559,25 @@ static int clock_off_host(struct platform_device *dev)
 }
 #endif
 
-static int nvhost_gather_filter_enabled(struct nvhost_syncpt *sp)
+int nvhost_gather_filter_enabled(struct nvhost_syncpt *sp)
 {
-	return 0;
+	/*
+	 * Keep gather filter always enabled
+	 * We still need this API to inform this to user space
+	 */
+	return 1;
+}
+
+static int alloc_syncpts_per_apps(struct nvhost_syncpt *sp)
+{
+	struct nvhost_master *host = syncpt_to_dev(sp);
+	return host->info.syncpt_policy == SYNCPT_PER_CHANNEL_INSTANCE;
+}
+
+static int alloc_chs_per_submits(struct nvhost_syncpt *sp)
+{
+	struct nvhost_master *host = syncpt_to_dev(sp);
+	return host->info.channel_policy == MAP_CHANNEL_ON_SUBMIT;
 }
 
 static ssize_t nvhost_syncpt_capability_show(struct kobject *kobj,
@@ -529,28 +587,48 @@ static ssize_t nvhost_syncpt_capability_show(struct kobject *kobj,
 		container_of(attr, struct nvhost_capability_node, attr);
 
 	return snprintf(buf, PAGE_SIZE, "%u\n",
-			node->func(&node->host->syncpt));
+			node->read_func(&node->host->syncpt));
+}
+
+static ssize_t nvhost_syncpt_capability_store(struct kobject *kobj,
+		struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	struct nvhost_capability_node *node =
+		container_of(attr, struct nvhost_capability_node, attr);
+
+	node->store_func(&node->host->syncpt, buf);
+	return count;
 }
 
 static inline int nvhost_set_sysfs_capability_node(
 				struct nvhost_master *host, const char *name,
 				struct nvhost_capability_node *node,
-				int (*func)(struct nvhost_syncpt *sp))
+				int (*read_func)(struct nvhost_syncpt *sp),
+				int (*store_func)(struct nvhost_syncpt *sp,
+					const char *buf))
 {
 	node->attr.attr.name = name;
 	node->attr.attr.mode = S_IRUGO;
 	node->attr.show = nvhost_syncpt_capability_show;
-	node->func = func;
+	node->read_func = read_func;
+	if (store_func) {
+		node->attr.store = nvhost_syncpt_capability_store;
+		node->store_func = store_func;
+		node->attr.attr.mode = (S_IRWXU|S_IRGRP|S_IROTH);
+	}
 	node->host = host;
+	sysfs_attr_init(&node->attr.attr);
 
 	return sysfs_create_file(host->caps_kobj, &node->attr.attr);
 }
 
 static int nvhost_user_init(struct nvhost_master *host)
 {
-	int err, devno;
+	dev_t devno;
+	int err;
 
-	host->nvhost_class = class_create(THIS_MODULE, IFACE_NAME);
+	host->nvhost_class = class_create(THIS_MODULE,
+					dev_name(&host->dev->dev));
 	if (IS_ERR(host->nvhost_class)) {
 		err = PTR_ERR(host->nvhost_class);
 		dev_err(&host->dev->dev, "failed to create class\n");
@@ -577,7 +655,7 @@ static int nvhost_user_init(struct nvhost_master *host)
 	}
 
 	host->caps_nodes = devm_kzalloc(&host->dev->dev,
-			sizeof(struct nvhost_capability_node) * 4, GFP_KERNEL);
+			sizeof(struct nvhost_capability_node) * 7, GFP_KERNEL);
 	if (!host->caps_nodes) {
 		err = -ENOMEM;
 		goto fail;
@@ -591,26 +669,47 @@ static int nvhost_user_init(struct nvhost_master *host)
 	}
 
 	if (nvhost_set_sysfs_capability_node(host, num_syncpts_name,
-		host->caps_nodes, &nvhost_syncpt_nb_pts)) {
-		err = -EIO;
-		goto fail;
-	}
-
-	if (nvhost_set_sysfs_capability_node(host, num_waitbases_name,
-		host->caps_nodes + 1, &nvhost_syncpt_nb_bases)) {
+		host->caps_nodes, &nvhost_syncpt_nb_pts,
+		&nvhost_nb_syncpts_store)) {
 		err = -EIO;
 		goto fail;
 	}
 
 	if (nvhost_set_sysfs_capability_node(host, num_mutexes_name,
-		host->caps_nodes + 2, &nvhost_syncpt_nb_mlocks)) {
+		host->caps_nodes + 1, &nvhost_syncpt_nb_mlocks, NULL)) {
 		err = -EIO;
 		goto fail;
 	}
 
 	if (nvhost_set_sysfs_capability_node(host,
-		gather_filter_enabled_name, host->caps_nodes + 3,
-		nvhost_gather_filter_enabled)) {
+		gather_filter_enabled_name, host->caps_nodes + 2,
+		nvhost_gather_filter_enabled, NULL)) {
+		err = -EIO;
+		goto fail;
+	}
+
+	if (nvhost_set_sysfs_capability_node(host,
+		alloc_chs_per_submits_name, host->caps_nodes + 3,
+		alloc_chs_per_submits, NULL)) {
+		err = -EIO;
+		goto fail;
+	}
+
+	if (nvhost_set_sysfs_capability_node(host,
+		alloc_syncpts_per_apps_name, host->caps_nodes + 4,
+		alloc_syncpts_per_apps, NULL)) {
+		err = -EIO;
+		goto fail;
+	}
+
+	if (nvhost_set_sysfs_capability_node(host, syncpts_pts_limit_name,
+		host->caps_nodes + 5, &nvhost_syncpt_pts_limit, NULL)) {
+		err = -EIO;
+		goto fail;
+	}
+
+	if (nvhost_set_sysfs_capability_node(host, syncpts_pts_base_name,
+		host->caps_nodes + 6, &nvhost_syncpt_pts_base, NULL)) {
 		err = -EIO;
 		goto fail;
 	}
@@ -620,20 +719,14 @@ fail:
 	return err;
 }
 
-struct nvhost_channel *nvhost_alloc_channel(struct platform_device *dev)
+void nvhost_set_chanops(struct nvhost_channel *ch)
 {
-	return host_device_op().alloc_nvhost_channel(dev);
+	host_device_op().set_nvhost_chanops(ch);
 }
-
-void nvhost_free_channel(struct nvhost_channel *ch)
-{
-	host_device_op().free_nvhost_channel(ch);
-}
-
 static void nvhost_free_resources(struct nvhost_master *host)
 {
 	kfree(host->intr.syncpt);
-	host->intr.syncpt = 0;
+	host->intr.syncpt = NULL;
 }
 
 static int nvhost_alloc_resources(struct nvhost_master *host)
@@ -645,7 +738,7 @@ static int nvhost_alloc_resources(struct nvhost_master *host)
 		return err;
 
 	host->intr.syncpt = kzalloc(sizeof(struct nvhost_intr_syncpt) *
-				    nvhost_syncpt_nb_pts(&host->syncpt),
+				    nvhost_syncpt_nb_hw_pts(&host->syncpt),
 				    GFP_KERNEL);
 
 	if (!host->intr.syncpt) {
@@ -657,43 +750,26 @@ static int nvhost_alloc_resources(struct nvhost_master *host)
 }
 
 static struct of_device_id tegra_host1x_of_match[] = {
-#ifdef TEGRA_11X_OR_HIGHER_CONFIG
-	{ .compatible = "nvidia,tegra114-host1x",
-		.data = (struct nvhost_device_data *)&t11_host1x_info },
-#endif
-#ifdef TEGRA_14X_OR_HIGHER_CONFIG
-	{ .compatible = "nvidia,tegra148-host1x",
-		.data = (struct nvhost_device_data *)&t14_host1x_info },
-#endif
 #ifdef TEGRA_12X_OR_HIGHER_CONFIG
 	{ .compatible = "nvidia,tegra124-host1x",
 		.data = (struct nvhost_device_data *)&t124_host1x_info },
 #endif
+#ifdef TEGRA_21X_OR_HIGHER_CONFIG
+	{ .compatible = "nvidia,tegra210-host1x",
+		.data = (struct nvhost_device_data *)&t21_host1x_info },
+#endif
+#ifdef CONFIG_ARCH_TEGRA_18x_SOC
+	{ .name = "host1x",
+		.compatible = "nvidia,tegra186-host1x",
+		.data = (struct nvhost_device_data *)&t18_host1x_info },
+	{ .name = "host1xb",
+		.compatible = "nvidia,tegra186-host1x",
+		.data = (struct nvhost_device_data *)&t18_host1xb_info },
+	{ .compatible = "nvidia,tegra186-host1x-cl34000094",
+		.data = (struct nvhost_device_data *)&t18_host1x_info },
+#endif
 	{ },
 };
-
-void nvhost_host1x_update_clk(struct platform_device *pdev)
-{
-	struct nvhost_device_data *pdata = NULL;
-	struct nvhost_device_profile *profile;
-
-	/* There are only two chips which need this workaround, so hardcode */
-#ifdef TEGRA_11X_OR_HIGHER_CONFIG
-	if (tegra_get_chipid() == TEGRA_CHIPID_TEGRA11)
-		pdata = &t11_gr3d_info;
-#endif
-#ifdef TEGRA_14X_OR_HIGHER_CONFIG
-	if (tegra_get_chipid() == TEGRA_CHIPID_TEGRA14)
-		pdata = &t14_gr3d_info;
-#endif
-	if (!pdata)
-		return;
-
-	profile = pdata->power_profile;
-
-	if (profile && profile->actmon)
-		actmon_op().update_sample_period(profile->actmon);
-}
 
 int nvhost_host1x_finalize_poweron(struct platform_device *dev)
 {
@@ -704,10 +780,71 @@ int nvhost_host1x_prepare_poweroff(struct platform_device *dev)
 {
 	return power_off_host(dev);
 }
+
+static int of_nvhost_parse_platform_data(struct platform_device *dev,
+					struct nvhost_device_data *pdata)
+{
+	struct device_node *np = dev->dev.of_node;
+	struct nvhost_master *host = nvhost_get_host(dev);
+	u32 value;
+
+	if (!of_property_read_u32(np, "virtual-dev", &value)) {
+		if (value)
+			pdata->virtual_dev = true;
+	}
+
+	if (!of_property_read_u32(np, "nvidia,ch-base", &value))
+		host->info.ch_base = value;
+
+	if (!of_property_read_u32(np, "nvidia,nb-channels", &value))
+		host->info.nb_channels = value;
+
+	host->info.ch_limit = host->info.ch_base + host->info.nb_channels;
+
+	if (!of_property_read_u32(np, "nvidia,nb-hw-pts", &value))
+		host->info.nb_hw_pts = value;
+
+	if (!of_property_read_u32(np, "nvidia,pts-base", &value))
+		host->info.pts_base = value;
+
+	if (!of_property_read_u32(np, "nvidia,nb-pts", &value))
+		host->info.nb_pts = value;
+
+	if (host->info.nb_pts > host->info.nb_hw_pts)
+		return -EINVAL;
+
+	host->info.pts_limit = host->info.pts_base + host->info.nb_pts;
+
+	return 0;
+}
+
+long linsim_cl = 0;
+
+int nvhost_update_characteristics(struct platform_device *dev)
+{
+	struct nvhost_master *host = nvhost_get_host(dev);
+
+	if (nvhost_gather_filter_enabled(&host->syncpt))
+		host->nvhost_char.flags |= NVHOST_CHARACTERISTICS_GFILTER;
+
+	if (host->info.channel_policy == MAP_CHANNEL_ON_SUBMIT)
+		host->nvhost_char.flags |=
+			NVHOST_CHARACTERISTICS_RESOURCE_PER_CHANNEL_INSTANCE;
+
+	host->nvhost_char.flags |= NVHOST_CHARACTERISTICS_SUPPORT_PREFENCES;
+
+	host->nvhost_char.num_mlocks = host->info.nb_mlocks;
+	host->nvhost_char.num_syncpts = host->info.nb_pts;
+	host->nvhost_char.syncpts_base = host->info.pts_base;
+	host->nvhost_char.syncpts_limit = host->info.pts_limit;
+	host->nvhost_char.num_hw_pts = host->info.nb_hw_pts;
+
+	return 0;
+}
+
 static int nvhost_probe(struct platform_device *dev)
 {
 	struct nvhost_master *host;
-	struct resource *regs;
 	int syncpt_irq, generic_irq;
 	int err;
 	struct nvhost_device_data *pdata = NULL;
@@ -716,8 +853,17 @@ static int nvhost_probe(struct platform_device *dev)
 		const struct of_device_id *match;
 
 		match = of_match_device(tegra_host1x_of_match, &dev->dev);
-		if (match)
+		if (match) {
+			char *substr = strstr(match->compatible, "cl");
+
 			pdata = (struct nvhost_device_data *)match->data;
+
+			if (substr) {
+				substr += 2;
+				if (kstrtol(substr, 0, &linsim_cl))
+					WARN(1, "Unable to decode linsim cl\n");
+			}
+		}
 	} else
 		pdata = (struct nvhost_device_data *)dev->dev.platform_data;
 
@@ -727,10 +873,10 @@ static int nvhost_probe(struct platform_device *dev)
 		return -ENODATA;
 	}
 
-	regs = platform_get_resource(dev, IORESOURCE_MEM, 0);
-	if (!regs) {
-		dev_err(&dev->dev, "missing host1x regs\n");
-		return -ENXIO;
+	err = nvhost_check_bondout(pdata->bond_out_id);
+	if (err) {
+		dev_err(&dev->dev, "No HOST1X unit present. err:%d", err);
+		return err;
 	}
 
 	syncpt_irq = platform_get_irq(dev, 0);
@@ -749,10 +895,12 @@ static int nvhost_probe(struct platform_device *dev)
 	if (!host)
 		return -ENOMEM;
 
-	nvhost = host;
-
 	host->dev = dev;
+	INIT_LIST_HEAD(&host->static_mappings_list);
+	INIT_LIST_HEAD(&host->vm_list);
+	mutex_init(&host->vm_mutex);
 	mutex_init(&pdata->lock);
+	mutex_init(&host->priority_lock);
 
 	/* Copy host1x parameters. The private_data gets replaced
 	 * by nvhost_master later */
@@ -767,10 +915,26 @@ static int nvhost_probe(struct platform_device *dev)
 	/* set private host1x device data */
 	nvhost_set_private_data(dev, host);
 
-	host->aperture = devm_request_and_ioremap(&dev->dev, regs);
-	if (!host->aperture) {
-		err = -ENXIO;
-		goto fail;
+	err = of_nvhost_parse_platform_data(dev, pdata);
+	if (err) {
+		dev_err(&dev->dev, "error in parsing DT properties, err:%d",
+			err);
+		return err;
+	}
+
+	if (pdata->virtual_dev) {
+		err = nvhost_virt_init(dev, NVHOST_MODULE_NONE);
+		if (err) {
+			dev_err(&dev->dev, "failed to init virt support\n");
+			goto fail;
+		}
+	} else {
+		err = nvhost_device_get_resources(dev);
+		if (err) {
+			dev_err(&dev->dev, "failed to get resources\n");
+			goto fail;
+		}
+		host->aperture = pdata->aperture[0];
 	}
 
 	err = nvhost_alloc_resources(host);
@@ -791,22 +955,37 @@ static int nvhost_probe(struct platform_device *dev)
 	if (err)
 		goto fail;
 
+	if (of_machine_is_compatible("nvidia,foster-e"))
+		pdata->can_powergate = false;
+
 	err = nvhost_module_init(dev);
 	if (err)
 		goto fail;
 
+	err = nvhost_alloc_channels(host);
+	if (err)
+		goto fail;
+
 #ifdef CONFIG_PM_GENERIC_DOMAINS
+#ifndef CONFIG_PM_GENERIC_DOMAINS_OF
 	pdata->pd.name = "tegra-host1x";
+#endif
 	err = nvhost_module_add_domain(&pdata->pd, dev);
 #endif
 
 	mutex_init(&host->timeout_mutex);
 
+<<<<<<< HEAD
 	nvhost_module_busy(dev);
+=======
+	err = nvhost_module_busy(dev);
+	if (err)
+		goto fail;
+>>>>>>> update/master
 
 	nvhost_syncpt_reset(&host->syncpt);
-	if (tegra_cpu_is_asim())
-		/* for simulation, use a fake clock rate */
+	if (tegra_cpu_is_asim() || pdata->virtual_dev)
+		/* for simulation & virtualization, use a fake clock rate */
 		nvhost_intr_start(&host->intr, 12000000);
 	else
 		nvhost_intr_start(&host->intr, clk_get_rate(pdata->clk[0]));
@@ -818,10 +997,13 @@ static int nvhost_probe(struct platform_device *dev)
 
 	nvhost_module_idle(dev);
 
+	nvhost_update_characteristics(dev);
+
 	dev_info(&dev->dev, "initialized\n");
 	return 0;
 
 fail:
+	nvhost_virt_deinit(dev);
 	nvhost_free_resources(host);
 	kfree(host);
 	return err;
@@ -832,6 +1014,7 @@ static int __exit nvhost_remove(struct platform_device *dev)
 	struct nvhost_master *host = nvhost_get_private_data(dev);
 	nvhost_intr_deinit(&host->intr);
 	nvhost_syncpt_deinit(&host->syncpt);
+	nvhost_virt_deinit(dev);
 	nvhost_free_resources(host);
 #ifdef CONFIG_PM_RUNTIME
 	pm_runtime_put(&dev->dev);
@@ -839,6 +1022,8 @@ static int __exit nvhost_remove(struct platform_device *dev)
 #else
 	nvhost_module_disable_clk(&dev->dev);
 #endif
+	nvhost_channel_list_free(host);
+
 	return 0;
 }
 
@@ -872,8 +1057,8 @@ static int nvhost_suspend(struct device *dev)
 	struct platform_device *pdev = to_platform_device(dev);
 
 	nvhost_module_enable_clk(dev);
+	disable_irq_host(pdev);
 	power_off_host(pdev);
-	clock_off_host(pdev);
 	nvhost_module_disable_clk(dev);
 
 	dev_info(dev, "suspended\n");
@@ -886,8 +1071,8 @@ static int nvhost_resume(struct device *dev)
 	struct platform_device *pdev = to_platform_device(dev);
 
 	nvhost_module_enable_clk(dev);
-	clock_on_host(pdev);
 	power_on_host(pdev);
+	enable_irq_host(pdev);
 	nvhost_module_disable_clk(dev);
 
 	dev_info(dev, "resuming\n");
@@ -918,8 +1103,24 @@ static struct platform_driver platform_driver = {
 	},
 };
 
+static struct of_device_id tegra_host1x_domain_match[] = {
+	{.compatible = "nvidia,tegra210-host1x-pd",
+	 .data = (struct nvhost_device_data *)&t21_host1x_info},
+	{.compatible = "nvidia,tegra132-host1x-pd",
+	.data = (struct nvhost_device_data *)&t124_host1x_info},
+	{.compatible = "nvidia,tegra124-host1x-pd",
+	 .data = (struct nvhost_device_data *)&t124_host1x_info},
+	{},
+};
+
 static int __init nvhost_mod_init(void)
 {
+	int ret;
+
+	ret = nvhost_domain_init(tegra_host1x_domain_match);
+	if (ret)
+		return ret;
+
 	return platform_driver_register(&platform_driver);
 }
 

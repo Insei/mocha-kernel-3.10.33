@@ -1,8 +1,12 @@
 /*
  * Misc useful os-independent macros and functions.
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+>>>>>>> update/master
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -22,7 +26,11 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
+<<<<<<< HEAD
  * $Id: bcmutils.h 457888 2014-02-25 03:34:39Z $
+=======
+ * $Id: bcmutils.h 532530 2015-02-06 06:24:18Z $
+>>>>>>> update/master
  */
 
 #ifndef	_bcmutils_h_
@@ -35,6 +43,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
 
 #ifdef PKTQ_LOG
 #include <wlioctl.h>
@@ -67,6 +76,8 @@ extern const unsigned char bcm_ctype[];
 #define bcm_tolower(c)	(bcm_isupper((c)) ? ((c) + 'a' - 'A') : (c))
 #define bcm_toupper(c)	(bcm_islower((c)) ? ((c) + 'A' - 'a') : (c))
 
+#define CIRCULAR_ARRAY_FULL(rd_idx, wr_idx, max) ((wr_idx + 1)%max == rd_idx)
+
 /* Buffer structure for collecting string-formatted data
 * using bcm_bprintf() API.
 * Use bcm_binit() to initialize before use
@@ -82,6 +93,8 @@ struct bcmstrbuf {
 /* ** driver-only section ** */
 #ifdef BCMDRIVER
 #include <osl.h>
+#include <hnd_pktq.h>
+#include <hnd_pktpool.h>
 
 #define GPIO_PIN_NOTDEFINED 	0x20	/* Pin not defined */
 
@@ -102,6 +115,7 @@ struct bcmstrbuf {
 	} \
 }
 
+<<<<<<< HEAD
 /* osl multi-precedence packet queue */
 #define PKTQ_LEN_MAX            0xFFFF  /* Max uint16 65535 packets */
 #ifndef PKTQ_LEN_DEFAULT
@@ -349,6 +363,8 @@ extern int pktpool_dbg_notify(pktpool_t *pktp);
 extern int pktpool_stats_dump(pktpool_t *pktp, pktpool_stats_t *stats);
 #endif /* BCMDBG_POOL */
 
+=======
+>>>>>>> update/master
 /* forward definition of ether_addr structure used by some function prototypes */
 
 struct ether_addr;
@@ -356,60 +372,75 @@ struct ether_addr;
 extern int ether_isbcast(const void *ea);
 extern int ether_isnulladdr(const void *ea);
 
-/* operations on a specific precedence in packet queue */
+#define BCM_MAC_RXCPL_IDX_BITS			12
+#define BCM_MAX_RXCPL_IDX_INVALID		0
+#define BCM_MAC_RXCPL_IFIDX_BITS		3
+#define BCM_MAC_RXCPL_DOT11_BITS		1
+#define BCM_MAX_RXCPL_IFIDX			((1 << BCM_MAC_RXCPL_IFIDX_BITS) - 1)
+#define BCM_MAC_RXCPL_FLAG_BITS			4
+#define BCM_RXCPL_FLAGS_IN_TRANSIT		0x1
+#define BCM_RXCPL_FLAGS_FIRST_IN_FLUSHLIST	0x2
+#define BCM_RXCPL_FLAGS_RXCPLVALID		0x4
+#define BCM_RXCPL_FLAGS_RSVD			0x8
 
-#define pktq_psetmax(pq, prec, _max)	((pq)->q[prec].max = (_max))
-#define pktq_pmax(pq, prec)		((pq)->q[prec].max)
-#define pktq_plen(pq, prec)		((pq)->q[prec].len)
-#define pktq_pavail(pq, prec)		((pq)->q[prec].max - (pq)->q[prec].len)
-#define pktq_pfull(pq, prec)		((pq)->q[prec].len >= (pq)->q[prec].max)
-#define pktq_pempty(pq, prec)		((pq)->q[prec].len == 0)
+#define BCM_RXCPL_SET_IN_TRANSIT(a)	((a)->rxcpl_id.flags |= BCM_RXCPL_FLAGS_IN_TRANSIT)
+#define BCM_RXCPL_CLR_IN_TRANSIT(a)	((a)->rxcpl_id.flags &= ~BCM_RXCPL_FLAGS_IN_TRANSIT)
+#define BCM_RXCPL_IN_TRANSIT(a)		((a)->rxcpl_id.flags & BCM_RXCPL_FLAGS_IN_TRANSIT)
 
-#define pktq_ppeek(pq, prec)		((pq)->q[prec].head)
-#define pktq_ppeek_tail(pq, prec)	((pq)->q[prec].tail)
+#define BCM_RXCPL_SET_FRST_IN_FLUSH(a)	((a)->rxcpl_id.flags |= BCM_RXCPL_FLAGS_FIRST_IN_FLUSHLIST)
+#define BCM_RXCPL_CLR_FRST_IN_FLUSH(a)	((a)->rxcpl_id.flags &= ~BCM_RXCPL_FLAGS_FIRST_IN_FLUSHLIST)
+#define BCM_RXCPL_FRST_IN_FLUSH(a)	((a)->rxcpl_id.flags & BCM_RXCPL_FLAGS_FIRST_IN_FLUSHLIST)
 
-extern void *pktq_penq(struct pktq *pq, int prec, void *p);
-extern void *pktq_penq_head(struct pktq *pq, int prec, void *p);
-extern void *pktq_pdeq(struct pktq *pq, int prec);
-extern void *pktq_pdeq_prev(struct pktq *pq, int prec, void *prev_p);
-extern void *pktq_pdeq_with_fn(struct pktq *pq, int prec, ifpkt_cb_t fn, int arg);
-extern void *pktq_pdeq_tail(struct pktq *pq, int prec);
-/* Empty the queue at particular precedence level */
-extern void pktq_pflush(osl_t *osh, struct pktq *pq, int prec, bool dir,
-	ifpkt_cb_t fn, int arg);
-/* Remove a specified packet from its queue */
-extern bool pktq_pdel(struct pktq *pq, void *p, int prec);
+#define BCM_RXCPL_SET_VALID_INFO(a)	((a)->rxcpl_id.flags |= BCM_RXCPL_FLAGS_RXCPLVALID)
+#define BCM_RXCPL_CLR_VALID_INFO(a)	((a)->rxcpl_id.flags &= ~BCM_RXCPL_FLAGS_RXCPLVALID)
+#define BCM_RXCPL_VALID_INFO(a) (((a)->rxcpl_id.flags & BCM_RXCPL_FLAGS_RXCPLVALID) ? TRUE : FALSE)
 
-/* operations on a set of precedences in packet queue */
+#define UP_TABLE_MAX	((IPV4_TOS_DSCP_MASK >> IPV4_TOS_DSCP_SHIFT) + 1)	/* 64 max */
 
-extern int pktq_mlen(struct pktq *pq, uint prec_bmp);
-extern void *pktq_mdeq(struct pktq *pq, uint prec_bmp, int *prec_out);
-extern void *pktq_mpeek(struct pktq *pq, uint prec_bmp, int *prec_out);
+struct reorder_rxcpl_id_list {
+	uint16 head;
+	uint16 tail;
+	uint32 cnt;
+};
 
-/* operations on packet queue as a whole */
+typedef struct rxcpl_id {
+	uint32		idx : BCM_MAC_RXCPL_IDX_BITS;
+	uint32		next_idx : BCM_MAC_RXCPL_IDX_BITS;
+	uint32		ifidx : BCM_MAC_RXCPL_IFIDX_BITS;
+	uint32		dot11 : BCM_MAC_RXCPL_DOT11_BITS;
+	uint32		flags : BCM_MAC_RXCPL_FLAG_BITS;
+} rxcpl_idx_id_t;
 
-#define pktq_len(pq)		((int)(pq)->len)
-#define pktq_max(pq)		((int)(pq)->max)
-#define pktq_avail(pq)		((int)((pq)->max - (pq)->len))
-#define pktq_full(pq)		((pq)->len >= (pq)->max)
-#define pktq_empty(pq)		((pq)->len == 0)
+typedef struct rxcpl_data_len {
+	uint32		metadata_len_w : 6;
+	uint32		dataoffset: 10;
+	uint32		datalen : 16;
+} rxcpl_data_len_t;
 
-/* operations for single precedence queues */
-#define pktenq(pq, p)		pktq_penq(((struct pktq *)(void *)pq), 0, (p))
-#define pktenq_head(pq, p)	pktq_penq_head(((struct pktq *)(void *)pq), 0, (p))
-#define pktdeq(pq)		pktq_pdeq(((struct pktq *)(void *)pq), 0)
-#define pktdeq_tail(pq)		pktq_pdeq_tail(((struct pktq *)(void *)pq), 0)
-#define pktqinit(pq, len)	pktq_init(((struct pktq *)(void *)pq), 1, len)
+typedef struct rxcpl_info {
+	rxcpl_idx_id_t		rxcpl_id;
+	uint32		host_pktref;
+	union {
+		rxcpl_data_len_t	rxcpl_len;
+		struct rxcpl_info	*free_next;
+	};
+} rxcpl_info_t;
 
-extern void pktq_init(struct pktq *pq, int num_prec, int max_len);
-extern void pktq_set_max_plen(struct pktq *pq, int prec, int max_len);
+/* rx completion list */
+typedef struct bcm_rxcplid_list {
+	uint32			max;
+	uint32			avail;
+	rxcpl_info_t		*rxcpl_ptr;
+	rxcpl_info_t		*free_list;
+} bcm_rxcplid_list_t;
 
-/* prec_out may be NULL if caller is not interested in return value */
-extern void *pktq_deq(struct pktq *pq, int *prec_out);
-extern void *pktq_deq_tail(struct pktq *pq, int *prec_out);
-extern void *pktq_peek(struct pktq *pq, int *prec_out);
-extern void *pktq_peek_tail(struct pktq *pq, int *prec_out);
-extern void pktq_flush(osl_t *osh, struct pktq *pq, bool dir, ifpkt_cb_t fn, int arg);
+extern bool bcm_alloc_rxcplid_list(osl_t *osh, uint32 max);
+extern rxcpl_info_t * bcm_alloc_rxcplinfo(void);
+extern void bcm_free_rxcplinfo(rxcpl_info_t *ptr);
+extern void bcm_chain_rxcplid(uint16 first,  uint16 next);
+extern rxcpl_info_t *bcm_id2rxcplinfo(uint16 id);
+extern uint16 bcm_rxcplinfo2id(rxcpl_info_t *ptr);
+extern rxcpl_info_t *bcm_rxcpllist_end(rxcpl_info_t *ptr, uint32 *count);
 
 /* externs */
 /* packet */
@@ -445,11 +476,14 @@ extern void *pktoffset(osl_t *osh, void *p,  uint offset);
 #define DSCP_EF		0x2E
 
 extern uint pktsetprio(void *pkt, bool update_vtag);
+extern uint pktsetprio_qms(void *pkt, uint8* up_table, bool update_vtag);
+extern bool pktgetdscp(uint8 *pktdata, uint pktlen, uint8 *dscp);
 
 /* string */
 extern int bcm_atoi(const char *s);
 extern ulong bcm_strtoul(const char *cp, char **endp, uint base);
 extern char *bcmstrstr(const char *haystack, const char *needle);
+extern char *bcmstrnstr(const char *s, uint s_len, const char *substr, uint substr_len);
 extern char *bcmstrcat(char *dest, const char *src);
 extern char *bcmstrncat(char *dest, const char *src, uint size);
 extern ulong wchar2ascii(char *abuf, ushort *wbuf, ushort wbuflen, ulong abuflen);
@@ -485,6 +519,11 @@ extern uint getgpiopin(char *vars, char *pin_name, uint def_pin);
 #define	bcmdumplogent(buf, idx)	-1
 
 #define TSF_TICKS_PER_MS	1000
+<<<<<<< HEAD
+=======
+#define TS_ENTER		0xdeadbeef	/* Timestamp profiling enter */
+#define TS_EXIT			0xbeefcafe	/* Timestamp profiling exit */
+>>>>>>> update/master
 
 #define bcmtslog(tstamp, fmt, a1, a2)
 #define bcmprinttslogs()
@@ -785,6 +824,7 @@ extern bool isclr(const void *array, uint bit);
 #define	isclr(a, i)	((((const uint8 *)a)[(i) / NBBY] & (1 << ((i) % NBBY))) == 0)
 #endif
 #endif /* setbit */
+extern void set_bitrange(void *array, uint start, uint end, uint maxbit);
 
 #define	isbitset(a, i)	(((a) & (1 << (i))) != 0)
 
@@ -819,12 +859,21 @@ static INLINE uint32 getbit##NB(void *ptr, uint32 ix)               \
 	uint32 *addr = (uint32 *)ptr;                                   \
 	uint32 *a = addr + (ix >> RSH);                                 \
 	uint32 pos = (ix & OFF) << LSH;                                 \
+<<<<<<< HEAD
 	return (*a >> pos) & MSK;                                     \
 }
 
 DECLARE_MAP_API(2,  4, 1, 15U, 0x0003) /* setbit2() and getbit2() */
 DECLARE_MAP_API(4,  3, 2,  7U, 0x000F) /* setbit4() and getbit4() */
 
+=======
+	return ((*a >> pos) & MSK);                                     \
+}
+
+DECLARE_MAP_API(2, 4, 1, 15U, 0x0003) /* setbit2() and getbit2() */
+DECLARE_MAP_API(4, 3, 2, 7U, 0x000F) /* setbit4() and getbit4() */
+DECLARE_MAP_API(8, 2, 3, 3U, 0x00FF) /* setbit8() and getbit8() */
+>>>>>>> update/master
 
 /* basic mux operation - can be optimized on several architectures */
 #define MUX(pred, true, false) ((pred) ? (true) : (false))
@@ -893,6 +942,16 @@ typedef struct bcm_bit_desc_ex {
 /* buffer length for ethernet address from bcm_ether_ntoa() */
 #define ETHER_ADDR_STR_LEN	18	/* 18-bytes of Ethernet address buffer length */
 
+static INLINE uint32 /* 32bit word aligned xor-32 */
+bcm_compute_xor32(volatile uint32 *u32, int num_u32)
+{
+	int i;
+	uint32 xor32 = 0;
+	for (i = 0; i < num_u32; i++)
+		xor32 ^= *(u32 + i);
+	return xor32;
+}
+
 /* crypto utility function */
 /* 128-bit xor: *dst = *src1 xor *src2. dst1, src1 and src2 may have any alignment */
 static INLINE void
@@ -932,10 +991,7 @@ extern int bcm_format_field(const bcm_bit_desc_ex_t *bd, uint32 field, char* buf
 extern int bcm_format_flags(const bcm_bit_desc_t *bd, uint32 flags, char* buf, int len);
 #endif
 
-#if defined(DHD_DEBUG) || defined(WLMSG_PRHDRS) || defined(WLMSG_PRPKT) || \
-	defined(WLMSG_ASSOC) || defined(WLMEDIA_PEAKRATE)
 extern int bcm_format_hex(char *str, const void *bytes, int len);
-#endif
 
 extern const char *bcm_crypto_algo_name(uint algo);
 extern char *bcm_chipname(uint chipid, char *buf, uint len);
@@ -952,10 +1008,53 @@ typedef struct bcm_tlv {
 	uint8	data[1];
 } bcm_tlv_t;
 
+<<<<<<< HEAD
 #define BCM_TLV_MAX_DATA_SIZE (255)
 
 #define BCM_TLV_HDR_SIZE (OFFSETOF(bcm_tlv_t, data))
 
+=======
+/* bcm tlv w/ 16 bit id/len */
+typedef struct bcm_xtlv {
+	uint16	id;
+	uint16	len;
+	uint8	data[1];
+} bcm_xtlv_t;
+
+/* descriptor of xtlv data src or dst  */
+typedef struct {
+	uint16	type;
+	uint16	len;
+	void	*ptr; /* ptr to memory location */
+} xtlv_desc_t;
+
+/* xtlv options */
+#define BCM_XTLV_OPTION_NONE	0x0000
+#define BCM_XTLV_OPTION_ALIGN32	0x0001
+
+typedef uint16 bcm_xtlv_opts_t;
+struct bcm_xtlvbuf {
+	bcm_xtlv_opts_t opts;
+	uint16 size;
+	uint8 *head; /* point to head of buffer */
+	uint8 *buf; /* current position of buffer */
+	/* allocated buffer may follow, but not necessarily */
+};
+typedef struct bcm_xtlvbuf bcm_xtlvbuf_t;
+
+#define BCM_TLV_MAX_DATA_SIZE (255)
+#define BCM_XTLV_MAX_DATA_SIZE (65535)
+#define BCM_TLV_HDR_SIZE (OFFSETOF(bcm_tlv_t, data))
+
+#define BCM_XTLV_HDR_SIZE (OFFSETOF(bcm_xtlv_t, data))
+/* LEN only stores the value's length without padding */
+#define BCM_XTLV_LEN(elt) ltoh16_ua(&(elt->len))
+#define BCM_XTLV_ID(elt) ltoh16_ua(&(elt->id))
+/* entire size of the XTLV including header, data, and optional padding */
+#define BCM_XTLV_SIZE(elt, opts) bcm_xtlv_size(elt, opts)
+#define bcm_valid_xtlv(elt, buflen, opts) (elt && ((int)(buflen) >= (int)BCM_XTLV_SIZE(elt, opts)))
+
+>>>>>>> update/master
 /* Check that bcm_tlv_t fits into the given buflen */
 #define bcm_valid_tlv(elt, buflen) (\
 	 ((int)(buflen) >= (int)BCM_TLV_HDR_SIZE) && \
@@ -963,6 +1062,8 @@ typedef struct bcm_tlv {
 
 extern bcm_tlv_t *bcm_next_tlv(bcm_tlv_t *elt, int *buflen);
 extern bcm_tlv_t *bcm_parse_tlvs(void *buf, int buflen, uint key);
+extern bcm_tlv_t *bcm_parse_tlvs_min_bodylen(void *buf, int buflen, uint key, int min_bodylen);
+
 extern bcm_tlv_t *bcm_parse_ordered_tlvs(void *buf, int buflen, uint key);
 
 extern bcm_tlv_t *bcm_find_vendor_ie(void *tlvs, int tlvs_len, const char *voui, uint8 *type,
@@ -975,6 +1076,65 @@ extern uint8 *bcm_write_tlv_safe(int type, const void *data, int datalen, uint8 
 extern uint8 *bcm_copy_tlv(const void *src, uint8 *dst);
 extern uint8 *bcm_copy_tlv_safe(const void *src, uint8 *dst, int dst_maxlen);
 
+<<<<<<< HEAD
+=======
+/* xtlv */
+
+/* return the next xtlv element, and update buffer len (remaining). Buffer length
+ * updated includes padding as specified by options
+ */
+extern bcm_xtlv_t *bcm_next_xtlv(bcm_xtlv_t *elt, int *buflen, bcm_xtlv_opts_t opts);
+
+/* initialize an xtlv buffer. Use options specified for packing/unpacking using
+ * the buffer. Caller is responsible for allocating both buffers.
+ */
+extern int bcm_xtlv_buf_init(bcm_xtlvbuf_t *tlv_buf, uint8 *buf, uint16 len,
+	bcm_xtlv_opts_t opts);
+
+extern uint16 bcm_xtlv_buf_len(struct bcm_xtlvbuf *tbuf);
+extern uint16 bcm_xtlv_buf_rlen(struct bcm_xtlvbuf *tbuf);
+extern uint8 *bcm_xtlv_buf(struct bcm_xtlvbuf *tbuf);
+extern uint8 *bcm_xtlv_head(struct bcm_xtlvbuf *tbuf);
+extern int bcm_xtlv_put_data(bcm_xtlvbuf_t *tbuf, uint16 type, const void *data, uint16 dlen);
+extern int bcm_xtlv_put_8(bcm_xtlvbuf_t *tbuf, uint16 type, const int8 data);
+extern int bcm_xtlv_put_16(bcm_xtlvbuf_t *tbuf, uint16 type, const int16 data);
+extern int bcm_xtlv_put_32(bcm_xtlvbuf_t *tbuf, uint16 type, const int32 data);
+extern int bcm_unpack_xtlv_entry(uint8 **buf, uint16 xpct_type, uint16 xpct_len,
+	void *dst, bcm_xtlv_opts_t opts);
+extern int bcm_pack_xtlv_entry(uint8 **buf, uint16 *buflen, uint16 type, uint16 len,
+	void *src, bcm_xtlv_opts_t opts);
+extern int bcm_xtlv_size(const bcm_xtlv_t *elt, bcm_xtlv_opts_t opts);
+
+/* callback for unpacking xtlv from a buffer into context. */
+typedef int (bcm_xtlv_unpack_cbfn_t)(void *ctx, uint8 *buf, uint16 type, uint16 len);
+
+/* unpack a tlv buffer using buffer, options, and callback */
+extern int bcm_unpack_xtlv_buf(void *ctx, uint8 *buf, uint16 buflen,
+	bcm_xtlv_opts_t opts, bcm_xtlv_unpack_cbfn_t *cbfn);
+
+/* unpack a set of tlvs from the buffer using provided xtlv desc */
+extern int bcm_unpack_xtlv_buf_to_mem(void *buf, int *buflen, xtlv_desc_t *items,
+	bcm_xtlv_opts_t opts);
+
+/* pack a set of tlvs into buffer using provided xtlv desc */
+extern int bcm_pack_xtlv_buf_from_mem(void **buf, uint16 *buflen, xtlv_desc_t *items,
+	bcm_xtlv_opts_t opts);
+
+/* callback to return next tlv id and len to pack, if there is more tlvs to come and
+ * options e.g. alignment
+ */
+typedef bool (*bcm_pack_xtlv_next_info_cbfn_t)(void *ctx, uint16 *tlv_id, uint16 *tlv_len);
+
+/* callback to pack the tlv into length validated buffer */
+typedef void (*bcm_pack_xtlv_pack_next_cbfn_t)(void *ctx,
+	uint16 tlv_id, uint16 tlv_len, uint8* buf);
+
+/* pack a set of tlvs into buffer using get_next to interate */
+int bcm_pack_xtlv_buf(void *ctx, void *tlv_buf, uint16 buflen,
+	bcm_xtlv_opts_t opts, bcm_pack_xtlv_next_info_cbfn_t get_next,
+	bcm_pack_xtlv_pack_next_cbfn_t pack_next, int *outlen);
+
+>>>>>>> update/master
 /* bcmerror */
 extern const char *bcmerrorstr(int bcmerror);
 
@@ -1023,7 +1183,12 @@ extern void bcm_uint64_divide(uint32* r, uint32 a_high, uint32 a_low, uint32 b);
 
 /* Table driven count set bits. */
 static const uint8 /* Table only for use by bcm_cntsetbits */
+<<<<<<< HEAD
 _CSBTBL[256] = {
+=======
+_CSBTBL[256] =
+{
+>>>>>>> update/master
 #	define B2(n)    n,     n + 1,     n + 1,     n + 2
 #	define B4(n) B2(n), B2(n + 1), B2(n + 1), B2(n + 2)
 #	define B6(n) B4(n), B4(n + 1), B4(n + 1), B4(n + 2)
@@ -1034,8 +1199,13 @@ static INLINE uint32 /* Uses table _CSBTBL for fast counting of 1's in a u32 */
 bcm_cntsetbits(const uint32 u32)
 {
 	/* function local scope declaration of const _CSBTBL[] */
+<<<<<<< HEAD
 	const uint8 *p = (const uint8 *)&u32;
 	return _CSBTBL[p[0]] + _CSBTBL[p[1]] + _CSBTBL[p[2]] + _CSBTBL[p[3]];
+=======
+	const uint8 * p = (const uint8 *)&u32;
+	return (_CSBTBL[p[0]] + _CSBTBL[p[1]] + _CSBTBL[p[2]] + _CSBTBL[p[3]]);
+>>>>>>> update/master
 }
 
 
@@ -1046,7 +1216,11 @@ C_bcm_count_leading_zeros(uint32 u32)
 	while (u32) {
 		shifts++; u32 >>= 1;
 	}
+<<<<<<< HEAD
 	return 32U - shifts;
+=======
+	return (32U - shifts);
+>>>>>>> update/master
 }
 
 #ifdef BCMDRIVER
@@ -1089,6 +1263,7 @@ struct bcm_mwbmap;	/* forward declaration for use as an opaque mwbmap handle */
 #define BCM_MWBMAP_INVALID_IDX	((uint32)(~0U))
 
 /* Incarnate a multiword bitmap based small index allocator */
+<<<<<<< HEAD
 extern struct bcm_mwbmap *bcm_mwbmap_init(osl_t *osh, uint32 items_max);
 
 /* Free up the multiword bitmap index allocator */
@@ -1120,11 +1295,234 @@ extern void bcm_uint64_right_shift(uint32 *r, uint32 a_high, uint32 a_low, uint3
 
 void bcm_add_64(uint32 *r_hi, uint32 *r_lo, uint32 offset);
 void bcm_sub_64(uint32 *r_hi, uint32 *r_lo, uint32 offset);
+=======
+extern struct bcm_mwbmap * bcm_mwbmap_init(osl_t * osh, uint32 items_max);
+
+/* Free up the multiword bitmap index allocator */
+extern void bcm_mwbmap_fini(osl_t * osh, struct bcm_mwbmap * mwbmap_hdl);
+
+/* Allocate a unique small index using a multiword bitmap index allocator */
+extern uint32 bcm_mwbmap_alloc(struct bcm_mwbmap * mwbmap_hdl);
+
+/* Force an index at a specified position to be in use */
+extern void bcm_mwbmap_force(struct bcm_mwbmap * mwbmap_hdl, uint32 bitix);
+
+/* Free a previously allocated index back into the multiword bitmap allocator */
+extern void bcm_mwbmap_free(struct bcm_mwbmap * mwbmap_hdl, uint32 bitix);
+
+/* Fetch the toal number of free indices in the multiword bitmap allocator */
+extern uint32 bcm_mwbmap_free_cnt(struct bcm_mwbmap * mwbmap_hdl);
+
+/* Determine whether an index is inuse or free */
+extern bool bcm_mwbmap_isfree(struct bcm_mwbmap * mwbmap_hdl, uint32 bitix);
+
+/* Debug dump a multiword bitmap allocator */
+extern void bcm_mwbmap_show(struct bcm_mwbmap * mwbmap_hdl);
+
+extern void bcm_mwbmap_audit(struct bcm_mwbmap * mwbmap_hdl);
+/* End - Multiword bitmap based small Id allocator. */
+
+
+/* INTERFACE: Simple unique 16bit Id Allocator using a stack implementation. */
+
+#define ID16_INVALID                ((uint16)(~0))
+
+/*
+ * Construct a 16bit id allocator, managing 16bit ids in the range:
+ *    [start_val16 .. start_val16+total_ids)
+ * Note: start_val16 is inclusive.
+ * Returns an opaque handle to the 16bit id allocator.
+ */
+extern void * id16_map_init(osl_t *osh, uint16 total_ids, uint16 start_val16);
+extern void * id16_map_fini(osl_t *osh, void * id16_map_hndl);
+extern void id16_map_clear(void * id16_map_hndl, uint16 total_ids, uint16 start_val16);
+
+/* Allocate a unique 16bit id */
+extern uint16 id16_map_alloc(void * id16_map_hndl);
+
+/* Free a 16bit id value into the id16 allocator */
+extern void id16_map_free(void * id16_map_hndl, uint16 val16);
+
+/* Get the number of failures encountered during id allocation. */
+extern uint32 id16_map_failures(void * id16_map_hndl);
+
+/* Audit the 16bit id allocator state. */
+extern bool id16_map_audit(void * id16_map_hndl);
+/* End - Simple 16bit Id Allocator. */
+
+#endif /* BCMDRIVER */
+
+extern void bcm_uint64_right_shift(uint32* r, uint32 a_high, uint32 a_low, uint32 b);
+
+void bcm_add_64(uint32* r_hi, uint32* r_lo, uint32 offset);
+void bcm_sub_64(uint32* r_hi, uint32* r_lo, uint32 offset);
+
+/* calculate checksum for ip header, tcp / udp header / data */
+uint16 bcm_ip_cksum(uint8 *buf, uint32 len, uint32 sum);
+
+#ifndef _dll_t_
+#define _dll_t_
+/*
+ * -----------------------------------------------------------------------------
+ *                      Double Linked List Macros
+ * -----------------------------------------------------------------------------
+ *
+ * All dll operations must be performed on a pre-initialized node.
+ * Inserting an uninitialized node into a list effectively initialized it.
+ *
+ * When a node is deleted from a list, you may initialize it to avoid corruption
+ * incurred by double deletion. You may skip initialization if the node is
+ * immediately inserted into another list.
+ *
+ * By placing a dll_t element at the start of a struct, you may cast a dll_t *
+ * to the struct or vice versa.
+ *
+ * Example of declaring an initializing someList and inserting nodeA, nodeB
+ *
+ *     typedef struct item {
+ *         dll_t node;
+ *         int someData;
+ *     } Item_t;
+ *     Item_t nodeA, nodeB, nodeC;
+ *     nodeA.someData = 11111, nodeB.someData = 22222, nodeC.someData = 33333;
+ *
+ *     dll_t someList;
+ *     dll_init(&someList);
+ *
+ *     dll_append(&someList, (dll_t *) &nodeA);
+ *     dll_prepend(&someList, &nodeB.node);
+ *     dll_insert((dll_t *)&nodeC, &nodeA.node);
+ *
+ *     dll_delete((dll_t *) &nodeB);
+ *
+ * Example of a for loop to walk someList of node_p
+ *
+ *   extern void mydisplay(Item_t * item_p);
+ *
+ *   dll_t * item_p, * next_p;
+ *   for (item_p = dll_head_p(&someList); ! dll_end(&someList, item_p);
+ *        item_p = next_p)
+ *   {
+ *       next_p = dll_next_p(item_p);
+ *       ... use item_p at will, including removing it from list ...
+ *       mydisplay((PItem_t)item_p);
+ *   }
+ *
+ * -----------------------------------------------------------------------------
+ */
+typedef struct dll {
+	struct dll * next_p;
+	struct dll * prev_p;
+} dll_t;
+
+static INLINE void
+dll_init(dll_t *node_p)
+{
+	node_p->next_p = node_p;
+	node_p->prev_p = node_p;
+}
+/* dll macros returing a pointer to dll_t */
+
+static INLINE dll_t *
+dll_head_p(dll_t *list_p)
+{
+	return list_p->next_p;
+}
+
+
+static INLINE dll_t *
+dll_tail_p(dll_t *list_p)
+{
+	return (list_p)->prev_p;
+}
+
+
+static INLINE dll_t *
+dll_next_p(dll_t *node_p)
+{
+	return (node_p)->next_p;
+}
+
+
+static INLINE dll_t *
+dll_prev_p(dll_t *node_p)
+{
+	return (node_p)->prev_p;
+}
+
+
+static INLINE bool
+dll_empty(dll_t *list_p)
+{
+	return ((list_p)->next_p == (list_p));
+}
+
+
+static INLINE bool
+dll_end(dll_t *list_p, dll_t * node_p)
+{
+	return (list_p == node_p);
+}
+
+
+/* inserts the node new_p "after" the node at_p */
+static INLINE void
+dll_insert(dll_t *new_p, dll_t * at_p)
+{
+	new_p->next_p = at_p->next_p;
+	new_p->prev_p = at_p;
+	at_p->next_p = new_p;
+	(new_p->next_p)->prev_p = new_p;
+}
+
+static INLINE void
+dll_append(dll_t *list_p, dll_t *node_p)
+{
+	dll_insert(node_p, dll_tail_p(list_p));
+}
+
+static INLINE void
+dll_prepend(dll_t *list_p, dll_t *node_p)
+{
+	dll_insert(node_p, list_p);
+}
+
+
+/* deletes a node from any list that it "may" be in, if at all. */
+static INLINE void
+dll_delete(dll_t *node_p)
+{
+	node_p->prev_p->next_p = node_p->next_p;
+	node_p->next_p->prev_p = node_p->prev_p;
+}
+#endif  /* ! defined(_dll_t_) */
+
+/* Elements managed in a double linked list */
+
+typedef struct dll_pool {
+	dll_t       free_list;
+	uint16      free_count;
+	uint16      elems_max;
+	uint16      elem_size;
+	dll_t       elements[1];
+} dll_pool_t;
+
+dll_pool_t * dll_pool_init(void * osh, uint16 elems_max, uint16 elem_size);
+void * dll_pool_alloc(dll_pool_t * dll_pool_p);
+void dll_pool_free(dll_pool_t * dll_pool_p, void * elem_p);
+void dll_pool_free_tail(dll_pool_t * dll_pool_p, void * elem_p);
+typedef void (* dll_elem_dump)(void * elem_p);
+void dll_pool_detach(void * osh, dll_pool_t * pool, uint16 elems_max, uint16 elem_size);
+>>>>>>> update/master
 
 #ifdef __cplusplus
 	}
 #endif
 
+<<<<<<< HEAD
+=======
+/* #define DEBUG_COUNTER */
+>>>>>>> update/master
 #ifdef DEBUG_COUNTER
 #define CNTR_TBL_MAX 10
 typedef struct _counter_tbl_t {

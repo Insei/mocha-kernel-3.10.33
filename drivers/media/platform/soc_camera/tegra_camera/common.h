@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2013, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2012-2016, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -18,6 +18,9 @@
 #define _TEGRA_CAMERA_COMMON_H_
 
 #include <linux/videodev2.h>
+#include <linux/nvhost.h>
+#include <mach/powergate.h>
+
 
 #include <media/videobuf2-dma-contig.h>
 #include <media/soc_camera.h>
@@ -27,7 +30,6 @@ struct tegra_camera_buffer {
 	struct vb2_buffer		vb; /* v4l buffer must be first */
 	struct list_head		queue;
 	struct soc_camera_device	*icd;
-	int				output_channel;
 
 	/*
 	 * Various buffer addresses shadowed so we don't have to recalculate
@@ -41,81 +43,76 @@ struct tegra_camera_buffer {
 	dma_addr_t			start_addr_v;
 };
 
-static struct tegra_camera_buffer *to_tegra_vb(struct vb2_buffer *vb)
+static inline struct tegra_camera_buffer *to_tegra_vb(struct vb2_buffer *vb)
 {
 	return container_of(vb, struct tegra_camera_buffer, vb);
 }
 
-struct tegra_camera_dev;
+static inline struct tegra_camera_platform_data *icd_to_pdata(
+		struct soc_camera_device *icd)
+{
+	struct soc_camera_subdev_desc *ssdesc = &icd->sdesc->subdev_desc;
+	return ssdesc->drv_priv;
+}
 
-struct tegra_camera_clk {
-	const char	*name;
-	struct clk	*clk;
-	u32		freq;
-	int		use_devname;
-};
+#define icd_to_port(icd) (icd_to_pdata(icd)->port)
+#define icd_to_lanes(icd) (icd_to_pdata(icd)->lanes)
+#define icd_to_continuous_clk(icd) (icd_to_pdata(icd)->continuous_clk)
+
+struct tegra_camera;
 
 struct tegra_camera_ops {
-	int (*clks_init)(struct tegra_camera_dev *cam);
-	void (*clks_deinit)(struct tegra_camera_dev *cam);
-	void (*clks_enable)(struct tegra_camera_dev *cam);
-	void (*clks_disable)(struct tegra_camera_dev *cam);
+	int (*add_device)(struct soc_camera_device *icd);
+	void (*remove_device)(struct soc_camera_device *icd);
+	s32 (*bytes_per_line)(u32 width, const struct soc_mbus_pixelfmt *mf);
 
-	void (*capture_clean)(struct tegra_camera_dev *vi2_cam);
-	int (*capture_setup)(struct tegra_camera_dev *vi2_cam);
-	int (*capture_start)(struct tegra_camera_dev *vi2_cam,
-			     struct tegra_camera_buffer *buf);
-	int (*capture_stop)(struct tegra_camera_dev *vi2_cam, int port);
+	/*
+	 * If we want to ignore the subdev and have our camera host do its
+	 * own thing (for example, test pattern), then have
+	 * ignore_subdev_fmt() return true and make get_formats() return
+	 * the format we want to support.
+	 */
+	bool (*ignore_subdev_fmt)(struct tegra_camera *cam);
+	int (*get_formats)(struct soc_camera_device *icd, unsigned int idx,
+			   struct soc_camera_format_xlate *xlate);
+	int (*try_mbus_fmt)(struct v4l2_subdev *sd,
+			    struct v4l2_mbus_framefmt *mf);
+	int (*s_mbus_fmt)(struct v4l2_subdev *sd,
+			  struct v4l2_mbus_framefmt *mf);
+	bool (*port_is_valid)(int port);
 
-	void (*incr_syncpts)(struct tegra_camera_dev *vi2_cam);
-	void (*save_syncpts)(struct tegra_camera_dev *vi2_cam);
-
-	void (*activate)(struct tegra_camera_dev *vi2_cam);
-	void (*deactivate)(struct tegra_camera_dev *vi2_cam);
-	int (*port_is_valid)(int port);
+	void (*videobuf_queue)(struct tegra_camera *cam,
+			       struct soc_camera_device *icd,
+			       struct tegra_camera_buffer *buf);
+	void (*videobuf_release)(struct tegra_camera *cam,
+			       struct soc_camera_device *icd,
+			       struct tegra_camera_buffer *buf);
+	int (*start_streaming)(struct tegra_camera *cam,
+			       struct soc_camera_device *icd,
+			       unsigned int count);
+	int (*stop_streaming)(struct tegra_camera *cam,
+			       struct soc_camera_device *icd);
 };
 
-struct tegra_camera_dev {
+struct tegra_camera {
 	struct soc_camera_host		ici;
-	struct platform_device		*ndev;
-	struct nvhost_device_data	*ndata;
 
-	struct regulator		*reg;
-	const char			*regulator_name;
-
-	struct tegra_camera_clk		*clks;
-	int				num_clks;
-
+	/* These should be set prior to calling tegra_camera_probe(). */
+	struct platform_device		*pdev;
+	char				card[32];
+	u32				version;
 	struct tegra_camera_ops		*ops;
 
-	void __iomem			*reg_base;
-	spinlock_t			videobuf_queue_lock;
-	struct list_head		capture;
-	struct vb2_buffer		*active;
 	struct vb2_alloc_ctx		*alloc_ctx;
-	enum v4l2_field			field;
-	int				sequence_a;
-	int				sequence_b;
-
-	struct work_struct		work;
-	struct mutex			work_mutex;
-
-	u32				syncpt_csi_a;
-	u32				syncpt_csi_b;
-	u32				syncpt_vip;
-
-	/* Debug */
-	int				num_frames;
-	int				enable_refcnt;
-
-	/* Test Pattern Generator mode */
-	int				tpg_mode;
 };
 
 #define TC_VI_REG_RD(dev, offset) readl(dev->reg_base + offset)
 #define TC_VI_REG_WT(dev, offset, val) writel(val, dev->reg_base + offset)
 
-int vi2_register(struct tegra_camera_dev *cam);
-int vi_register(struct tegra_camera_dev *cam);
+int vi2_register(struct tegra_camera *cam);
+
+int tegra_camera_init(struct platform_device *pdev, struct tegra_camera *cam);
+void tegra_camera_deinit(struct platform_device *pdev,
+			 struct tegra_camera *cam);
 
 #endif

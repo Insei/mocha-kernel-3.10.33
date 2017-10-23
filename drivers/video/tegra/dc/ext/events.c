@@ -181,7 +181,8 @@ static int tegra_dc_ext_queue_event(struct tegra_dc_ext_control *control,
 	return retval;
 }
 
-int tegra_dc_ext_queue_hotplug(struct tegra_dc_ext_control *control, int output)
+int tegra_dc_ext_queue_hotplug(struct tegra_dc_ext_control *control, int output,
+				bool connected)
 {
 	struct {
 		struct tegra_dc_ext_event event;
@@ -192,6 +193,27 @@ int tegra_dc_ext_queue_hotplug(struct tegra_dc_ext_control *control, int output)
 	pack.event.data_size = sizeof(pack.hotplug);
 
 	pack.hotplug.handle = output;
+	pack.hotplug.connected = connected;
+
+	tegra_dc_ext_queue_event(control, &pack.event);
+
+	return 0;
+}
+
+int tegra_dc_ext_queue_vblank(struct tegra_dc_ext_control *control, int output,
+				ktime_t timestamp)
+{
+	struct {
+		struct tegra_dc_ext_event event;
+		struct tegra_dc_ext_control_event_vblank vblank;
+	} __packed pack;
+
+	pack.event.type = TEGRA_DC_EXT_EVENT_VBLANK;
+	pack.event.data_size = sizeof(pack.vblank);
+
+	pack.vblank.handle = output;
+	pack.vblank.reserved = 0;
+	pack.vblank.timestamp_ns = ktime_to_ns(timestamp);
 
 	tegra_dc_ext_queue_event(control, &pack.event);
 

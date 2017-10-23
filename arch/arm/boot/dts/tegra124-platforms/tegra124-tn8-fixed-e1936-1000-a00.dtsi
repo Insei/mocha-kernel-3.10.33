@@ -1,4 +1,5 @@
 /*
+<<<<<<< HEAD
  * Copyright (c) 2014, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
@@ -7,13 +8,27 @@
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
+=======
+ * Copyright (c) 2013-2014, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+>>>>>>> update/master
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
  * more details.
  *
+<<<<<<< HEAD
  * You should have received a copy of the GNU General Public License along
  * with this program; if not, write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+=======
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+>>>>>>> update/master
  */
 
 #include <dt-bindings/gpio/tegra-gpio.h>
@@ -23,6 +38,7 @@
 
 	regulators {
 
+<<<<<<< HEAD
 		vdd_ts_1v8: regulator@7 {
 			compatible = "regulator-fixed-sync";
 			reg = <7>;
@@ -54,5 +70,38 @@
 				};
 			};
 		};
+=======
+                vdd_ts_1v8: regulator@7  {
+                        compatible = "regulator-fixed-sync";
+                        reg = <7>;
+                        regulator-name = "vdd_ts_1v8";
+                        regulator-min-microvolt = <1800000>;
+                        regulator-max-microvolt = <1800000>;
+                        vin-supply = <&palmas_smps8>;
+
+                        consumers {
+                                                        c1 {
+                                                                regulator-consumer-supply = "dvdd";
+                                                                regulator-consumer-device = "spi0.0";
+                                                        };
+                        };
+                };
+
+                avdd_ts_3v0: regulator@8  {
+                        compatible = "regulator-fixed-sync";
+                        reg = <8>;
+                        regulator-name = "avdd_ts_3v0";
+                        regulator-min-microvolt = <3000000>;
+                        regulator-max-microvolt = <3000000>;
+                        vin-supply = <&ldo3_reg>;
+
+                         consumers {
+                                                        c1 {
+                                                                regulator-consumer-supply = "avdd";
+                                                                regulator-consumer-device = "spi0.0";
+                                                        };
+                        };
+                };
+>>>>>>> update/master
 	};
 };

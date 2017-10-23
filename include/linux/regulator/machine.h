@@ -87,6 +87,12 @@ struct regulator_state {
  *           started.  If the regulator is not enabled by the hardware or
  *           bootloader then it will be enabled when the constraints are
  *           applied.
+ * @enable_active_discharge: Enable active discharge.
+ * @disable_active_discharge: Disable active discharge.
+ *	    Both enable_active_discharge and disable_active_discharge can not
+ *	    be set together. if both are flase then POR default will be the
+ *	    option.
+ *
  * @apply_uV: Apply the voltage constraint when initialising.
  *
  * @input_uV: Input voltage for regulator when supplied by another regulator.
@@ -100,6 +106,11 @@ struct regulator_state {
  * @ramp_delay: Time to settle down after voltage change (unit: uV/us)
  * @enable_time: Turn-on time of the rails (unit: microseconds)
  * @disable_time: Turn-off time of the rails (unit: microseconds)
+ * @ramp_delay_scale: x multiplier in % for increasing/decreasing ramp delay.
+ *                 100% is 1x, 150% is 1.5x and so on.
+ * @disable_on_suspend: Disable rail on suspend. This is only applicable if
+ *                    rail is always ON.
+ * @disable_on_shutdown: Disable rail on shutdown explictily.
  */
 struct regulation_constraints {
 
@@ -140,6 +151,7 @@ struct regulation_constraints {
 	unsigned int ramp_delay;
 	unsigned int enable_time;
 	unsigned int disable_time;
+	unsigned int ramp_delay_scale;
 
 	unsigned int startup_delay;
 
@@ -148,8 +160,16 @@ struct regulation_constraints {
 	unsigned boot_on:1;	/* bootloader/firmware enabled regulator */
 	unsigned apply_uV:1;	/* apply uV constraint if min == max */
 	unsigned boot_off:1;	/* bootloader/firmware disabled regulator */
+	unsigned bypass_on:1;	/* Bypass ON */
 	unsigned int ignore_current_constraint_init:1;
 	unsigned disable_parent_after_enable:1; /* SW based overcurrent protection */
+<<<<<<< HEAD
+=======
+	unsigned disable_on_suspend:1; /* Disable rail on suspend */
+	unsigned disable_on_shutdown:1; /* Disable rail on shutdown */
+	unsigned enable_active_discharge:1;
+	unsigned disable_active_discharge:1;
+>>>>>>> update/master
 };
 
 /**

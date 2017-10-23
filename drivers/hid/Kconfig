@@ -712,6 +712,16 @@ config THRUSTMASTER_FF
 	  a THRUSTMASTER Dual Trigger 3-in-1 or a THRUSTMASTER Ferrari GT
 	  Rumble Force or Force Feedback Wheel.
 
+config HID_VALVE
+	tristate "Valve Steam controller"
+	depends on USB_HID
+	---help---
+	Say Y here if you have a Valve Steam controller.
+	Both wired connection and wireless (via USB dongle) are supported.
+	Supported devices:
+
+	   - Valve Steam Controller
+
 config HID_WACOM
 	tristate "Wacom Bluetooth devices support"
 	depends on HID
@@ -771,6 +781,18 @@ config HID_SENSOR_HUB
 	  drivers can use the service provided by this driver to register
 	  for events and handle data streams. Each sensor driver can format
 	  data and present to user mode using input or IIO interface.
+
+config HID_ANDROIDTV_REMOTE
+	tristate "AndroidTV remote control support"
+	depends on USB_HID
+	---help---
+	Support for AndroidTV remote control.
+
+config HID_SHIELD_REMOTE
+	tristate "SHIELD remote control support"
+	depends on USB_HID
+	---help---
+	Support for NVIDIA SHIELD remote control.
 
 endmenu
 

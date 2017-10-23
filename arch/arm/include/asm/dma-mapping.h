@@ -10,6 +10,7 @@
 
 #include <asm-generic/dma-coherent.h>
 #include <asm/memory.h>
+#include <asm/dma-iommu.h>
 
 #define DMA_ERROR_CODE	(~0)
 #define FLUSH_DCACHE_AREA	__cpuc_flush_dcache_area
@@ -39,6 +40,8 @@ static inline int dma_set_mask(struct device *dev, u64 mask)
 		return ops->set_dma_mask(dev, mask);
 	return 0;
 }
+
+void set_dummy_dma_ops(struct device *dev);
 
 #ifdef __arch_page_to_dma
 #error Please update to __arch_pfn_to_dma
@@ -236,15 +239,41 @@ dma_map_linear_attrs(struct device *dev, phys_addr_t pa, size_t size,
 		     enum dma_data_direction dir, struct dma_attrs *attrs)
 {
 	dma_addr_t da, req = pa;
+	DEFINE_DMA_ATTRS(_attrs);
 
 	struct dma_map_ops *ops = get_dma_ops(dev);
 	dma_addr_t addr;
 
 	da = dma_iova_alloc_at(dev, &req, size, attrs);
 	if (da == DMA_ERROR_CODE) {
-		DEFINE_DMA_ATTRS(_attrs);
+		struct dma_iommu_mapping *map;
+		dma_addr_t end = pa + size;
+		size_t bytes = 0;
+
 		switch (req) {
 		case -ENXIO:
+			map = to_dma_iommu_mapping(dev);
+			dev_info(dev, "Trying to IOVA linear map %pa-%pa outside of as:%pa-%pa\n",
+				 &pa, &end, &map->base, &map->end);
+
+			if ((pa >= map->base) && (pa < map->end)) {
+				req = pa;
+				bytes = map->end - pa;
+			} else if ((end > map->base) && (end <= map->end)) {
+				req = map->base;
+				bytes = end - map->base;
+			}
+
+			/* Partially reserve within IOVA map */
+			if (bytes) {
+				da = dma_iova_alloc_at(dev, &req, bytes, attrs);
+				if (da == DMA_ERROR_CODE)
+					return DMA_ERROR_CODE;
+
+				if (!dma_get_attr(DMA_ATTR_SKIP_CPU_SYNC, attrs))
+					dma_sync_single_for_device(NULL, da, bytes, dir);
+			}
+
 			/* Allow to map outside of map */
 			if (!attrs)
 				attrs = &_attrs;
@@ -267,12 +296,20 @@ dma_map_linear_attrs(struct device *dev, phys_addr_t pa, size_t size,
 	return addr;
 
 }
+
+extern bool device_is_iommuable(struct device *dev);
+
 #else
 static inline dma_addr_t
 dma_map_linear_attrs(struct device *dev, phys_addr_t pa, size_t size,
 		     enum dma_data_direction dir, struct dma_attrs *attrs)
 {
 	return DMA_ERROR_CODE;
+}
+
+static inline bool device_is_iommuable(struct device *dev)
+{
+	return false;
 }
 #endif
 

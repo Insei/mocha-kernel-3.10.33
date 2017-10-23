@@ -1,15 +1,24 @@
 /*
  * Broadcom BCMSDH to gSPI Protocol Conversion Layer
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
  *
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+ * 
+>>>>>>> update/master
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
  * under the terms of the GNU General Public License version 2 (the "GPL"),
  * available at http://www.broadcom.com/licenses/GPLv2.php, with the
  * following added to such license:
+<<<<<<< HEAD
  *
+=======
+ * 
+>>>>>>> update/master
  *      As a special exception, the copyright holders of this software give you
  * permission to link this software with independent modules, and to copy and
  * distribute the resulting executable under terms of your choice, provided that
@@ -17,7 +26,11 @@
  * the license of that module.  An independent module is a module which is not
  * derived from this software.  The special exception does not apply to any
  * modifications of the software.
+<<<<<<< HEAD
  *
+=======
+ * 
+>>>>>>> update/master
  *      Notwithstanding the above, under no circumstances may you combine this
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
@@ -69,7 +82,11 @@
 uint sd_msglevel = SDH_ERROR_VAL;
 #else
 uint sd_msglevel = 0;
+<<<<<<< HEAD
 #endif
+=======
+#endif 
+>>>>>>> update/master
 
 uint sd_hiok = FALSE;		/* Use hi-speed mode if available? */
 uint sd_sdmode = SDIOH_MODE_SPI;		/* Use SD4 mode by default */
@@ -101,6 +118,7 @@ static bool bcmspi_test_card(sdioh_info_t *sd);
 static bool bcmspi_host_device_init_adapt(sdioh_info_t *sd);
 static int bcmspi_set_highspeed_mode(sdioh_info_t *sd, bool hsmode);
 static int bcmspi_cmd_issue(sdioh_info_t *sd, bool use_dma, uint32 cmd_arg,
+<<<<<<< HEAD
 				uint32 *data, uint32 datalen);
 static int bcmspi_card_regread(sdioh_info_t *sd, int func, uint32 regaddr,
 				int regsize, uint32 *data);
@@ -113,6 +131,20 @@ static int bcmspi_card_buf(sdioh_info_t *sd, int rw, int func, bool fifo,
 				uint32 addr, int nbytes, uint32 *data);
 static int bcmspi_card_regread_fixedaddr(sdioh_info_t *sd, int func, uint32 regaddr, int regsize,
 				uint32 *data);
+=======
+                           uint32 *data, uint32 datalen);
+static int bcmspi_card_regread(sdioh_info_t *sd, int func, uint32 regaddr,
+                              int regsize, uint32 *data);
+static int bcmspi_card_regwrite(sdioh_info_t *sd, int func, uint32 regaddr,
+                               int regsize, uint32 data);
+static int bcmspi_card_bytewrite(sdioh_info_t *sd, int func, uint32 regaddr,
+                               uint8 *data);
+static int bcmspi_driver_init(sdioh_info_t *sd);
+static int bcmspi_card_buf(sdioh_info_t *sd, int rw, int func, bool fifo,
+                          uint32 addr, int nbytes, uint32 *data);
+static int bcmspi_card_regread_fixedaddr(sdioh_info_t *sd, int func, uint32 regaddr, int regsize,
+                                 uint32 *data);
+>>>>>>> update/master
 static void bcmspi_cmd_getdstatus(sdioh_info_t *sd, uint32 *dstatus_buffer);
 static int bcmspi_update_stats(sdioh_info_t *sd, uint32 cmd_arg);
 
@@ -157,7 +189,11 @@ sdioh_attach(osl_t *osh, void *bar0, uint irq)
 		sd_err(("%s: spi_hw_attach() failed\n", __FUNCTION__));
 		spi_osfree(sd);
 		MFREE(sd->osh, sd, sizeof(sdioh_info_t));
+<<<<<<< HEAD
 		return NULL;
+=======
+		return (NULL);
+>>>>>>> update/master
 	}
 
 	if (bcmspi_driver_init(sd) != SUCCESS) {
@@ -165,7 +201,11 @@ sdioh_attach(osl_t *osh, void *bar0, uint irq)
 		spi_hw_detach(sd);
 		spi_osfree(sd);
 		MFREE(sd->osh, sd, sizeof(sdioh_info_t));
+<<<<<<< HEAD
 		return NULL;
+=======
+		return (NULL);
+>>>>>>> update/master
 	}
 
 	if (spi_register_irq(sd, irq) != SUCCESS) {
@@ -173,7 +213,11 @@ sdioh_attach(osl_t *osh, void *bar0, uint irq)
 		spi_hw_detach(sd);
 		spi_osfree(sd);
 		MFREE(sd->osh, sd, sizeof(sdioh_info_t));
+<<<<<<< HEAD
 		return NULL;
+=======
+		return (NULL);
+>>>>>>> update/master
 	}
 
 	sd_trace(("%s: Done\n", __FUNCTION__));
@@ -335,7 +379,11 @@ const bcm_iovar_t sdioh_iovars[] = {
 
 int
 sdioh_iovar_op(sdioh_info_t *si, const char *name,
+<<<<<<< HEAD
 			void *params, int plen, void *arg, int len, bool set)
+=======
+               void *params, int plen, void *arg, int len, bool set)
+>>>>>>> update/master
 {
 	const bcm_iovar_t *vi = NULL;
 	int bcmerror = 0;
@@ -343,6 +391,12 @@ sdioh_iovar_op(sdioh_info_t *si, const char *name,
 	int32 int_val = 0;
 	bool bool_val;
 	uint32 actionid;
+<<<<<<< HEAD
+=======
+/*
+	sdioh_regs_t *regs;
+*/
+>>>>>>> update/master
 
 	ASSERT(name);
 	ASSERT(len >= 0);
@@ -466,7 +520,11 @@ sdioh_iovar_op(sdioh_info_t *si, const char *name,
 
 		if (!bcmspi_set_highspeed_mode(si, (bool)sd_hiok)) {
 			sd_err(("%s: Failed changing highspeed mode to %d.\n",
+<<<<<<< HEAD
 					__FUNCTION__, sd_hiok));
+=======
+			        __FUNCTION__, sd_hiok));
+>>>>>>> update/master
 			bcmerror = BCME_ERROR;
 			return ERROR;
 		}
@@ -609,7 +667,11 @@ sdioh_cis_read(sdioh_info_t *sd, uint func, uint8 *cisd, uint32 length)
 	} else {
 		sd_err(("%s: Unable to set sb-addr-windows\n", __FUNCTION__));
 		spi_unlock(sd);
+<<<<<<< HEAD
 		return BCME_ERROR;
+=======
+		return (BCME_ERROR);
+>>>>>>> update/master
 	}
 	if (status == SUCCESS) {
 		data = (bar0 >> 24) & SBSDIO_SBADDRHIGH_MASK;
@@ -617,7 +679,11 @@ sdioh_cis_read(sdioh_info_t *sd, uint func, uint8 *cisd, uint32 length)
 	} else {
 		sd_err(("%s: Unable to set sb-addr-windows\n", __FUNCTION__));
 		spi_unlock(sd);
+<<<<<<< HEAD
 		return BCME_ERROR;
+=======
+		return (BCME_ERROR);
+>>>>>>> update/master
 	}
 
 	offset =  CC_SROM_OTP; /* OTP offset in chipcommon. */
@@ -625,7 +691,11 @@ sdioh_cis_read(sdioh_info_t *sd, uint func, uint8 *cisd, uint32 length)
 		if (bcmspi_card_regread (sd, SDIO_FUNC_1, offset, 2, &cis_byte) < 0) {
 			sd_err(("%s: regread failed: Can't read CIS\n", __FUNCTION__));
 			spi_unlock(sd);
+<<<<<<< HEAD
 			return BCME_ERROR;
+=======
+			return (BCME_ERROR);
+>>>>>>> update/master
 		}
 
 		*cis = (uint16)cis_byte;
@@ -635,7 +705,11 @@ sdioh_cis_read(sdioh_info_t *sd, uint func, uint8 *cisd, uint32 length)
 
 	spi_unlock(sd);
 
+<<<<<<< HEAD
 	return BCME_OK;
+=======
+	return (BCME_OK);
+>>>>>>> update/master
 }
 
 extern SDIOH_API_RC
@@ -657,10 +731,17 @@ sdioh_request_byte(sdioh_info_t *sd, uint rw, uint func, uint regaddr, uint8 *by
 
 	if (rw == SDIOH_READ) {
 		sd_trace(("%s: RD cmd_arg=0x%x func=%d regaddr=0x%x\n",
+<<<<<<< HEAD
 				__FUNCTION__, cmd_arg, func, regaddr));
 	} else {
 		sd_trace(("%s: WR cmd_arg=0x%x func=%d regaddr=0x%x data=0x%x\n",
 				__FUNCTION__, cmd_arg, func, regaddr, data));
+=======
+		          __FUNCTION__, cmd_arg, func, regaddr));
+	} else {
+		sd_trace(("%s: WR cmd_arg=0x%x func=%d regaddr=0x%x data=0x%x\n",
+		          __FUNCTION__, cmd_arg, func, regaddr, data));
+>>>>>>> update/master
 	}
 
 	if ((status = bcmspi_cmd_issue(sd, sd->sd_use_dma, cmd_arg, &data, 1)) != SUCCESS) {
@@ -683,7 +764,11 @@ sdioh_request_byte(sdioh_info_t *sd, uint rw, uint func, uint regaddr, uint8 *by
 
 extern SDIOH_API_RC
 sdioh_request_word(sdioh_info_t *sd, uint cmd_type, uint rw, uint func, uint addr,
+<<<<<<< HEAD
 			uint32 *word, uint nbytes)
+=======
+                   uint32 *word, uint nbytes)
+>>>>>>> update/master
 {
 	int status;
 
@@ -700,7 +785,11 @@ sdioh_request_word(sdioh_info_t *sd, uint cmd_type, uint rw, uint func, uint add
 
 extern SDIOH_API_RC
 sdioh_request_buffer(sdioh_info_t *sd, uint pio_dma, uint fix_inc, uint rw, uint func,
+<<<<<<< HEAD
 			uint addr, uint reg_width, uint buflen_u, uint8 *buffer, void *pkt)
+=======
+                     uint addr, uint reg_width, uint buflen_u, uint8 *buffer, void *pkt)
+>>>>>>> update/master
 {
 	int len;
 	int buflen = (int)buflen_u;
@@ -713,8 +802,13 @@ sdioh_request_buffer(sdioh_info_t *sd, uint pio_dma, uint fix_inc, uint rw, uint
 	ASSERT(sd->client_block_size[func]);
 
 	sd_data(("%s: %c len %d r_cnt %d t_cnt %d, pkt @0x%p\n",
+<<<<<<< HEAD
 			 __FUNCTION__, rw == SDIOH_READ ? 'R' : 'W',
 			buflen_u, sd->r_cnt, sd->t_cnt, pkt));
+=======
+	         __FUNCTION__, rw == SDIOH_READ ? 'R' : 'W',
+	         buflen_u, sd->r_cnt, sd->t_cnt, pkt));
+>>>>>>> update/master
 
 	/* Break buffer down into blocksize chunks. */
 	while (buflen > 0) {
@@ -774,7 +868,11 @@ bcmspi_card_byterewrite(sdioh_info_t *sd, int func, uint32 regaddr, uint8 byte)
 			datalen++;
 	} else {
 		sd_err(("%s: Host is %d bit spid, could not create SPI command.\n",
+<<<<<<< HEAD
 				__FUNCTION__, 8 * sd->wordlen));
+=======
+		        __FUNCTION__, 8 * sd->wordlen));
+>>>>>>> update/master
 		return ERROR;
 	}
 
@@ -794,19 +892,32 @@ bcmspi_card_byterewrite(sdioh_info_t *sd, int func, uint32 regaddr, uint8 byte)
 
 	/* Last 4bytes are dstatus.  Device is configured to return status bits. */
 	if (sd->wordlen == 4) { /* 32bit spid */
+<<<<<<< HEAD
 		sd->card_dstatus = SPISWAP_WD4(*(uint32 *)&spi_inbuf2[datalen + CMDLEN]);
 	} else if (sd->wordlen == 2) { /* 16bit spid */
 		sd->card_dstatus = SPISWAP_WD2(*(uint32 *)&spi_inbuf2[datalen + CMDLEN]);
 	} else {
 		sd_err(("%s: Host is %d bit machine, could not read SPI dstatus.\n",
 				__FUNCTION__, 8 * sd->wordlen));
+=======
+		sd->card_dstatus = SPISWAP_WD4(*(uint32 *)&spi_inbuf2[datalen + CMDLEN ]);
+	} else if (sd->wordlen == 2) { /* 16bit spid */
+		sd->card_dstatus = SPISWAP_WD2(*(uint32 *)&spi_inbuf2[datalen + CMDLEN ]);
+	} else {
+		sd_err(("%s: Host is %d bit machine, could not read SPI dstatus.\n",
+		        __FUNCTION__, 8 * sd->wordlen));
+>>>>>>> update/master
 		return ERROR;
 	}
 
 	if (sd->card_dstatus)
 		sd_trace(("dstatus after byte rewrite = 0x%x\n", sd->card_dstatus));
 
+<<<<<<< HEAD
 	return BCME_OK;
+=======
+	return (BCME_OK);
+>>>>>>> update/master
 }
 
 /* Program the response delay corresponding to the spi function */
@@ -814,6 +925,7 @@ static int
 bcmspi_prog_resp_delay(sdioh_info_t *sd, int func, uint8 resp_delay)
 {
 	if (sd->resp_delay_all == FALSE)
+<<<<<<< HEAD
 		return BCME_OK;
 
 	if (sd->prev_fun == func)
@@ -821,13 +933,26 @@ bcmspi_prog_resp_delay(sdioh_info_t *sd, int func, uint8 resp_delay)
 
 	if (F0_RESPONSE_DELAY == F1_RESPONSE_DELAY)
 		return BCME_OK;
+=======
+		return (BCME_OK);
+
+	if (sd->prev_fun == func)
+		return (BCME_OK);
+
+	if (F0_RESPONSE_DELAY == F1_RESPONSE_DELAY)
+		return (BCME_OK);
+>>>>>>> update/master
 
 	bcmspi_card_byterewrite(sd, SPI_FUNC_0, SPID_RESPONSE_DELAY, resp_delay);
 
 	/* Remember function for which to avoid reprogramming resp-delay in next iteration */
 	sd->prev_fun = func;
 
+<<<<<<< HEAD
 	return BCME_OK;
+=======
+	return (BCME_OK);
+>>>>>>> update/master
 
 }
 
@@ -860,19 +985,32 @@ bcmspi_resync_f1(sdioh_info_t *sd)
 
 	/* Last 4bytes are dstatus.  Device is configured to return status bits. */
 	if (sd->wordlen == 4) { /* 32bit spid */
+<<<<<<< HEAD
 		sd->card_dstatus = SPISWAP_WD4(*(uint32 *)&spi_inbuf2[datalen + CMDLEN]);
 	} else if (sd->wordlen == 2) { /* 16bit spid */
 		sd->card_dstatus = SPISWAP_WD2(*(uint32 *)&spi_inbuf2[datalen + CMDLEN]);
 	} else {
 		sd_err(("%s: Host is %d bit machine, could not read SPI dstatus.\n",
 				__FUNCTION__, 8 * sd->wordlen));
+=======
+		sd->card_dstatus = SPISWAP_WD4(*(uint32 *)&spi_inbuf2[datalen + CMDLEN ]);
+	} else if (sd->wordlen == 2) { /* 16bit spid */
+		sd->card_dstatus = SPISWAP_WD2(*(uint32 *)&spi_inbuf2[datalen + CMDLEN ]);
+	} else {
+		sd_err(("%s: Host is %d bit machine, could not read SPI dstatus.\n",
+		        __FUNCTION__, 8 * sd->wordlen));
+>>>>>>> update/master
 		return ERROR;
 	}
 
 	if (sd->card_dstatus)
 		sd_trace(("dstatus after resync pattern write = 0x%x\n", sd->card_dstatus));
 
+<<<<<<< HEAD
 	return BCME_OK;
+=======
+	return (BCME_OK);
+>>>>>>> update/master
 }
 
 uint32 dstatus_count = 0;
@@ -897,7 +1035,11 @@ bcmspi_update_stats(sdioh_info_t *sd, uint32 cmd_arg)
 	if (dstatus & STATUS_DATA_NOT_AVAILABLE) {
 		spierrstats->dna++;
 		sd_trace(("Read data not available on F1 addr = 0x%x\n",
+<<<<<<< HEAD
 			GFIELD(cmd_arg, SPI_REG_ADDR)));
+=======
+		        GFIELD(cmd_arg, SPI_REG_ADDR)));
+>>>>>>> update/master
 		/* Clear dna bit */
 		bcmspi_card_byterewrite(sd, SPI_FUNC_0, SPID_INTR_REG, DATA_UNAVAILABLE);
 	}
@@ -934,15 +1076,24 @@ bcmspi_update_stats(sdioh_info_t *sd, uint32 cmd_arg)
 		spierrstats->f2pktavailable++;
 		sd_trace(("Packet is available/ready in F2 TX FIFO\n"));
 		sd_trace(("Packet length = %d\n", sd->dwordmode ?
+<<<<<<< HEAD
 			((dstatus & STATUS_F2_PKT_LEN_MASK) >> (STATUS_F2_PKT_LEN_SHIFT - 2)) :
 			((dstatus & STATUS_F2_PKT_LEN_MASK) >> STATUS_F2_PKT_LEN_SHIFT)));
+=======
+		         ((dstatus & STATUS_F2_PKT_LEN_MASK) >> (STATUS_F2_PKT_LEN_SHIFT - 2)) :
+		         ((dstatus & STATUS_F2_PKT_LEN_MASK) >> STATUS_F2_PKT_LEN_SHIFT)));
+>>>>>>> update/master
 	}
 
 	if (dstatus & STATUS_F3_PKT_AVAILABLE) {
 		spierrstats->f3pktavailable++;
 		sd_err(("Packet is available/ready in F3 TX FIFO\n"));
 		sd_err(("Packet length = %d\n",
+<<<<<<< HEAD
 			(dstatus & STATUS_F3_PKT_LEN_MASK) >> STATUS_F3_PKT_LEN_SHIFT));
+=======
+		        (dstatus & STATUS_F3_PKT_LEN_MASK) >> STATUS_F3_PKT_LEN_SHIFT));
+>>>>>>> update/master
 	}
 
 	return err;
@@ -987,7 +1138,11 @@ bcmspi_host_init(sdioh_info_t *sd)
 	sd->card_init_done = FALSE;
 	sd->adapter_slot = 1;
 
+<<<<<<< HEAD
 	return SUCCESS;
+=======
+	return (SUCCESS);
+>>>>>>> update/master
 }
 
 static int
@@ -998,12 +1153,20 @@ get_client_blocksize(sdioh_info_t *sd)
 
 	/* Find F1/F2/F3 max packet size */
 	if ((status = bcmspi_card_regread(sd, 0, SPID_F1_INFO_REG,
+<<<<<<< HEAD
 					8, regdata)) != SUCCESS) {
+=======
+	                                 8, regdata)) != SUCCESS) {
+>>>>>>> update/master
 		return status;
 	}
 
 	sd_trace(("pkt_size regdata[0] = 0x%x, regdata[1] = 0x%x\n",
+<<<<<<< HEAD
 			regdata[0], regdata[1]));
+=======
+	        regdata[0], regdata[1]));
+>>>>>>> update/master
 
 	sd->client_block_size[1] = (regdata[0] & F1_MAX_PKT_SIZE) >> 2;
 	sd_trace(("Func1 blocksize = %d\n", sd->client_block_size[1]));
@@ -1085,7 +1248,12 @@ bcmspi_client_init(sdioh_info_t *sd)
 			/* older sdiodevice core and has no separte resp delay for each of */
 			sd_err(("older corerev < 4 so use the same resp delay for all funcs\n"));
 			sd->resp_delay_new = FALSE;
+<<<<<<< HEAD
 		} else {
+=======
+		}
+		else {
+>>>>>>> update/master
 			/* older sdiodevice core and has no separte resp delay for each of */
 			int ret_val;
 			sd->resp_delay_new = TRUE;
@@ -1135,7 +1303,11 @@ bcmspi_set_highspeed_mode(sdioh_info_t *sd, bool hsmode)
 	int status;
 
 	if ((status = bcmspi_card_regread(sd, 0, SPID_CONFIG,
+<<<<<<< HEAD
 					4, &regdata)) != SUCCESS)
+=======
+	                                 4, &regdata)) != SUCCESS)
+>>>>>>> update/master
 		return status;
 
 	sd_trace(("In %s spih-ctrl = 0x%x \n", __FUNCTION__, regdata));
@@ -1151,7 +1323,11 @@ bcmspi_set_highspeed_mode(sdioh_info_t *sd, bool hsmode)
 			regdata |= HIGH_SPEED_MODE;
 			sd_trace(("Writing %08x to device at %08x\n", regdata, SPID_CONFIG));
 			if ((status = bcmspi_card_regwrite(sd, 0, SPID_CONFIG,
+<<<<<<< HEAD
 							4, regdata)) != SUCCESS) {
+=======
+			                                  4, regdata)) != SUCCESS) {
+>>>>>>> update/master
 				return status;
 			}
 		}
@@ -1162,9 +1338,16 @@ bcmspi_set_highspeed_mode(sdioh_info_t *sd, bool hsmode)
 			regdata &= ~HIGH_SPEED_MODE;
 			sd_trace(("Writing %08x to device at %08x\n", regdata, SPID_CONFIG));
 			if ((status = bcmspi_card_regwrite(sd, 0, SPID_CONFIG,
+<<<<<<< HEAD
 							4, regdata)) != SUCCESS)
 				return status;
 		} else {
+=======
+			                                  4, regdata)) != SUCCESS)
+				return status;
+		}
+		 else {
+>>>>>>> update/master
 			sd_trace(("Device is already in Low-Speed mode.\n"));
 			return status;
 		}
@@ -1245,11 +1428,19 @@ bcmspi_host_device_init_adapt(sdioh_info_t *sd)
 				return FALSE;
 		if (regdata == TEST_RO_DATA_32BIT_LE) {
 			sd_trace(("Spid is already in 32bit LE mode. Value read = 0x%x\n",
+<<<<<<< HEAD
 					regdata));
 			sd_trace(("Spid power was left on.\n"));
 		} else {
 			sd_err(("Spid power was left on but signature read failed."
 					" Value read = 0x%x\n", regdata));
+=======
+			          regdata));
+			sd_trace(("Spid power was left on.\n"));
+		} else {
+			sd_err(("Spid power was left on but signature read failed."
+			        " Value read = 0x%x\n", regdata));
+>>>>>>> update/master
 			return FALSE;
 		}
 	} else {
@@ -1282,7 +1473,11 @@ bcmspi_host_device_init_adapt(sdioh_info_t *sd)
 		/* Change to host controller intr-polarity of active-low */
 		wrregdata &= ~INTR_POLARITY;
 		sd_trace(("(we are still in 16bit mode) 32bit Write LE reg-ctrl-data = 0x%x\n",
+<<<<<<< HEAD
 				wrregdata));
+=======
+		        wrregdata));
+>>>>>>> update/master
 		/* Change to 32bit mode */
 		wrregdata |= WORD_LENGTH_32;
 		bcmspi_card_regwrite(sd, 0, SPID_CONFIG, 4, wrregdata);
@@ -1391,7 +1586,11 @@ bcmspi_card_regread(sdioh_info_t *sd, int func, uint32 regaddr, int regsize, uin
 	cmd_arg = SFIELD(cmd_arg, SPI_LEN, regsize == BLOCK_SIZE_F2 ? 0 : regsize);
 
 	sd_trace(("%s: RD cmd_arg=0x%x func=%d regaddr=0x%x regsize=%d\n",
+<<<<<<< HEAD
 			__FUNCTION__, cmd_arg, func, regaddr, regsize));
+=======
+	          __FUNCTION__, cmd_arg, func, regaddr, regsize));
+>>>>>>> update/master
 
 	if ((status = bcmspi_cmd_issue(sd, sd->sd_use_dma, cmd_arg, data, regsize)) != SUCCESS)
 		return status;
@@ -1424,7 +1623,11 @@ bcmspi_card_regread_fixedaddr(sdioh_info_t *sd, int func, uint32 regaddr, int re
 	cmd_arg = SFIELD(cmd_arg, SPI_LEN, regsize);
 
 	sd_trace(("%s: RD cmd_arg=0x%x func=%d regaddr=0x%x regsize=%d\n",
+<<<<<<< HEAD
 			__FUNCTION__, cmd_arg, func, regaddr, regsize));
+=======
+	          __FUNCTION__, cmd_arg, func, regaddr, regsize));
+>>>>>>> update/master
 
 	if ((status = bcmspi_cmd_issue(sd, sd->sd_use_dma, cmd_arg, data, regsize)) != SUCCESS)
 		return status;
@@ -1454,7 +1657,11 @@ bcmspi_card_regwrite(sdioh_info_t *sd, int func, uint32 regaddr, int regsize, ui
 	cmd_arg = SFIELD(cmd_arg, SPI_LEN, regsize == BLOCK_SIZE_F2 ? 0 : regsize);
 
 	sd_trace(("%s: WR cmd_arg=0x%x func=%d regaddr=0x%x regsize=%d data=0x%x\n",
+<<<<<<< HEAD
 			__FUNCTION__, cmd_arg, func, regaddr, regsize, data));
+=======
+	          __FUNCTION__, cmd_arg, func, regaddr, regsize, data));
+>>>>>>> update/master
 
 	if ((status = bcmspi_cmd_issue(sd, sd->sd_use_dma, cmd_arg, &data, regsize)) != SUCCESS)
 		return status;
@@ -1483,7 +1690,11 @@ bcmspi_card_bytewrite(sdioh_info_t *sd, int func, uint32 regaddr, uint8 *byte)
 	cmd_arg = SFIELD(cmd_arg, SPI_LEN, 1);
 
 	sd_trace(("%s: WR cmd_arg=0x%x func=%d regaddr=0x%x data=0x%x\n",
+<<<<<<< HEAD
 			__FUNCTION__, cmd_arg, func, regaddr, data));
+=======
+	          __FUNCTION__, cmd_arg, func, regaddr, data));
+>>>>>>> update/master
 
 	if ((status = bcmspi_cmd_issue(sd, sd->sd_use_dma, cmd_arg, &data, 1)) != SUCCESS)
 		return status;
@@ -1504,7 +1715,11 @@ bcmspi_cmd_getdstatus(sdioh_info_t *sd, uint32 *dstatus_buffer)
 /* 'data' is of type uint32 whereas other buffers are of type uint8 */
 static int
 bcmspi_cmd_issue(sdioh_info_t *sd, bool use_dma, uint32 cmd_arg,
+<<<<<<< HEAD
 			uint32 *data, uint32 datalen)
+=======
+                uint32 *data, uint32 datalen)
+>>>>>>> update/master
 {
 	uint32	i, j;
 	uint8	resp_delay = 0;
@@ -1582,6 +1797,7 @@ bcmspi_cmd_issue(sdioh_info_t *sd, bool use_dma, uint32 cmd_arg,
 	if ((GFIELD(cmd_arg, SPI_RW_FLAG) == 0)) {
 		int func = GFIELD(cmd_arg, SPI_FUNCTION);
 		switch (func) {
+<<<<<<< HEAD
 		case 0:
 			if (sd->resp_delay_new)
 				resp_delay = GSPI_F0_RESP_DELAY;
@@ -1603,6 +1819,29 @@ bcmspi_cmd_issue(sdioh_info_t *sd, bool use_dma, uint32 cmd_arg,
 		default:
 			ASSERT(0);
 			break;
+=======
+			case 0:
+				if (sd->resp_delay_new)
+					resp_delay = GSPI_F0_RESP_DELAY;
+				else
+					resp_delay = sd->resp_delay_all ? F0_RESPONSE_DELAY : 0;
+				break;
+			case 1:
+				if (sd->resp_delay_new)
+					resp_delay = GSPI_F1_RESP_DELAY;
+				else
+					resp_delay = F1_RESPONSE_DELAY;
+				break;
+			case 2:
+				if (sd->resp_delay_new)
+					resp_delay = GSPI_F2_RESP_DELAY;
+				else
+					resp_delay = sd->resp_delay_all ? F2_RESPONSE_DELAY : 0;
+				break;
+			default:
+				ASSERT(0);
+				break;
+>>>>>>> update/master
 		}
 		/* Program response delay */
 		if (sd->resp_delay_new == FALSE)
@@ -1621,10 +1860,17 @@ bcmspi_cmd_issue(sdioh_info_t *sd, bool use_dma, uint32 cmd_arg,
 			for (j = 0; j < datalen/4; j++) {
 				if (sd->wordlen == 4) { /* 32bit spid */
 					data[j] = SPISWAP_WD4(*(uint32 *)&spi_inbuf[j * 4 +
+<<<<<<< HEAD
 								CMDLEN + resp_delay]);
 				} else if (sd->wordlen == 2) { /* 16bit spid */
 					data[j] = SPISWAP_WD2(*(uint32 *)&spi_inbuf[j * 4 +
 								CMDLEN + resp_delay]);
+=======
+					            CMDLEN + resp_delay]);
+				} else if (sd->wordlen == 2) { /* 16bit spid */
+					data[j] = SPISWAP_WD2(*(uint32 *)&spi_inbuf[j * 4 +
+					            CMDLEN + resp_delay]);
+>>>>>>> update/master
 				}
 			}
 
@@ -1672,7 +1918,11 @@ bcmspi_cmd_issue(sdioh_info_t *sd, bool use_dma, uint32 cmd_arg,
 
 static int
 bcmspi_card_buf(sdioh_info_t *sd, int rw, int func, bool fifo,
+<<<<<<< HEAD
 			uint32 addr, int nbytes, uint32 *data)
+=======
+                uint32 addr, int nbytes, uint32 *data)
+>>>>>>> update/master
 {
 	int status;
 	uint32 cmd_arg;
@@ -1687,10 +1937,14 @@ bcmspi_card_buf(sdioh_info_t *sd, int rw, int func, bool fifo,
 	ASSERT(nbytes);
 	ASSERT(nbytes <= sd->client_block_size[func]);
 
+<<<<<<< HEAD
 	if (write)
 		sd->t_cnt++;
 	else
 		sd->r_cnt++;
+=======
+	if (write) sd->t_cnt++; else sd->r_cnt++;
+>>>>>>> update/master
 
 	if (func == 2) {
 		/* Frame len check limited by gSPI. */
@@ -1709,7 +1963,11 @@ bcmspi_card_buf(sdioh_info_t *sd, int rw, int func, bool fifo,
 				while (retries-- && !enable) {
 					OSL_DELAY(WAIT_F2RXFIFORDY_DELAY * 1000);
 					bcmspi_card_regread(sd, SPI_FUNC_0, SPID_STATUS_REG, 4,
+<<<<<<< HEAD
 										&dstatus);
+=======
+					                   &dstatus);
+>>>>>>> update/master
 					if (dstatus & STATUS_F2_RX_READY)
 						enable = TRUE;
 				}
@@ -1740,21 +1998,35 @@ bcmspi_card_buf(sdioh_info_t *sd, int rw, int func, bool fifo,
 	spilen = sd->data_xfer_count = MIN(sd->client_block_size[func], nbytes);
 	if ((sd->dwordmode == TRUE) && (GFIELD(cmd_arg, SPI_FUNCTION) == SPI_FUNC_2)) {
 		/* convert len to mod4 size */
+<<<<<<< HEAD
 		spilen = spilen + ((spilen & 0x3) ? (4 - (spilen & 0x3)) : 0);
+=======
+		spilen = spilen + ((spilen & 0x3) ? (4 - (spilen & 0x3)): 0);
+>>>>>>> update/master
 		cmd_arg = SFIELD(cmd_arg, SPI_LEN, (spilen >> 2));
 	} else
 		cmd_arg = SFIELD(cmd_arg, SPI_LEN, spilen);
 
 	if ((func == 2) && (fifo == 1)) {
 		sd_data(("%s: %s func %d, %s, addr 0x%x, len %d bytes, r_cnt %d t_cnt %d\n",
+<<<<<<< HEAD
 				__FUNCTION__, write ? "Wr" : "Rd", func, "INCR",
 				addr, nbytes, sd->r_cnt, sd->t_cnt));
+=======
+		          __FUNCTION__, write ? "Wr" : "Rd", func, "INCR",
+		          addr, nbytes, sd->r_cnt, sd->t_cnt));
+>>>>>>> update/master
 	}
 
 	sd_trace(("%s cmd_arg = 0x%x\n", __FUNCTION__, cmd_arg));
 	sd_data(("%s: %s func %d, %s, addr 0x%x, len %d bytes, r_cnt %d t_cnt %d\n",
+<<<<<<< HEAD
 			__FUNCTION__, write ? "Wd" : "Rd", func, "INCR",
 			addr, nbytes, sd->r_cnt, sd->t_cnt));
+=======
+	         __FUNCTION__, write ? "Wd" : "Rd", func, "INCR",
+	         addr, nbytes, sd->r_cnt, sd->t_cnt));
+>>>>>>> update/master
 
 
 	if ((status = bcmspi_cmd_issue(sd, sd->sd_use_dma, cmd_arg, data, nbytes)) != SUCCESS) {

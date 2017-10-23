@@ -4,7 +4,7 @@
  * Copyright (C) 2010 Google, Inc.
  * Author: Erik Gilling <konkers@android.com>
  *
- * Copyright (C) 2011-2014, NVIDIA Corporation. All rights reserved.
+ * Copyright (C) 2011-2015, NVIDIA Corporation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -30,8 +30,8 @@
 #include "nvhost_channel.h"
 #include "chip_support.h"
 
-pid_t nvhost_debug_null_kickoff_pid;
 unsigned int nvhost_debug_trace_cmdbuf;
+unsigned int nvhost_debug_trace_actmon;
 
 pid_t nvhost_debug_force_timeout_pid;
 u32 nvhost_debug_force_timeout_val;
@@ -55,27 +55,44 @@ static int show_channels(struct platform_device *pdev, void *data,
 	struct nvhost_channel *ch;
 	struct output *o = data;
 	struct nvhost_master *m;
-	struct nvhost_device_data *pdata;
+	int index, locked;
 
 	if (pdev == NULL)
 		return 0;
 
-	pdata = platform_get_drvdata(pdev);
 	m = nvhost_get_host(pdev);
-	ch = nvhost_getchannel(pdata->channel, true, false);
-	if (!ch)
-		return 0;
 
-	if (ch->chid != locked_id)
-		mutex_lock(&ch->cdma.lock);
-	if (fifo)
-		nvhost_get_chip_ops()->debug.show_channel_fifo(
-			m, ch, o, pdata->index);
-	nvhost_get_chip_ops()->debug.show_channel_cdma(
-		m, ch, o, ch->chid);
-	if (ch->chid != locked_id)
-		mutex_unlock(&ch->cdma.lock);
-	nvhost_putchannel(ch, false);
+	/* acquire lock to prevent channel modifications */
+	locked = mutex_trylock(&m->chlist_mutex);
+	if (!locked) {
+		nvhost_debug_output(o, "unable to lock channel list\n");
+		return 0;
+	}
+
+	for (index = 0;	index < nvhost_channel_nb_channels(m); index++) {
+		ch = m->chlist[index];
+		if (!ch || ch->dev != pdev)
+			continue;
+
+		/* ensure that we get a lock */
+		locked = mutex_trylock(&ch->cdma.lock);
+		if (!(locked || ch->chid == locked_id)) {
+			nvhost_debug_output(o, "failed to lock channel %d cdma\n",
+					    ch->chid);
+			continue;
+		}
+
+		if (fifo)
+			nvhost_get_chip_ops()->debug.show_channel_fifo(
+				m, ch, o, ch->chid);
+		nvhost_get_chip_ops()->debug.show_channel_cdma(
+			m, ch, o, ch->chid);
+
+		if (ch->chid != locked_id)
+			mutex_unlock(&ch->cdma.lock);
+	}
+
+	mutex_unlock(&m->chlist_mutex);
 
 	return 0;
 }
@@ -95,26 +112,33 @@ static int show_channels_no_fifo(struct platform_device *pdev, void *data,
 static void show_syncpts(struct nvhost_master *m, struct output *o)
 {
 	int i;
+
 	nvhost_debug_output(o, "---- syncpts ----\n");
-	for (i = 0; i < nvhost_syncpt_nb_pts(&m->syncpt); i++) {
+	mutex_lock(&m->syncpt.syncpt_mutex);
+	for (i = nvhost_syncpt_pts_base(&m->syncpt);
+			i < nvhost_syncpt_pts_limit(&m->syncpt); i++) {
 		u32 max = nvhost_syncpt_read_max(&m->syncpt, i);
 		u32 min = nvhost_syncpt_update_min(&m->syncpt, i);
+		u32 refs = nvhost_syncpt_read_ref(&m->syncpt, i);
 		if (!min && !max)
 			continue;
-		nvhost_debug_output(o, "id %d (%s) min %d max %d\n",
+		nvhost_debug_output(o,
+				"id %d (%s) min %d max %d refs %d (previous client : %s)\n",
 				i, nvhost_get_chip_ops()->syncpt.name(&m->syncpt, i),
-				min, max);
+				min, max, refs,
+				nvhost_syncpt_get_last_client(m->dev, i));
 	}
-
-	for (i = 0; i < nvhost_syncpt_nb_bases(&m->syncpt); i++) {
-		u32 base_val;
-		base_val = nvhost_syncpt_read_wait_base(&m->syncpt, i);
-		if (base_val)
-			nvhost_debug_output(o, "waitbase id %d val %d\n",
-					i, base_val);
-	}
+	mutex_unlock(&m->syncpt.syncpt_mutex);
 
 	nvhost_debug_output(o, "\n");
+}
+
+void nvhost_syncpt_debug(struct nvhost_syncpt *sp)
+{
+	struct output o = {
+	.fn = write_to_printk,
+	};
+	show_syncpts(syncpt_to_dev(sp), &o);
 }
 
 static void show_all(struct nvhost_master *m, struct output *o,
@@ -127,6 +151,8 @@ static void show_all(struct nvhost_master *m, struct output *o,
 	show_syncpts(m, o);
 	nvhost_debug_output(o, "---- channels ----\n");
 	nvhost_device_list_for_all(o, show_channels_fifo, locked_id);
+
+	intr_op().debug_dump(&m->intr, o);
 
 	nvhost_module_idle(m->dev);
 }
@@ -142,6 +168,8 @@ static void show_all_no_fifo(struct nvhost_master *m, struct output *o,
 	show_syncpts(m, o);
 	nvhost_debug_output(o, "---- channels ----\n");
 	nvhost_device_list_for_all(o, show_channels_no_fifo, locked_id);
+
+	intr_op().debug_dump(&m->intr, o);
 
 	nvhost_module_idle(m->dev);
 }
@@ -222,8 +250,6 @@ void nvhost_debug_init(struct nvhost_master *master)
 	debugfs_create_file("status_all", S_IRUGO, de,
 			master, &nvhost_debug_all_fops);
 
-	debugfs_create_u32("null_kickoff_pid", S_IRUGO|S_IWUSR, de,
-			&nvhost_debug_null_kickoff_pid);
 	debugfs_create_u32("trace_cmdbuf", S_IRUGO|S_IWUSR, de,
 			&nvhost_debug_trace_cmdbuf);
 
@@ -248,6 +274,8 @@ void nvhost_debug_init(struct nvhost_master *master)
 #endif
 	debugfs_create_u32("timeout_default_ms", S_IRUGO|S_IWUSR, de,
 			&pdata->nvhost_timeout_default);
+	debugfs_create_u32("trace_actmon", S_IRUGO|S_IWUSR, de,
+			&nvhost_debug_trace_actmon);
 }
 
 void nvhost_debug_dump_locked(struct nvhost_master *master, int locked_id)
@@ -256,7 +284,6 @@ void nvhost_debug_dump_locked(struct nvhost_master *master, int locked_id)
 		.fn = write_to_printk
 	};
 	show_all_no_fifo(master, &o, locked_id);
-	gk20a_debug_dump_device(NULL);
 }
 
 void nvhost_debug_dump(struct nvhost_master *master)
@@ -265,7 +292,6 @@ void nvhost_debug_dump(struct nvhost_master *master)
 		.fn = write_to_printk
 	};
 	show_all_no_fifo(master, &o, -1);
-	gk20a_debug_dump_device(NULL);
 }
 
 void nvhost_debug_dump_device(struct platform_device *pdev)

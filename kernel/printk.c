@@ -62,11 +62,12 @@ extern void printascii(char *);
 #define MINIMUM_CONSOLE_LOGLEVEL 1 /* Minimum loglevel we let people use */
 #define DEFAULT_CONSOLE_LOGLEVEL 7 /* anything MORE serious than KERN_DEBUG */
 
-int console_printk[4] = {
+int console_printk[5] = {
 	DEFAULT_CONSOLE_LOGLEVEL,	/* console_loglevel */
 	DEFAULT_MESSAGE_LOGLEVEL,	/* default_message_loglevel */
 	MINIMUM_CONSOLE_LOGLEVEL,	/* minimum_console_loglevel */
 	DEFAULT_CONSOLE_LOGLEVEL,	/* default_console_loglevel */
+	DEFAULT_MESSAGE_LOGLEVEL,	/* default_devkmsg_loglevel */
 };
 
 /*
@@ -111,7 +112,7 @@ static struct console *exclusive_console;
  */
 struct console_cmdline
 {
-	char	name[8];			/* Name of the driver	    */
+	char	name[16];			/* Name of the driver	    */
 	int	index;				/* Minor dev. to use	    */
 	char	*options;			/* Options for the driver   */
 #ifdef CONFIG_A11Y_BRAILLE_CONSOLE
@@ -428,7 +429,7 @@ static ssize_t devkmsg_writev(struct kiocb *iocb, const struct iovec *iv,
 {
 	char *buf, *line;
 	int i;
-	int level = default_message_loglevel;
+	int level = default_devkmsg_loglevel;
 	int facility = 1;	/* LOG_USER */
 	size_t len = iov_length(iv, count);
 	ssize_t ret = len;
@@ -1330,7 +1331,10 @@ static int have_callable_console(void)
 }
 
 bool console_enabled = 1;
+<<<<<<< HEAD
 EXPORT_SYMBOL(console_enabled);
+=======
+>>>>>>> update/master
 
 /*
  * Can we actually use the console at this time on this cpu?
@@ -2301,6 +2305,8 @@ void register_console(struct console *newcon)
 	 */
 	for (i = 0; i < MAX_CMDLINECONSOLES && console_cmdline[i].name[0];
 			i++) {
+		BUILD_BUG_ON(sizeof(console_cmdline[i].name) !=
+			     sizeof(newcon->name));
 		if (strcmp(console_cmdline[i].name, newcon->name) != 0)
 			continue;
 		if (newcon->index >= 0 &&

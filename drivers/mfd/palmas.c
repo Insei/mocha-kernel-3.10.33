@@ -1130,7 +1130,7 @@ static int palmas_i2c_probe(struct i2c_client *i2c,
 				&i2c->dev);
 		if (!match)
 			return -ENODATA;
-		palmas->id = (unsigned int)match->data;
+		palmas->id = (u32)((uintptr_t)match->data);
 	} else {
 		palmas->id = id->driver_data;
 	}

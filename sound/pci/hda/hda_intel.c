@@ -8,6 +8,8 @@
  *  Copyright (c) 2004 Takashi Iwai <tiwai@suse.de>
  *                     PeiSen Hou <pshou@realtek.com.tw>
  *
+ *   Copyright (C) 2013-2016 NVIDIA Corporation. All rights reserved.
+ *
  *  This program is free software; you can redistribute it and/or modify it
  *  under the terms of the GNU General Public License as published by the Free
  *  Software Foundation; either version 2 of the License, or (at your option)
@@ -51,6 +53,8 @@
 #include <linux/time.h>
 #include <linux/completion.h>
 #include <linux/clk.h>
+#include <linux/of_device.h>
+#include <linux/dma-mapping.h>
 
 #ifdef CONFIG_X86
 /* for snoop control */
@@ -63,13 +67,14 @@
 #include <linux/vga_switcheroo.h>
 #include <linux/firmware.h>
 #include "hda_codec.h"
+#include "hda_local.h"
 
 #ifdef CONFIG_SND_HDA_VPR
 #include <linux/nvmap.h>
 #endif
 #ifdef CONFIG_SND_HDA_PLATFORM_NVIDIA_TEGRA
 #include <linux/tegra-powergate.h>
-#include <mach/pm_domains.h>
+#include <linux/tegra_pm_domains.h>
 #endif
 
 static int index[SNDRV_CARDS] = SNDRV_DEFAULT_IDX;
@@ -89,6 +94,15 @@ static char *patch[SNDRV_CARDS];
 #ifdef CONFIG_SND_HDA_INPUT_BEEP
 static bool beep_mode[SNDRV_CARDS] = {[0 ... (SNDRV_CARDS-1)] =
 					CONFIG_SND_HDA_INPUT_BEEP_MODE};
+#endif
+
+#ifdef CONFIG_PM_GENERIC_DOMAINS_OF
+static struct of_device_id tegra_disb_pd[] = {
+	{ .compatible = "nvidia, tegra210-disb-pd", },
+	{ .compatible = "nvidia, tegra132-disb-pd", },
+	{ .compatible = "nvidia, tegra124-disb-pd", },
+	{},
+};
 #endif
 
 module_param_array(index, int, NULL, 0444);
@@ -535,11 +549,11 @@ struct azx {
 #endif
 
 #ifdef CONFIG_SND_HDA_VPR
-	struct dma_buf *dmabuf;
 	struct dma_buf_attachment *attach;
 	struct sg_table *sgt;
-	unsigned char *vaddr;
-	phys_addr_t paddr;
+	dma_addr_t iova_addr;
+	struct dma_attrs dmaattrs;
+	unsigned int buf_size;
 #endif
 
 	/* locks */
@@ -698,8 +712,8 @@ static char *driver_short_names[] = {
 	[AZX_DRIVER_ULI] = "HDA ULI M5461",
 	[AZX_DRIVER_NVIDIA] = "HDA NVidia",
 	[AZX_DRIVER_NVIDIA_TEGRA] = "HDA NVIDIA Tegra",
-	[AZX_DRIVER_TERA] = "HDA Teradici", 
-	[AZX_DRIVER_CTX] = "HDA Creative", 
+	[AZX_DRIVER_TERA] = "HDA Teradici",
+	[AZX_DRIVER_CTX] = "HDA Creative",
 	[AZX_DRIVER_CTHDA] = "HDA Creative",
 	[AZX_DRIVER_GENERIC] = "HD-Audio Generic",
 };
@@ -1225,6 +1239,36 @@ static unsigned int azx_get_response(struct hda_bus *bus,
 	return ret;
 }
 
+#ifdef CONFIG_PM_SLEEP
+/* put codec down to D3 at hibernation for Intel SKL+;
+ * otherwise BIOS may still access the codec and screw up the driver
+ */
+#define IS_SKL(pci) ((pci)->vendor == 0x8086 && (pci)->device == 0xa170)
+#define IS_SKL_LP(pci) ((pci)->vendor == 0x8086 && (pci)->device == 0x9d70)
+#define IS_BXT(pci) ((pci)->vendor == 0x8086 && (pci)->device == 0x5a98)
+#define IS_SKL_PLUS(pci) (IS_SKL(pci) || IS_SKL_LP(pci) || IS_BXT(pci))
+
+static int azx_freeze_noirq(struct device *dev)
+{
+	struct pci_dev *pci = to_pci_dev(dev);
+
+	if (IS_SKL_PLUS(pci))
+		pci_set_power_state(pci, PCI_D3hot);
+
+	return 0;
+}
+
+static int azx_thaw_noirq(struct device *dev)
+{
+	struct pci_dev *pci = to_pci_dev(dev);
+
+	if (IS_SKL_PLUS(pci))
+		pci_set_power_state(pci, PCI_D0);
+
+	return 0;
+}
+#endif /* CONFIG_PM_SLEEP */
+
 #ifdef CONFIG_PM
 static void azx_power_notify(struct hda_bus *bus, bool power_up);
 #endif
@@ -1537,9 +1581,17 @@ static void azx_init_platform(struct azx *chip)
 static void __azx_platform_enable_clocks(struct azx *chip)
 {
 	int i;
+	int partition_id;
 
 #ifdef CONFIG_SND_HDA_PLATFORM_NVIDIA_TEGRA
-	tegra_unpowergate_partition(TEGRA_POWERGATE_DISB);
+#ifdef CONFIG_PM_GENERIC_DOMAINS_OF
+	partition_id = tegra_pd_get_powergate_id(tegra_disb_pd);
+	if (partition_id < 0)
+		return -EINVAL;
+#else
+	partition_id = TEGRA_POWERGATE_DISB;
+#endif
+	tegra_unpowergate_partition(partition_id);
 #endif
 
 	for (i = 0; i < chip->platform_clk_count; i++)
@@ -1560,6 +1612,7 @@ static void azx_platform_enable_clocks(struct azx *chip)
 static void __azx_platform_disable_clocks(struct azx *chip)
 {
 	int i;
+	int partition_id;
 
 	if (!chip->platform_clk_enable)
 		return;
@@ -1568,7 +1621,14 @@ static void __azx_platform_disable_clocks(struct azx *chip)
 		clk_disable(chip->platform_clks[i]);
 
 #ifdef CONFIG_SND_HDA_PLATFORM_NVIDIA_TEGRA
-	tegra_powergate_partition(TEGRA_POWERGATE_DISB);
+#ifdef CONFIG_PM_GENERIC_DOMAINS_OF
+	partition_id = tegra_pd_get_powergate_id(tegra_disb_pd);
+	if (partition_id < 0)
+		return -EINVAL;
+#else
+	partition_id = TEGRA_POWERGATE_DISB;
+#endif
+	tegra_powergate_partition(partition_id);
 #endif
 
 	chip->platform_clk_enable--;
@@ -1787,6 +1847,7 @@ static void azx_stream_reset(struct azx *chip, struct azx_dev *azx_dev)
 	       --timeout)
 		;
 	val &= ~SD_CTL_STREAM_RESET;
+	udelay(100); /* WAR: Delay added to avoid mcerr */
 	azx_sd_writeb(azx_dev, SD_CTL, val);
 	udelay(3);
 
@@ -1798,6 +1859,16 @@ static void azx_stream_reset(struct azx *chip, struct azx_dev *azx_dev)
 
 	/* reset first position - may not be synced with hw at this time */
 	*azx_dev->posbuf = 0;
+}
+
+static void azx_stream_reset_all(struct azx *chip)
+{
+	int i;
+
+	if (chip->azx_dev) {
+		for (i = 0; i < chip->num_streams; i++)
+			azx_stream_reset(chip, &chip->azx_dev[i]);
+	}
 }
 
 /*
@@ -2843,37 +2914,27 @@ azx_attach_pcm_stream(struct hda_bus *bus, struct hda_codec *codec,
 	if (size > MAX_PREALLOC_SIZE)
 		size = MAX_PREALLOC_SIZE;
 #ifdef CONFIG_SND_HDA_VPR
+	chip->buf_size = size;
 	for (s = 0; s < 2; s++) {
 		struct snd_pcm_substream *substream;
 		for (substream = pcm->streams[s].substream;
-		  substream; substream = substream->next) {
-			chip->dmabuf = nvmap_alloc_dmabuf(size, 32,
-			  NVMAP_HANDLE_WRITE_COMBINE, NVMAP_HEAP_CARVEOUT_VPR);
-			if (IS_ERR(chip->dmabuf)) {
-				err = (int)chip->dmabuf;
-				goto dmabuf_fail;
-			}
-			chip->vaddr = dma_buf_vmap(chip->dmabuf);
-			if (!chip->vaddr) {
+		     substream; substream = substream->next) {
+
+			DEFINE_DMA_ATTRS(dmaattrs);
+			chip->dmaattrs = dmaattrs;
+			(void)dma_alloc_attrs(&tegra_vpr_dev,
+				chip->buf_size, &chip->iova_addr,
+				DMA_MEMORY_NOMAP, &chip->dmaattrs);
+			if (dma_mapping_error(&tegra_vpr_dev,
+					chip->iova_addr)) {
+				chip->iova_addr = 0;
 				err = -ENOMEM;
-				goto vmap_fail;
+				goto dma_alloc_fail;
 			}
-			chip->attach = dma_buf_attach(chip->dmabuf, chip->dev);
-			if (IS_ERR(chip->attach)) {
-				err = (int)chip->attach;
-				goto attach_fail;
-			}
-			chip->sgt = dma_buf_map_attachment(chip->attach,
-				DMA_BIDIRECTIONAL);
-			if (IS_ERR(chip->sgt)) {
-				err = (int)chip->sgt;
-				goto sgt_fail;
-			}
-			chip->paddr = sg_dma_address(chip->sgt->sgl);
 			snd_printk(KERN_DEBUG SFX
-			  "paddr=%08llx vaddr=%p\n", chip->paddr, chip->vaddr);
-			substream->dma_buffer.area = chip->vaddr;
-			substream->dma_buffer.addr = chip->paddr;
+				"iova_addr=%pad\n", &chip->iova_addr);
+			substream->dma_buffer.area = NULL;
+			substream->dma_buffer.addr = chip->iova_addr;
 			substream->dma_buffer.bytes = size;
 			substream->dma_buffer.dev.dev = chip->dev;
 			if (substream->dma_buffer.bytes > 0)
@@ -2881,14 +2942,7 @@ azx_attach_pcm_stream(struct hda_bus *bus, struct hda_codec *codec,
 				   substream->dma_buffer.bytes;
 			substream->dma_max = MAX_PREALLOC_SIZE;
 			continue;
-sgt_fail:
-			dma_buf_detach(chip->dmabuf, chip->attach);
-attach_fail:
-			dma_buf_vunmap(chip->dmabuf, chip->vaddr);
-vmap_fail:
-			dma_buf_put(chip->dmabuf);
-dmabuf_fail:
-			chip->dmabuf = NULL;
+dma_alloc_fail:
 			return err;
 		}
 	}
@@ -3317,6 +3371,10 @@ static int azx_runtime_idle(struct device *dev)
 #ifdef CONFIG_PM
 static const struct dev_pm_ops azx_pm = {
 	SET_SYSTEM_SLEEP_PM_OPS(azx_suspend, azx_resume)
+#ifdef CONFIG_PM_SLEEP
+	.freeze_noirq = azx_freeze_noirq,
+	.thaw_noirq = azx_thaw_noirq,
+#endif
 	SET_RUNTIME_PM_OPS(azx_runtime_suspend, azx_runtime_resume, azx_runtime_idle)
 };
 
@@ -3339,6 +3397,7 @@ static int azx_halt(struct notifier_block *nb, unsigned long event, void *buf)
 #endif
 
 	snd_hda_bus_reboot_notify(chip->bus);
+	azx_stream_reset_all(chip);
 	azx_stop_chip(chip);
 
 #if defined(CONFIG_SND_HDA_PLATFORM_DRIVER)
@@ -3508,8 +3567,16 @@ static int azx_free(struct azx *chip)
 		free_irq(chip->irq, (void*)chip);
 	if (chip->pci && chip->msi)
 		pci_disable_msi(chip->pci);
-	if (chip->remap_addr)
-		iounmap(chip->remap_addr);
+	if (chip->remap_addr) {
+		void __iomem *addr2unmap;
+		if (chip->driver_type == AZX_DRIVER_NVIDIA_TEGRA) {
+			addr2unmap = chip->remap_config_addr;
+		} else {
+			addr2unmap = chip->remap_addr;
+		}
+		iounmap(addr2unmap);
+	}
+
 
 	if (chip->azx_dev) {
 		for (i = 0; i < chip->num_streams; i++)
@@ -3538,13 +3605,10 @@ static int azx_free(struct azx *chip)
 #endif
 	kfree(chip);
 #ifdef CONFIG_SND_HDA_VPR
-	if (chip->dmabuf) {
-		dma_buf_unmap_attachment(chip->attach, chip->sgt,
-					 DMA_BIDIRECTIONAL);
-		dma_buf_detach(chip->dmabuf, chip->attach);
-		dma_buf_vunmap(chip->dmabuf, chip->vaddr);
-		dma_buf_put(chip->dmabuf);
-		chip->dmabuf = NULL;
+	if (chip->iova_addr) {
+		dma_free_attrs(&tegra_vpr_dev, chip->buf_size,
+				(void *)(uintptr_t)chip->iova_addr,
+				chip->iova_addr, &chip->dmaattrs);
 	}
 #endif
 
@@ -3928,14 +3992,14 @@ static int azx_first_init(struct azx *chip)
 		switch (chip->driver_type) {
 #ifdef CONFIG_SND_HDA_PLATFORM_NVIDIA_TEGRA
 		case AZX_DRIVER_NVIDIA_TEGRA:
-			chip->platform_clk_count = ARRAY_SIZE(tegra_clk_names);
-			for (i = 0; i < chip->platform_clk_count; i++) {
+			for (i = 0; i < ARRAY_SIZE(tegra_clk_names); i++) {
 				tegra_clks[i] = clk_get(&chip->pdev->dev,
 							tegra_clk_names[i]);
 				if (IS_ERR_OR_NULL(tegra_clks[i])) {
 					return PTR_ERR(tegra_clks[i]);
 				}
 			}
+			chip->platform_clk_count = ARRAY_SIZE(tegra_clk_names);
 			chip->platform_clks = tegra_clks;
 			break;
 #endif
@@ -4269,7 +4333,10 @@ static int azx_probe(struct pci_dev *pci,
 
 out_free:
 	snd_card_free(card);
-	pci_set_drvdata(pci, NULL);
+	if (pci)
+		pci_set_drvdata(pci, NULL);
+	else
+		dev_set_drvdata(&pdev->dev, NULL);
 	return err;
 }
 
@@ -4371,6 +4438,11 @@ static DEFINE_PCI_DEVICE_TABLE(azx_pci_ids) = {
 	{ PCI_DEVICE(0x8086, 0x8d20),
 	  .driver_data = AZX_DRIVER_PCH | AZX_DCAPS_INTEL_PCH },
 	{ PCI_DEVICE(0x8086, 0x8d21),
+	  .driver_data = AZX_DRIVER_PCH | AZX_DCAPS_INTEL_PCH },
+	/* Lewisburg */
+	{ PCI_DEVICE(0x8086, 0xa1f0),
+	  .driver_data = AZX_DRIVER_PCH | AZX_DCAPS_INTEL_PCH },
+	{ PCI_DEVICE(0x8086, 0xa270),
 	  .driver_data = AZX_DRIVER_PCH | AZX_DCAPS_INTEL_PCH },
 	/* Lynx Point-LP */
 	{ PCI_DEVICE(0x8086, 0x9c20),
@@ -4541,11 +4613,36 @@ static struct pci_driver azx_driver = {
 };
 
 #ifdef CONFIG_SND_HDA_PLATFORM_DRIVER
+
+static int hda_driver_data = AZX_DRIVER_NVIDIA_TEGRA | AZX_DCAPS_PM_RUNTIME;
+
+static const struct of_device_id hda_device[] = {
+	{.compatible = "nvidia,tegra30-hda", .data = &hda_driver_data},
+	{},
+};
+MODULE_DEVICE_TABLE(of, hda_device);
+
 static int azx_probe_platform(struct platform_device *pdev)
 {
-	const struct platform_device_id *pdev_id = platform_get_device_id(pdev);
+	const struct platform_device_id *pdev_id;
+	const struct of_device_id *match;
+	int driver_data;
 
-	return azx_probe(NULL, pdev, pdev_id->driver_data);
+	if (pdev->dev.of_node) {
+		match = of_match_device(of_match_ptr(hda_device),
+				 &pdev->dev);
+		if (match) {
+			driver_data = *(int *)(match->data);
+		} else {
+			snd_printk(KERN_WARNING "%s matching device not found\n",
+				 __func__);
+			return -EINVAL;
+		}
+	} else {
+		pdev_id = platform_get_device_id(pdev);
+		driver_data = pdev_id->driver_data;
+	}
+	return azx_probe(NULL, pdev, driver_data);
 }
 
 static int azx_remove_platform(struct platform_device *pdev)
@@ -4557,8 +4654,7 @@ static int azx_remove_platform(struct platform_device *pdev)
 static const struct platform_device_id azx_platform_ids[] = {
 #ifdef CONFIG_SND_HDA_PLATFORM_NVIDIA_TEGRA
 	{ "tegra30-hda",
-	  .driver_data = AZX_DRIVER_NVIDIA_TEGRA | AZX_DCAPS_RIRB_DELAY |
-											AZX_DCAPS_PM_RUNTIME },
+	  .driver_data = AZX_DRIVER_NVIDIA_TEGRA | AZX_DCAPS_PM_RUNTIME },
 #endif
 	{ },
 };
@@ -4569,6 +4665,7 @@ static struct platform_driver hda_platform_driver = {
 	.driver = {
 		.name = "hda-platform",
 		.pm = AZX_PM_OPS,
+		.of_match_table = of_match_ptr(hda_device),
 	},
 	.probe = azx_probe_platform,
 	.remove = azx_remove_platform,

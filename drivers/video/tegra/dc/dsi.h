@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/dc/dsi.h
  *
- * Copyright (c) 2011-2014, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2011-2015, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -18,6 +18,8 @@
 #define __DRIVERS_VIDEO_TEGRA_DC_DSI_H__
 
 #define BOARD_P1761   0x06E1
+#include "dc_priv_defs.h"
+#include <linux/sysedp.h>
 
 /* Defines the DSI phy timing parameters */
 struct dsi_phy_timing_inclk {
@@ -116,6 +118,9 @@ struct tegra_dc_dsi_data {
 	struct regulator *avdd_dsi_csi;
 
 	u32 dsi_control_val;
+	u32 device_shutdown;
+
+	struct sysedp_consumer *sysedpc;
 };
 
 /* Max number of data lanes supported */
@@ -162,6 +167,8 @@ struct tegra_dc_dsi_data {
 #define DSI_COMMAND_COMPLETION_DELAY_USEC   5
 
 #define DSI_DELAY_FOR_READ_FIFO 5
+
+#define DSI_WRITE_DATA_RETRY_ATTEMPTS 5
 
 /* Dsi virtual channel bit position, refer to the DSI specs */
 #define DSI_VIR_CHANNEL_BIT_POSITION	6
@@ -472,6 +479,12 @@ void tegra_dsi_stop_host_cmd_v_blank_dcs(struct tegra_dc_dsi_data *dsi);
 int tegra_dsi_write_data(struct tegra_dc *dc,
 			struct tegra_dc_dsi_data *dsi,
 			struct tegra_dsi_cmd *cmd, u8 delay_ms);
+int tegra_dsi_send_panel_cmd(struct tegra_dc *dc,
+					struct tegra_dc_dsi_data *dsi,
+					struct tegra_dsi_cmd *cmd,
+					u32 n_cmd);
+
+void tegra_dsi_init_clock_param(struct tegra_dc *dc);
 
 static inline void *tegra_dsi_get_outdata(struct tegra_dc_dsi_data *dsi)
 {

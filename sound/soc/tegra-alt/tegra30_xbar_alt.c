@@ -31,13 +31,21 @@
 
 #define DRV_NAME "tegra30-ahub-xbar"
 
+struct tegra30_xbar *xbar;
+
+static bool tegra30_xbar_volatile_reg(struct device *dev,
+				unsigned int reg)
+{
+	return false;
+}
+
 static const struct regmap_config tegra30_xbar_regmap_config = {
 	.reg_bits = 32,
 	.val_bits = 32,
 	.reg_stride = 4,
 	.max_register = TEGRA_AHUB_AUDIO_RX_STRIDE *
 			(TEGRA_AHUB_AUDIO_RX_COUNT - 1),
-	.cache_type = REGCACHE_RBTREE,
+	.cache_type = REGCACHE_FLAT,
 };
 
 static const struct regmap_config tegra124_xbar_regmap_config = {
@@ -46,13 +54,12 @@ static const struct regmap_config tegra124_xbar_regmap_config = {
 	.reg_stride = 4,
 	.max_register = TEGRA_AHUB_AUDIO_RX1 + (TEGRA_AHUB_AUDIO_RX_STRIDE *
 			(TEGRA_AHUB_AUDIO_RX_COUNT - 1)),
-	.cache_type = REGCACHE_RBTREE,
+	.volatile_reg = tegra30_xbar_volatile_reg,
+	.cache_type = REGCACHE_FLAT,
 };
 
 static int tegra30_xbar_runtime_suspend(struct device *dev)
 {
-	struct tegra30_xbar *xbar = dev_get_drvdata(dev);
-
 	regcache_cache_only(xbar->regmap, true);
 
 	clk_disable(xbar->clk);
@@ -62,7 +69,6 @@ static int tegra30_xbar_runtime_suspend(struct device *dev)
 
 static int tegra30_xbar_runtime_resume(struct device *dev)
 {
-	struct tegra30_xbar *xbar = dev_get_drvdata(dev);
 	int ret;
 
 	ret = clk_enable(xbar->clk);
@@ -72,13 +78,22 @@ static int tegra30_xbar_runtime_resume(struct device *dev)
 	}
 
 	regcache_cache_only(xbar->regmap, false);
+	regcache_sync(xbar->regmap);
 
 	return 0;
 }
 
+#ifdef CONFIG_PM_SLEEP
+static int tegra30_xbar_suspend(struct device *dev)
+{
+	regcache_mark_dirty(xbar->regmap);
+
+	return 0;
+}
+#endif
+
 static int tegra30_xbar_codec_probe(struct snd_soc_codec *codec)
 {
-	struct tegra30_xbar *xbar = snd_soc_codec_get_drvdata(codec);
 	int ret;
 
 	codec->control_data = xbar->regmap;
@@ -126,8 +141,17 @@ static struct snd_soc_dai_driver tegra30_xbar_dais[] = {
 	DAI(I2S2),
 	DAI(I2S3),
 	DAI(I2S4),
+	DAI(DAM0),
+	DAI(DAM1),
+	DAI(DAM2),
+	DAI(DAM0-0),
+	DAI(DAM0-1),
+	DAI(DAM1-0),
+	DAI(DAM1-1),
+	DAI(DAM2-0),
+	DAI(DAM2-1),
 	DAI(SPDIF),
-	/* index 0..9 above are used on Tegra30 */
+	/* index 0..18 above are used on Tegra30 */
 	DAI(APBIF4),
 	DAI(APBIF5),
 	DAI(APBIF6),
@@ -144,7 +168,7 @@ static struct snd_soc_dai_driver tegra30_xbar_dais[] = {
 	DAI(ADX0-2),
 	DAI(ADX0-3),
 	DAI(ADX0),
-	/* index 0..25 above are used on Tegra114 */
+	/* index 0..34 above are used on Tegra114 */
 	DAI(AMX1),
 	DAI(AMX1-0),
 	DAI(AMX1-1),
@@ -155,7 +179,13 @@ static struct snd_soc_dai_driver tegra30_xbar_dais[] = {
 	DAI(ADX1-2),
 	DAI(ADX1-3),
 	DAI(ADX1),
-	/* index 0..35 above are used on Tegra124 */
+	DAI(AFC0),
+	DAI(AFC1),
+	DAI(AFC2),
+	DAI(AFC3),
+	DAI(AFC4),
+	DAI(AFC5),
+	/* index 0..50 above are used on Tegra124 */
 };
 
 static const char * const tegra30_xbar_mux_texts[] = {
@@ -169,8 +199,11 @@ static const char * const tegra30_xbar_mux_texts[] = {
 	"I2S2",
 	"I2S3",
 	"I2S4",
+	"DAM0",
+	"DAM1",
+	"DAM2",
 	"SPDIF",
-	/* index 0..10 above are used on Tegra30 */
+	/* index 0..13 above are used on Tegra30 */
 	"APBIF4",
 	"APBIF5",
 	"APBIF6",
@@ -182,47 +215,62 @@ static const char * const tegra30_xbar_mux_texts[] = {
 	"ADX0-1",
 	"ADX0-2",
 	"ADX0-3",
-	/* index 0..21 above are used on Tegra114 */
+	/* index 0..24 above are used on Tegra114 */
 	"AMX1",
 	"ADX1-0",
 	"ADX1-1",
 	"ADX1-2",
 	"ADX1-3",
-	/* index 0..26 above are used on Tegra124 */
+	"AFC0",
+	"AFC1",
+	"AFC2",
+	"AFC3",
+	"AFC4",
+	"AFC5",
+	/* index 0..35 above are used on Tegra124 */
 };
 
+#define MUX_VALUE(npart, nbit) (1 + nbit + npart * 32)
 static const int tegra30_xbar_mux_values[] = {
-	/* Mux0 input,	Mux1 input */
-	0,		0,
-	BIT(0),		0,
-	BIT(1),		0,
-	BIT(2),		0,
-	BIT(3),		0,
-	BIT(4),		0,
-	BIT(5),		0,
-	BIT(6),		0,
-	BIT(7),		0,
-	BIT(8),		0,
-	BIT(12),	0,
-	/* index 0..10 above are used on Tegra30 */
-	BIT(14),	0,
-	BIT(15),	0,
-	BIT(16),	0,
-	BIT(17),	0,
-	BIT(18),	0,
-	BIT(19),	0,
-	BIT(20),	0,
-	BIT(21),	0,
-	BIT(22),	0,
-	BIT(23),	0,
-	BIT(24),	0,
-	/* index 0..21 above are used on Tegra114 */
-	0,		BIT(0),
-	0,		BIT(1),
-	0,		BIT(2),
-	0,		BIT(3),
-	0,		BIT(4),
-	/* index 0..26 above are used on Tegra124 */
+	0,
+	MUX_VALUE(0, 0),
+	MUX_VALUE(0, 1),
+	MUX_VALUE(0, 2),
+	MUX_VALUE(0, 3),
+	MUX_VALUE(0, 4),
+	MUX_VALUE(0, 5),
+	MUX_VALUE(0, 6),
+	MUX_VALUE(0, 7),
+	MUX_VALUE(0, 8),
+	MUX_VALUE(0, 9),
+	MUX_VALUE(0, 10),
+	MUX_VALUE(0, 11),
+	MUX_VALUE(0, 12),
+	/* index 0..13 above are used on Tegra30 */
+	MUX_VALUE(0, 14),
+	MUX_VALUE(0, 15),
+	MUX_VALUE(0, 16),
+	MUX_VALUE(0, 17),
+	MUX_VALUE(0, 18),
+	MUX_VALUE(0, 19),
+	MUX_VALUE(0, 20),
+	MUX_VALUE(0, 21),
+	MUX_VALUE(0, 22),
+	MUX_VALUE(0, 23),
+	MUX_VALUE(0, 24),
+	/* index 0..24 above are used on Tegra114 */
+	MUX_VALUE(1, 0),
+	MUX_VALUE(1, 1),
+	MUX_VALUE(1, 2),
+	MUX_VALUE(1, 3),
+	MUX_VALUE(1, 4),
+	MUX_VALUE(1, 5),
+	MUX_VALUE(1, 6),
+	MUX_VALUE(1, 7),
+	MUX_VALUE(1, 8),
+	MUX_VALUE(1, 9),
+	MUX_VALUE(1, 10),
+	/* index 0..35 above are used on Tegra124 */
 };
 
 int tegra30_xbar_get_value_enum(struct snd_kcontrol *kcontrol,
@@ -230,24 +278,33 @@ int tegra30_xbar_get_value_enum(struct snd_kcontrol *kcontrol,
 {
 	struct snd_soc_dapm_widget_list *wlist = snd_kcontrol_chip(kcontrol);
 	struct snd_soc_dapm_widget *widget = wlist->widgets[0];
-	struct soc_enum *e = (struct soc_enum *)kcontrol->private_value;
-	unsigned int reg_val[2], mux;
 	struct snd_soc_codec *codec = widget->codec;
-	struct tegra30_xbar *xbar = snd_soc_codec_get_drvdata(codec);
+	struct soc_enum *e = (struct soc_enum *)kcontrol->private_value;
+	unsigned int reg_count, reg_val, val, bit_pos = 0, i;
+	unsigned int reg[TEGRA_AHUB_AUDIO_UPDATE_MAX_REG];
 
-	regmap_read(widget->codec->control_data, e->reg, &reg_val[0]);
+	reg_count = xbar->soc_data->reg_count;
 
-	if (xbar->soc_data->num_mux1_input)
-		regmap_read(widget->codec->control_data, e->reg2, &reg_val[1]);
-	else
-		reg_val[1] = 0;
+	if (reg_count > TEGRA_AHUB_AUDIO_UPDATE_MAX_REG)
+		return -EINVAL;
 
-	for (mux = 0; mux < e->max; mux++) {
-		if ((reg_val[0] == e->values[mux * 2]) &&
-			(reg_val[1] == e->values[mux * 2 + 1]))
+	for (i = 0; i < reg_count; i++) {
+		reg[i] = (e->reg +
+			xbar->soc_data->reg_offset * i);
+		reg_val = snd_soc_read(codec, reg[i]);
+		val = reg_val & xbar->soc_data->mask[i];
+		if (val != 0) {
+			bit_pos = ffs(val) + (8 * codec->val_bytes * i);
 			break;
+		}
 	}
-	ucontrol->value.enumerated.item[0] = mux;
+
+	for (i = 0; i < e->max; i++) {
+		if (bit_pos == e->values[i]) {
+			ucontrol->value.enumerated.item[0] = i;
+			break;
+		}
+	}
 
 	return 0;
 }
@@ -257,75 +314,86 @@ int tegra30_xbar_put_value_enum(struct snd_kcontrol *kcontrol,
 {
 	struct snd_soc_dapm_widget_list *wlist = snd_kcontrol_chip(kcontrol);
 	struct snd_soc_dapm_widget *widget = wlist->widgets[0];
-	struct soc_enum *e = (struct soc_enum *)kcontrol->private_value;
-	unsigned int value[2], mux, old;
-	struct snd_soc_dapm_update update;
-	int wi;
 	struct snd_soc_codec *codec = widget->codec;
-	struct tegra30_xbar *xbar = snd_soc_codec_get_drvdata(codec);
+	struct soc_enum *e = (struct soc_enum *)kcontrol->private_value;
+	unsigned int *item = ucontrol->value.enumerated.item;
+	unsigned int change = 0, reg_idx = 0, value, *mask, bit_pos = 0;
+	unsigned int i, wi, reg_count, reg_val = 0, update_idx = 0;
+	unsigned int reg[TEGRA_AHUB_AUDIO_UPDATE_MAX_REG];
+	struct snd_soc_dapm_update update[TEGRA_AHUB_AUDIO_UPDATE_MAX_REG];
 
-	if (ucontrol->value.enumerated.item[0] > e->max - 1)
+	/* initialize the reg_count and mask from soc_data */
+	reg_count = xbar->soc_data->reg_count;
+	mask = (unsigned int *)xbar->soc_data->mask;
+
+	if (item[0] >= e->max || reg_count > TEGRA_AHUB_AUDIO_UPDATE_MAX_REG)
 		return -EINVAL;
 
-	mux = ucontrol->value.enumerated.item[0];
-	value[0] = e->values[ucontrol->value.enumerated.item[0] * 2];
-	value[1] = e->values[(ucontrol->value.enumerated.item[0] * 2) + 1];
+	value = e->values[item[0]];
 
-	regmap_read(widget->codec->control_data, e->reg, &old);
-	if (value[0] != old) {
-		for (wi = 0; wi < wlist->num_widgets; wi++) {
-			widget = wlist->widgets[wi];
-			widget->value = value[0];
-			update.kcontrol = kcontrol;
-			update.widget = widget;
-			update.reg = e->reg;
-			update.mask = xbar->soc_data->mask[0];
-			update.val = value[0];
-			widget->dapm->update = &update;
-			snd_soc_dapm_mux_update_power(widget, kcontrol, mux, e);
-			widget->dapm->update = NULL;
+	if (value) {
+		/* get the register index and value to set */
+		reg_idx = (value - 1) / (8 * codec->val_bytes);
+		bit_pos = (value - 1) % (8 * codec->val_bytes);
+		reg_val = BIT(bit_pos);
+	}
+
+	for (i = 0; i < reg_count; i++) {
+		reg[i] = e->reg + xbar->soc_data->reg_offset * i;
+		if (i == reg_idx) {
+			change |= snd_soc_test_bits(codec, reg[i],
+							mask[i], reg_val);
+			/* set the selected register */
+			update[reg_count - 1].reg = reg[reg_idx];
+			update[reg_count - 1].mask = mask[reg_idx];
+			update[reg_count - 1].val = reg_val;
+		} else {
+			/* accumulate the change to update the DAPM path
+			    when none is selected */
+			change |= snd_soc_test_bits(codec, reg[i],
+							mask[i], 0);
+
+			/* clear the register when not selected */
+			update[update_idx].reg = reg[i];
+			update[update_idx].mask = mask[i];
+			update[update_idx++].val = 0;
 		}
 	}
 
-	if (xbar->soc_data->num_mux1_input) {
-		regmap_read(widget->codec->control_data, e->reg2, &old);
-		if (value[1] != old) {
-			for (wi = 0; wi < wlist->num_widgets; wi++) {
-				widget = wlist->widgets[wi];
-				widget->value = value[1];
-				update.kcontrol = kcontrol;
-				update.widget = widget;
-				update.reg = e->reg2;
-				update.mask = xbar->soc_data->mask[1];
-				update.val = value[1];
-				widget->dapm->update = &update;
-				snd_soc_dapm_mux_update_power(widget, kcontrol, mux, e);
+	/* power the widgets */
+	if (change) {
+		for (wi = 0; wi < wlist->num_widgets; wi++) {
+			widget = wlist->widgets[wi];
+			widget->value = reg_val;
+			for (i = 0; i < reg_count; i++) {
+				update[i].kcontrol = kcontrol;
+				update[i].widget = widget;
+				widget->dapm->update = &update[i];
+				snd_soc_dapm_mux_update_power(widget,
+					kcontrol, item[0], e);
 				widget->dapm->update = NULL;
 			}
 		}
 	}
 
-	return 0;
+	return change;
 }
 
-#define MUX0_REG(id) (TEGRA_AHUB_AUDIO_RX + \
-			(TEGRA_AHUB_AUDIO_RX_STRIDE * (id)))
+#define MUX_REG(id) (TEGRA_AHUB_AUDIO_RX_STRIDE * (id))
 
-#define MUX1_REG(id) (TEGRA_AHUB_AUDIO_RX1 + \
-			(TEGRA_AHUB_AUDIO_RX_STRIDE * (id)))
-
-#define SOC_ENUM_WIDE(xreg, yreg, shift, xmax, xtexts, xvalues) \
-{	.reg = xreg, .reg2 = yreg, .shift_l = shift, .shift_r = shift, \
+#define SOC_VALUE_ENUM_WIDE(xreg, shift, xmax, xtexts, xvalues) \
+{	.reg = xreg, .shift_l = shift, .shift_r = shift, \
 	.max = xmax, .texts = xtexts, .values = xvalues, \
 	.mask = xmax ? roundup_pow_of_two(xmax) - 1 : 0}
 
-#define SOC_ENUM_WIDE_DECL(name, xreg, yreg, shift, xtexts, xvalues) \
-	struct soc_enum name = SOC_ENUM_WIDE(xreg, yreg, shift, \
+#define SOC_VALUE_ENUM_WIDE_DECL(name, xreg, shift, \
+		xtexts, xvalues) \
+	struct soc_enum name = SOC_VALUE_ENUM_WIDE(xreg, shift, \
 					ARRAY_SIZE(xtexts), xtexts, xvalues)
 
 #define MUX_ENUM_CTRL_DECL(ename, id) \
-	SOC_ENUM_WIDE_DECL(ename##_enum, MUX0_REG(id), MUX1_REG(id), \
-			0, tegra30_xbar_mux_texts, tegra30_xbar_mux_values); \
+	SOC_VALUE_ENUM_WIDE_DECL(ename##_enum, MUX_REG(id), 0,	\
+			tegra30_xbar_mux_texts, tegra30_xbar_mux_values);	\
 	static const struct snd_kcontrol_new ename##_control = \
 		SOC_DAPM_ENUM_EXT("Route", ename##_enum,\
 				tegra30_xbar_get_value_enum,\
@@ -340,6 +408,12 @@ MUX_ENUM_CTRL_DECL(i2s1_tx, 0x05);
 MUX_ENUM_CTRL_DECL(i2s2_tx, 0x06);
 MUX_ENUM_CTRL_DECL(i2s3_tx, 0x07);
 MUX_ENUM_CTRL_DECL(i2s4_tx, 0x08);
+MUX_ENUM_CTRL_DECL(dam00_tx, 0x09);
+MUX_ENUM_CTRL_DECL(dam01_tx, 0x0a);
+MUX_ENUM_CTRL_DECL(dam10_tx, 0x0b);
+MUX_ENUM_CTRL_DECL(dam11_tx, 0x0c);
+MUX_ENUM_CTRL_DECL(dam20_tx, 0x0d);
+MUX_ENUM_CTRL_DECL(dam21_tx, 0x0e);
 MUX_ENUM_CTRL_DECL(spdif_tx, 0x0f);
 /* above controls are used on Tegra30 */
 MUX_ENUM_CTRL_DECL(apbif4_tx, 0x11);
@@ -359,6 +433,12 @@ MUX_ENUM_CTRL_DECL(amx11_tx, 0x1f);
 MUX_ENUM_CTRL_DECL(amx12_tx, 0x20);
 MUX_ENUM_CTRL_DECL(amx13_tx, 0x21);
 MUX_ENUM_CTRL_DECL(adx1_tx, 0x22);
+MUX_ENUM_CTRL_DECL(afc0_tx, 0x23);
+MUX_ENUM_CTRL_DECL(afc1_tx, 0x24);
+MUX_ENUM_CTRL_DECL(afc2_tx, 0x25);
+MUX_ENUM_CTRL_DECL(afc3_tx, 0x26);
+MUX_ENUM_CTRL_DECL(afc4_tx, 0x27);
+MUX_ENUM_CTRL_DECL(afc5_tx, 0x28);
 /* above controls are used on Tegra124 */
 
 #define WIDGETS(sname, ename) \
@@ -385,8 +465,17 @@ static const struct snd_soc_dapm_widget tegra30_xbar_widgets[] = {
 	WIDGETS("I2S2", i2s2_tx),
 	WIDGETS("I2S3", i2s3_tx),
 	WIDGETS("I2S4", i2s4_tx),
+	WIDGETS("DAM0-0", dam00_tx),
+	WIDGETS("DAM0-1", dam01_tx),
+	WIDGETS("DAM1-0", dam10_tx),
+	WIDGETS("DAM1-1", dam11_tx),
+	WIDGETS("DAM2-0", dam20_tx),
+	WIDGETS("DAM2-1", dam21_tx),
 	WIDGETS("SPDIF", spdif_tx),
-	/* index 0..9 above are used on Tegra30 */
+	TX_WIDGETS("DAM0"),
+	TX_WIDGETS("DAM1"),
+	TX_WIDGETS("DAM2"),
+	/* index 0..18 above are used on Tegra30 */
 	WIDGETS("APBIF4", apbif4_tx),
 	WIDGETS("APBIF5", apbif5_tx),
 	WIDGETS("APBIF6", apbif6_tx),
@@ -403,18 +492,24 @@ static const struct snd_soc_dapm_widget tegra30_xbar_widgets[] = {
 	TX_WIDGETS("ADX0-1"),
 	TX_WIDGETS("ADX0-2"),
 	TX_WIDGETS("ADX0-3"),
-	/* index 0..25 above are used on Tegra114 */
+	/* index 0..34 above are used on Tegra114 */
 	WIDGETS("AMX1-0", amx10_tx),
 	WIDGETS("AMX1-1", amx11_tx),
 	WIDGETS("AMX1-2", amx12_tx),
 	WIDGETS("AMX1-3", amx13_tx),
 	WIDGETS("ADX1", adx1_tx),
+	WIDGETS("AFC0", afc0_tx),
+	WIDGETS("AFC1", afc1_tx),
+	WIDGETS("AFC2", afc2_tx),
+	WIDGETS("AFC3", afc3_tx),
+	WIDGETS("AFC4", afc4_tx),
+	WIDGETS("AFC5", afc5_tx),
 	TX_WIDGETS("AMX1"),
 	TX_WIDGETS("ADX1-0"),
 	TX_WIDGETS("ADX1-1"),
 	TX_WIDGETS("ADX1-2"),
 	TX_WIDGETS("ADX1-3"),
-	/* index 0..35 above are used on Tegra124 */
+	/* index 0..50 above are used on Tegra124 */
 };
 
 /* These routes used on Tegra30, Tegra114, Tegra124 */
@@ -431,6 +526,9 @@ static const struct snd_soc_dapm_widget tegra30_xbar_widgets[] = {
 	{ name " Mux",      "I2S2",	"I2S2 RX" },		\
 	{ name " Mux",      "I2S3",	"I2S3 RX" },		\
 	{ name " Mux",      "I2S4",	"I2S4 RX" },		\
+	{ name " Mux",      "DAM0",	"DAM0 RX" },		\
+	{ name " Mux",      "DAM1",	"DAM1 RX" },		\
+	{ name " Mux",      "DAM2",	"DAM2 RX" },		\
 	{ name " Mux",      "SPDIF",	"SPDIF RX" },
 
 /* These routes used on Tegra114 and Tegra124 */
@@ -457,7 +555,13 @@ static const struct snd_soc_dapm_widget tegra30_xbar_widgets[] = {
 	{ name " Mux",      "ADX1-0",	"ADX1-0 RX" },	\
 	{ name " Mux",      "ADX1-1",	"ADX1-1 RX" },	\
 	{ name " Mux",      "ADX1-2",	"ADX1-2 RX" },	\
-	{ name " Mux",      "ADX1-3",	"ADX1-3 RX" },
+	{ name " Mux",      "ADX1-3",	"ADX1-3 RX" },	\
+	{ name " Mux",      "AFC0",		"AFC0 RX" },		\
+	{ name " Mux",      "AFC1",		"AFC1 RX" },		\
+	{ name " Mux",      "AFC2",		"AFC2 RX" },		\
+	{ name " Mux",      "AFC3",		"AFC3 RX" },		\
+	{ name " Mux",      "AFC4",		"AFC4 RX" },		\
+	{ name " Mux",      "AFC5",		"AFC5 RX" },		\
 
 /*
  * The number of entries in, and order of, this array is closely tied to the
@@ -474,6 +578,15 @@ static const struct snd_soc_dapm_route tegra30_xbar_routes[] = {
 	TEGRA30_ROUTES("I2S2")
 	TEGRA30_ROUTES("I2S3")
 	TEGRA30_ROUTES("I2S4")
+	TEGRA30_ROUTES("DAM0-0")
+	TEGRA30_ROUTES("DAM0-1")
+	TEGRA30_ROUTES("DAM1-0")
+	TEGRA30_ROUTES("DAM1-1")
+	TEGRA30_ROUTES("DAM2-0")
+	TEGRA30_ROUTES("DAM2-1")
+	AMX_OUT_ADX_IN_ROUTES("DAM0")
+	AMX_OUT_ADX_IN_ROUTES("DAM1")
+	AMX_OUT_ADX_IN_ROUTES("DAM2")
 	TEGRA30_ROUTES("SPDIF")
 	/* above routes are used on Tegra30 */
 	TEGRA30_ROUTES("APBIF4")
@@ -496,6 +609,12 @@ static const struct snd_soc_dapm_route tegra30_xbar_routes[] = {
 	TEGRA114_ROUTES("I2S2")
 	TEGRA114_ROUTES("I2S3")
 	TEGRA114_ROUTES("I2S4")
+	TEGRA114_ROUTES("DAM0-0")
+	TEGRA114_ROUTES("DAM0-1")
+	TEGRA114_ROUTES("DAM1-0")
+	TEGRA114_ROUTES("DAM1-1")
+	TEGRA114_ROUTES("DAM2-0")
+	TEGRA114_ROUTES("DAM2-1")
 	TEGRA114_ROUTES("SPDIF")
 	TEGRA114_ROUTES("APBIF4")
 	TEGRA114_ROUTES("APBIF5")
@@ -519,11 +638,23 @@ static const struct snd_soc_dapm_route tegra30_xbar_routes[] = {
 	TEGRA30_ROUTES("AMX1-2")
 	TEGRA30_ROUTES("AMX1-3")
 	TEGRA30_ROUTES("ADX1")
+	TEGRA30_ROUTES("AFC0")
+	TEGRA30_ROUTES("AFC1")
+	TEGRA30_ROUTES("AFC2")
+	TEGRA30_ROUTES("AFC3")
+	TEGRA30_ROUTES("AFC4")
+	TEGRA30_ROUTES("AFC5")
 	TEGRA114_ROUTES("AMX1-0")
 	TEGRA114_ROUTES("AMX1-1")
 	TEGRA114_ROUTES("AMX1-2")
 	TEGRA114_ROUTES("AMX1-3")
 	TEGRA114_ROUTES("ADX1")
+	TEGRA114_ROUTES("AFC0")
+	TEGRA114_ROUTES("AFC1")
+	TEGRA114_ROUTES("AFC2")
+	TEGRA114_ROUTES("AFC3")
+	TEGRA114_ROUTES("AFC4")
+	TEGRA114_ROUTES("AFC5")
 	TEGRA124_ROUTES("APBIF0")
 	TEGRA124_ROUTES("APBIF1")
 	TEGRA124_ROUTES("APBIF2")
@@ -533,6 +664,12 @@ static const struct snd_soc_dapm_route tegra30_xbar_routes[] = {
 	TEGRA124_ROUTES("I2S2")
 	TEGRA124_ROUTES("I2S3")
 	TEGRA124_ROUTES("I2S4")
+	TEGRA124_ROUTES("DAM0-0")
+	TEGRA124_ROUTES("DAM0-1")
+	TEGRA124_ROUTES("DAM1-0")
+	TEGRA124_ROUTES("DAM1-1")
+	TEGRA124_ROUTES("DAM2-0")
+	TEGRA124_ROUTES("DAM2-1")
 	TEGRA124_ROUTES("SPDIF")
 	TEGRA124_ROUTES("APBIF4")
 	TEGRA124_ROUTES("APBIF5")
@@ -550,6 +687,12 @@ static const struct snd_soc_dapm_route tegra30_xbar_routes[] = {
 	TEGRA124_ROUTES("AMX1-2")
 	TEGRA124_ROUTES("AMX1-3")
 	TEGRA124_ROUTES("ADX1")
+	TEGRA124_ROUTES("AFC0")
+	TEGRA124_ROUTES("AFC1")
+	TEGRA124_ROUTES("AFC2")
+	TEGRA124_ROUTES("AFC3")
+	TEGRA124_ROUTES("AFC4")
+	TEGRA124_ROUTES("AFC5")
 	AMX_OUT_ADX_IN_ROUTES("AMX1")
 	AMX_OUT_ADX_IN_ROUTES("ADX1-0")
 	AMX_OUT_ADX_IN_ROUTES("ADX1-1")
@@ -562,53 +705,62 @@ static struct snd_soc_codec_driver tegra30_xbar_codec = {
 	.probe = tegra30_xbar_codec_probe,
 	.dapm_widgets = tegra30_xbar_widgets,
 	.dapm_routes = tegra30_xbar_routes,
+	.num_dapm_widgets = ARRAY_SIZE(tegra30_xbar_widgets),
+	.num_dapm_routes = ARRAY_SIZE(tegra30_xbar_routes),
+	.idle_bias_off = 1,
 };
 
 static const struct tegra30_xbar_soc_data soc_data_tegra30 = {
 	.regmap_config = &tegra30_xbar_regmap_config,
-	.num_dais = 10,
-	.num_mux_widgets = 10,
-	.num_mux0_input = 10,
+	.num_dais = 19,
+	.num_mux_widgets = 16,
+	.num_mux0_input = 13,
 	.num_mux1_input = 0,
-	.mask[0] = 0x1ff,
+	.mask[0] = 0x1fff,
 	.mask[1] = 0,
+	.reg_count = 1,
+	.reg_offset = 0,
 };
 
 static const struct tegra30_xbar_soc_data soc_data_tegra114 = {
 	.regmap_config = &tegra30_xbar_regmap_config,
-	.num_dais = 26,
-	.num_mux_widgets = 21,
-	.num_mux0_input = 21,
+	.num_dais = 35,
+	.num_mux_widgets = 27,
+	.num_mux0_input = 24,
 	.num_mux1_input = 0,
-	.mask[0] = 0x1ffffff,
+	.mask[0] = 0x1ffdfff,
 	.mask[1] = 0,
+	.reg_count = 1,
+	.reg_offset = 0,
 };
 
 static const struct tegra30_xbar_soc_data soc_data_tegra124 = {
 	.regmap_config = &tegra124_xbar_regmap_config,
-	.num_dais = 36,
-	.num_mux_widgets = 26,
-	.num_mux0_input = 21,
-	.num_mux1_input = 5,
-	.mask[0] = 0x1ffffff,
+	.num_dais = 51,
+	.num_mux_widgets = 38,
+	.num_mux0_input = 24,
+	.num_mux1_input = 11,
+	.mask[0] = 0x1ffdfff,
 	.mask[1] = 0x7ff,
+	.reg_count = 2,
+	.reg_offset = TEGRA_AHUB_AUDIO_RX1,
 };
 
 static const struct of_device_id tegra30_xbar_of_match[] = {
 	{ .compatible = "nvidia,tegra30-ahub", .data = &soc_data_tegra30 },
 	{ .compatible = "nvidia,tegra114-ahub", .data = &soc_data_tegra114 },
 	{ .compatible = "nvidia,tegra124-ahub", .data = &soc_data_tegra124 },
+	{ .compatible = "nvidia,tegra124-virt-ahub-master",
+			.data = &soc_data_tegra124 },
 	{},
 };
 
 static int tegra30_xbar_probe(struct platform_device *pdev)
 {
-	struct tegra30_xbar *xbar;
 	void __iomem *regs;
 	int ret;
 	const struct of_device_id *match;
 	struct tegra30_xbar_soc_data *soc_data;
-	struct clk *parent_clk;
 
 	match = of_match_device(tegra30_xbar_of_match, pdev->dev.parent);
 	if (!match) {
@@ -624,7 +776,6 @@ static int tegra30_xbar_probe(struct platform_device *pdev)
 		ret = -ENOMEM;
 		goto err;
 	}
-	dev_set_drvdata(&pdev->dev, xbar);
 
 	xbar->soc_data = soc_data;
 
@@ -635,31 +786,11 @@ static int tegra30_xbar_probe(struct platform_device *pdev)
 		goto err;
 	}
 
-	xbar->clk_parent = clk_get_sys(NULL, "pll_a_out0");
-	if (IS_ERR(xbar->clk)) {
-		dev_err(&pdev->dev, "Can't retrieve pll_a_out0 clock\n");
-		ret = PTR_ERR(xbar->clk_parent);
-		goto err_clk_put;
-	}
-
-	parent_clk = clk_get_parent(xbar->clk);
-	if (IS_ERR(parent_clk)) {
-		dev_err(&pdev->dev, "Can't get parent clock fo xbar\n");
-		ret = PTR_ERR(parent_clk);
-		goto err_clk_put;
-	}
-
-	ret = clk_set_parent(xbar->clk, xbar->clk_parent);
-	if (ret) {
-		dev_err(&pdev->dev, "Failed to set parent clock with pll_a_out0\n");
-		goto err_clk_put;
-	}
-
 	regs = devm_request_and_ioremap(&pdev->dev, pdev->resource);
 	if (!regs) {
 		dev_err(&pdev->dev, "request/iomap region failed\n");
 		ret = -ENODEV;
-		goto err_clk_set_parent;
+		goto err_clk_put;
 	}
 
 	xbar->regmap = devm_regmap_init_mmio(&pdev->dev, regs,
@@ -667,7 +798,7 @@ static int tegra30_xbar_probe(struct platform_device *pdev)
 	if (IS_ERR(xbar->regmap)) {
 		dev_err(&pdev->dev, "regmap init failed\n");
 		ret = PTR_ERR(xbar->regmap);
-		goto err_clk_put_parent;
+		goto err_clk_put;
 	}
 	regcache_cache_only(xbar->regmap, true);
 
@@ -700,10 +831,6 @@ err_suspend:
 		tegra30_xbar_runtime_suspend(&pdev->dev);
 err_pm_disable:
 	pm_runtime_disable(&pdev->dev);
-err_clk_put_parent:
-	clk_put(xbar->clk_parent);
-err_clk_set_parent:
-	clk_set_parent(xbar->clk, parent_clk);
 err_clk_put:
 	devm_clk_put(&pdev->dev, xbar->clk);
 err:
@@ -712,8 +839,6 @@ err:
 
 static int tegra30_xbar_remove(struct platform_device *pdev)
 {
-	struct tegra30_xbar *xbar = dev_get_drvdata(&pdev->dev);
-
 	snd_soc_unregister_codec(&pdev->dev);
 
 	pm_runtime_disable(&pdev->dev);
@@ -721,7 +846,6 @@ static int tegra30_xbar_remove(struct platform_device *pdev)
 		tegra30_xbar_runtime_suspend(&pdev->dev);
 
 	devm_clk_put(&pdev->dev, xbar->clk);
-	clk_put(xbar->clk_parent);
 
 	return 0;
 }
@@ -729,6 +853,8 @@ static int tegra30_xbar_remove(struct platform_device *pdev)
 static const struct dev_pm_ops tegra30_xbar_pm_ops = {
 	SET_RUNTIME_PM_OPS(tegra30_xbar_runtime_suspend,
 			   tegra30_xbar_runtime_resume, NULL)
+	SET_SYSTEM_SLEEP_PM_OPS(tegra30_xbar_suspend,
+			   NULL)
 };
 
 static struct platform_driver tegra30_xbar_driver = {
@@ -806,6 +932,12 @@ void tegra124_xbar_set_cif(struct regmap *regmap, unsigned int reg,
 	regmap_write(regmap, reg, value);
 }
 EXPORT_SYMBOL_GPL(tegra124_xbar_set_cif);
+
+int tegra30_xbar_read_reg(unsigned int reg, unsigned int *val)
+{
+	return regmap_read(xbar->regmap, reg, val);
+}
+EXPORT_SYMBOL_GPL(tegra30_xbar_read_reg);
 
 MODULE_AUTHOR("Stephen Warren <swarren@nvidia.com>");
 MODULE_DESCRIPTION("Tegra30 XBAR driver");

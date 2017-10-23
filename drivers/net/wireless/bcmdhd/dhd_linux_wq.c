@@ -2,15 +2,24 @@
  * Broadcom Dongle Host Driver (DHD), Generic work queue framework
  * Generic interface to handle dhd deferred work events
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
  *
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+ * 
+>>>>>>> update/master
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
  * under the terms of the GNU General Public License version 2 (the "GPL"),
  * available at http://www.broadcom.com/licenses/GPLv2.php, with the
  * following added to such license:
+<<<<<<< HEAD
  *
+=======
+ * 
+>>>>>>> update/master
  *      As a special exception, the copyright holders of this software give you
  * permission to link this software with independent modules, and to copy and
  * distribute the resulting executable under terms of your choice, provided that
@@ -18,12 +27,20 @@
  * the license of that module.  An independent module is a module which is not
  * derived from this software.  The special exception does not apply to any
  * modifications of the software.
+<<<<<<< HEAD
  *
+=======
+ * 
+>>>>>>> update/master
  *      Notwithstanding the above, under no circumstances may you combine this
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
+<<<<<<< HEAD
  * $Id: dhd_linux_wq.c 411851 2013-07-10 20:48:00Z $
+=======
+ * $Id: dhd_linux_wq.c 449578 2014-01-17 13:53:20Z $
+>>>>>>> update/master
  */
 
 #include <linux/init.h>
@@ -67,13 +84,20 @@ struct dhd_deferred_wq {
 	spinlock_t			work_lock;
 	void				*dhd_info; /* review: does it require */
 };
+<<<<<<< HEAD
 struct dhd_deferred_wq	*deferred_wq = NULL;
+=======
+>>>>>>> update/master
 
 static inline struct kfifo*
 dhd_kfifo_init(u8 *buf, int size, spinlock_t *lock)
 {
 	struct kfifo *fifo;
+<<<<<<< HEAD
 	gfp_t flags = CAN_SLEEP() ? GFP_KERNEL : GFP_ATOMIC;
+=======
+	gfp_t flags = CAN_SLEEP()? GFP_KERNEL : GFP_ATOMIC;
+>>>>>>> update/master
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 33))
 	fifo = kfifo_init(buf, size, flags, lock);
@@ -91,6 +115,13 @@ static inline void
 dhd_kfifo_free(struct kfifo *fifo)
 {
 	kfifo_free(fifo);
+<<<<<<< HEAD
+=======
+#if (LINUX_VERSION_CODE > KERNEL_VERSION(2, 6, 31))
+	/* FC11 releases the fifo memory */
+	kfree(fifo);
+#endif
+>>>>>>> update/master
 }
 
 /* deferred work functions */
@@ -100,9 +131,15 @@ void*
 dhd_deferred_work_init(void *dhd_info)
 {
 	struct dhd_deferred_wq	*work = NULL;
+<<<<<<< HEAD
 	u8 *buf;
 	unsigned long	fifo_size = 0;
 	gfp_t	flags = CAN_SLEEP() ? GFP_KERNEL : GFP_ATOMIC;
+=======
+	u8*	buf;
+	unsigned long	fifo_size = 0;
+	gfp_t	flags = CAN_SLEEP()? GFP_KERNEL : GFP_ATOMIC;
+>>>>>>> update/master
 
 	if (!dhd_info) {
 		DHD_ERROR(("%s: dhd info not initialized\n", __FUNCTION__));
@@ -124,8 +161,13 @@ dhd_deferred_work_init(void *dhd_info)
 
 	/* allocate buffer to hold prio events */
 	fifo_size = DHD_PRIO_WORK_FIFO_SIZE;
+<<<<<<< HEAD
 	fifo_size = is_power_of_2(fifo_size) ? fifo_size : roundup_pow_of_two(fifo_size);
 	buf = (u8 *)kzalloc(fifo_size, flags);
+=======
+	fifo_size = is_power_of_2(fifo_size)? fifo_size : roundup_pow_of_two(fifo_size);
+	buf = (u8*)kzalloc(fifo_size, flags);
+>>>>>>> update/master
 	if (!buf) {
 		DHD_ERROR(("%s: prio work fifo allocation failed \n", __FUNCTION__));
 		goto return_null;
@@ -140,8 +182,13 @@ dhd_deferred_work_init(void *dhd_info)
 
 	/* allocate buffer to hold work events */
 	fifo_size = DHD_WORK_FIFO_SIZE;
+<<<<<<< HEAD
 	fifo_size = is_power_of_2(fifo_size) ? fifo_size : roundup_pow_of_two(fifo_size);
 	buf = (u8 *)kzalloc(fifo_size, flags);
+=======
+	fifo_size = is_power_of_2(fifo_size)? fifo_size : roundup_pow_of_two(fifo_size);
+	buf = (u8*)kzalloc(fifo_size, flags);
+>>>>>>> update/master
 	if (!buf) {
 		DHD_ERROR(("%s: work fifo allocation failed \n", __FUNCTION__));
 		goto return_null;
@@ -155,7 +202,10 @@ dhd_deferred_work_init(void *dhd_info)
 	}
 
 	work->dhd_info = dhd_info;
+<<<<<<< HEAD
 	deferred_wq = work;
+=======
+>>>>>>> update/master
 	DHD_ERROR(("%s: work queue initialized \n", __FUNCTION__));
 	return work;
 
@@ -192,9 +242,12 @@ dhd_deferred_work_deinit(void *work)
 		dhd_kfifo_free(deferred_work->work_fifo);
 
 	kfree(deferred_work);
+<<<<<<< HEAD
 
 	/* deinit internal reference pointer */
 	deferred_wq = NULL;
+=======
+>>>>>>> update/master
 }
 
 /*
@@ -202,8 +255,15 @@ dhd_deferred_work_deinit(void *work)
  *	Schedules the event
  */
 int
+<<<<<<< HEAD
 dhd_deferred_schedule_work(void *event_data, u8 event, event_handler_t event_handler, u8 priority)
 {
+=======
+dhd_deferred_schedule_work(void *workq, void *event_data, u8 event,
+	event_handler_t event_handler, u8 priority)
+{
+	struct dhd_deferred_wq *deferred_wq = (struct dhd_deferred_wq *) workq;
+>>>>>>> update/master
 	struct	dhd_deferred_event_t	deferred_event;
 	int	status;
 
@@ -247,7 +307,11 @@ dhd_deferred_schedule_work(void *event_data, u8 event, event_handler_t event_han
 }
 
 static int
+<<<<<<< HEAD
 dhd_get_scheduled_work(struct dhd_deferred_event_t *event)
+=======
+dhd_get_scheduled_work(struct dhd_deferred_wq *deferred_wq, struct dhd_deferred_event_t *event)
+>>>>>>> update/master
 {
 	int	status = 0;
 
@@ -294,7 +358,11 @@ dhd_deferred_work_handler(struct work_struct *work)
 	}
 
 	do {
+<<<<<<< HEAD
 		status = dhd_get_scheduled_work(&work_event);
+=======
+		status = dhd_get_scheduled_work(deferred_work, &work_event);
+>>>>>>> update/master
 		DHD_TRACE(("%s: event to handle %d \n", __FUNCTION__, status));
 		if (!status) {
 			DHD_TRACE(("%s: No event to handle %d \n", __FUNCTION__, status));

@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2010 Google, Inc.
- * Copyright (c) 2011-2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -101,6 +101,18 @@ bool tegra_usb_phy_charger_detected(struct tegra_usb_phy *phy);
 bool tegra_usb_phy_qc2_charger_detected(struct tegra_usb_phy *phy,
 		int max_voltage);
 bool tegra_usb_phy_cdp_charger_detected(struct tegra_usb_phy *phy);
+
+/**
+ * Indicates whether CDP charger is connected or not
+ * if CDP is connected then returns true else false
+ */
+bool tegra_usb_phy_cdp_charger_detected(struct tegra_usb_phy *phy);
+
+/**
+ * Indicates whether maxim charger is connected or not
+ * if maxim is connect then returns true else false
+ */
+bool tegra_usb_phy_maxim_charger_detected(struct tegra_usb_phy *phy);
 
 /**
  * Indicates whether CDP charger is connected or not
