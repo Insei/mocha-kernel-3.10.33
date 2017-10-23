@@ -41,7 +41,10 @@
 #include <linux/module.h>
 #include <linux/stat.h>
 #include <linux/pm_qos.h>
+#include <linux/interrupt.h>
 #include <media/tegra_dtv.h>
+#include <linux/of.h>
+#include <linux/of_device.h>
 
 #include <linux/uaccess.h>
 #include "../../../../arch/arm/mach-tegra/iomap.h"
@@ -65,6 +68,10 @@
 #define DTV_FIFO_ATN_LVL_SECOND_GEAR      1
 #define DTV_FIFO_ATN_LVL_THIRD_GEAR       2
 #define DTV_FIFO_ATN_LVL_TOP_GEAR         3
+
+struct tegra_dtv_chipdata {
+	bool interrupt_supported;
+};
 
 struct dtv_buffer {
 	void			*data;
@@ -95,7 +102,8 @@ struct dtv_stream {
 	char			wake_lock_name[16];
 
 	struct work_struct	cpu_boost_work;
-	int			cpu_boost_flag;
+	u8 boost_cpufreq_work_flag;
+	u8 set_cpufreq_normal_flag;
 };
 
 struct tegra_dtv_context {
@@ -103,14 +111,14 @@ struct tegra_dtv_context {
 	struct tegra_dtv_profile   profile;
 	struct clk                *clk;
 	int                        clk_enabled;
-
+	int			   xfer_status;
 	struct clk                *sclk;
 	struct clk                *emc_clk;
 
 	phys_addr_t                phys;
 	void * __iomem base;
-	unsigned long              dma_req_sel;
-
+	unsigned int              dma_req_sel;
+	unsigned int		  irq;
 	struct dtv_stream          stream;
 	/* debugfs */
 	struct dentry             *d;
@@ -120,6 +128,7 @@ struct tegra_dtv_context {
 
 	struct pm_qos_request      min_cpufreq;
 	struct pm_qos_request      cpudma_lat;
+	struct tegra_dtv_chipdata  *chipdata;
 };
 
 static inline struct tegra_dtv_context *to_ctx(struct dtv_stream *s)
@@ -158,15 +167,21 @@ static void dtv_cpu_boost_worker(struct work_struct *work)
 		work, struct dtv_stream, cpu_boost_work);
 	struct tegra_dtv_context *dtv_ctx = to_ctx(s);
 
-	if (s->cpu_boost_flag) {
-		pr_info("%s: Boost CPU frequency to %dMHz.",
+	if (s->set_cpufreq_normal_flag) {
+		pr_info("%s: Release CPU frequency boost.\n", __func__);
+		pm_qos_update_request(&dtv_ctx->min_cpufreq,
+				      PM_QOS_CPU_FREQ_MIN_DEFAULT_VALUE);
+		s->boost_cpufreq_work_flag = 1;
+		s->set_cpufreq_normal_flag = 0;
+		return;
+	}
+
+	if (s->boost_cpufreq_work_flag) {
+		pr_info("%s: Boost CPU frequency to %dMHz.\n",
 			__func__, dtv_ctx->profile.cpuboost);
 		pm_qos_update_request(&dtv_ctx->min_cpufreq,
 				      dtv_ctx->profile.cpuboost * 1000);
-	} else {
-		pr_info("%s: Release CPU frequency boost.", __func__);
-		pm_qos_update_request(&dtv_ctx->min_cpufreq,
-				      PM_QOS_CPU_FREQ_MIN_DEFAULT_VALUE);
+		s->boost_cpufreq_work_flag = 0;
 	}
 }
 
@@ -296,7 +311,7 @@ static inline void _dtv_set_hw_params(struct tegra_dtv_context *dtv_ctx)
 		(cfg->clk_mode << DTV_MODE_CLK_MODE_SHIFT);
 	reg = tegra_dtv_readl(dtv_ctx, DTV_MODE);
 	reg &= ~(DTV_MODE_BYTE_SWIZZLE_MASK |
-		 DTV_MODE_BIT_SWIZZLE |
+		 DTV_MODE_BIT_SWIZZLE_MASK |
 		 DTV_MODE_CLK_EDGE_MASK |
 		 DTV_MODE_PRTL_SEL_MASK |
 		 DTV_MODE_CLK_MODE_MASK);
@@ -305,6 +320,7 @@ static inline void _dtv_set_hw_params(struct tegra_dtv_context *dtv_ctx)
 
 	/* program DTV_CTRL */
 	reg = 0;
+	val = 0;
 	val = (cfg->fec_size << DTV_CTRL_FEC_SIZE_SHIFT) |
 		(cfg->body_size << DTV_CTRL_BODY_SIZE_SHIFT) |
 		(cfg->body_valid_sel << DTV_CTRL_BODY_VALID_SEL_SHIFT) |
@@ -333,6 +349,8 @@ static inline void _dtv_get_hw_params(struct tegra_dtv_context *dtv_ctx,
 	u32 reg;
 
 	reg = tegra_dtv_readl(dtv_ctx, DTV_MODE);
+	cfg->bit_swz_enabled = DTV_GET_REG_VAL(reg, DTV_MODE, BIT_SWIZZLE);
+	cfg->byte_swz_enabled = DTV_GET_REG_VAL(reg, DTV_MODE, BYTE_SWIZZLE);
 	cfg->clk_edge = DTV_GET_REG_VAL(reg, DTV_MODE, CLK_EDGE);
 	cfg->protocol_sel = DTV_GET_REG_VAL(reg, DTV_MODE, PRTL_SEL);
 	cfg->clk_mode = DTV_GET_REG_VAL(reg, DTV_MODE, CLK_MODE);
@@ -389,15 +407,18 @@ static int stop_xfer_unsafe(struct dtv_stream *s)
 	dmaengine_terminate_all(s->dma_chan);
 
 	/* stop CPU boost */
-	s->cpu_boost_flag = 0;
+	s->set_cpufreq_normal_flag = 1;
 	schedule_work(&s->cpu_boost_work);
 
 	/* release restriction on CPU-DMA latency */
 	pm_qos_update_request(&dtv_ctx->cpudma_lat,
 			      PM_QOS_CPU_DMA_LAT_DEFAULT_VALUE);
 
+	/* Disable the interrupts */
+	if (dtv_ctx->chipdata->interrupt_supported)
+		tegra_dtv_writel(dtv_ctx, 0, DTV_INTR_EN_0);
 	_dtv_disable_protocol(dtv_ctx);
-	while ((_dtv_get_status(dtv_ctx) & DTV_STATUS_RXF_FULL) &&
+	while ((_dtv_get_status(dtv_ctx) & DTV_RX_FIFO_FULL) &&
 	       spin < 100) {
 		udelay(10);
 		if (spin++ > 50)
@@ -563,10 +584,16 @@ static int start_xfer_unsafe(struct dtv_stream *s, size_t size)
 	dma_async_issue_pending(dma_chan);
 
 	/* set boost cpu enabled */
-	s->cpu_boost_flag = 1;
 	dtv_boost_cpu(s);
 
 	s->last_queued = s->num_bufs - 1;
+
+	/* Enable Interrupts */
+	if (dtv_ctx->chipdata->interrupt_supported) {
+		reg = tegra_dtv_readl(dtv_ctx, DTV_INTR_EN_0);
+		reg = RXF_OVF_INT_EN | RXF_UNR_INT_EN;
+		tegra_dtv_writel(dtv_ctx, reg, DTV_INTR_EN_0);
+	}
 
 	/* too late ? */
 	_dtv_set_attn_level(dtv_ctx);
@@ -643,13 +670,13 @@ static ssize_t tegra_dtv_read(struct file *file, char __user *buf,
 
 	if (!IS_ALIGNED(size, 4) || size < 4 ||
 	    size != dtv_ctx->stream.buf_size) {
-		pr_err("%s: invalid user size %d\n", __func__, size);
+		pr_err("%s: invalid user size %zu\n", __func__, size);
 		ret = -EINVAL;
 		mutex_unlock(&dtv_ctx->stream.mtx);
 		return ret;
 	}
 
-	pr_debug("%s: read %d bytes.\n", __func__, size);
+	pr_debug("%s: read %zu bytes.\n", __func__, size);
 
 	if (dtv_ctx->stream.stopped) {
 		pr_debug("%s: tegra dtv transferring is stopped.\n",
@@ -687,34 +714,37 @@ static ssize_t tegra_dtv_read(struct file *file, char __user *buf,
 		mutex_unlock(&dtv_ctx->stream.mtx);
 		return ret;
 	} else if (ret < 0) {
-		pr_err("%s: wait error %d", __func__, ret);
+		pr_err("%s: wait error %zu", __func__, ret);
 		mutex_unlock(&dtv_ctx->stream.mtx);
 		return ret;
 	}
 
-	dma_sync_single_for_cpu(NULL,
-			dtv_buf->data_phy,
-			size,
-			DMA_FROM_DEVICE);
+	if (!dtv_ctx->xfer_status) {
+		dma_sync_single_for_cpu(NULL,
+				dtv_buf->data_phy,
+				size,
+				DMA_FROM_DEVICE);
 
-	ret = copy_to_user(buf, dtv_buf->data, size);
-	if (ret) {
-		ret = -EFAULT;
-		mutex_unlock(&dtv_ctx->stream.mtx);
-		return ret;
-	}
+		ret = copy_to_user(buf, dtv_buf->data, size);
+		if (ret) {
+			ret = -EFAULT;
+			mutex_unlock(&dtv_ctx->stream.mtx);
+			return ret;
+		}
 
-	/* not stopped, reinitial stop */
-	init_completion(&dtv_ctx->stream.stop_completion);
+		/* not stopped, reinitial stop */
+		init_completion(&dtv_ctx->stream.stop_completion);
 
-	dtv_ctx->stream.last_queued = buf_no;
+		dtv_ctx->stream.last_queued = buf_no;
 
-	ret = size;
-	*off += size;
+		ret = size;
+		*off += size;
+	} else
+		ret = -dtv_ctx->xfer_status;
 
 	mutex_unlock(&dtv_ctx->stream.mtx);
 
-	pr_debug("%s : done with ret = %d\n", __func__, ret);
+	pr_debug("%s : done with ret = %zu\n", __func__, ret);
 
 	return ret;
 }
@@ -905,24 +935,23 @@ static int setup_dma(struct tegra_dtv_context *dtv_ctx)
 {
 	int ret = 0;
 	struct dma_slave_config dma_sconfig;
-	dma_cap_mask_t mask;
 
 	pr_debug("%s called\n", __func__);
 
-	dma_cap_zero(mask);
-	dma_cap_set(DMA_SLAVE, mask);
-	dma_cap_set(DMA_CYCLIC, mask);
-	dtv_ctx->stream.dma_chan = dma_request_channel(mask, NULL, NULL);
-	if (!dtv_ctx->stream.dma_chan) {
-		pr_err("%s:could not allocate DMA chn\n", __func__);
-		return -ENOMEM;
+	dtv_ctx->stream.dma_chan = dma_request_slave_channel_reason(
+			&dtv_ctx->pdev->dev, "rx");
+	if (IS_ERR(dtv_ctx->stream.dma_chan)) {
+		ret = PTR_ERR(dtv_ctx->stream.dma_chan);
+		if (ret != -EPROBE_DEFER)
+			dev_err(&dtv_ctx->pdev->dev,
+				"Dma channel is not available: %d\n", ret);
+		return ret;
 	}
 
 	dma_sconfig.src_addr = dtv_ctx->phys + DTV_RX_FIFO;
 	dma_sconfig.src_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
 
 	dma_sconfig.src_maxburst = 4;
-	dma_sconfig.slave_id = dtv_ctx->dma_req_sel;
 	ret = dmaengine_slave_config(dtv_ctx->stream.dma_chan, &dma_sconfig);
 
 	return ret;
@@ -942,7 +971,7 @@ static void tear_down_dma(struct tegra_dtv_context *dtv_ctx)
 			buf->data_phy = 0;
 		}
 		dma_release_channel(stream->dma_chan);
-		dtv_ctx->stream.dma_chan = 0;
+		dtv_ctx->stream.dma_chan = NULL;
 	}
 }
 
@@ -969,6 +998,9 @@ static void deinit_stream_buffers(struct dtv_stream *s)
 	struct tegra_dtv_context *dtv_ctx = to_ctx(s);
 	struct dtv_buffer *buf;
 	int i;
+
+	if (!s->bufs)
+		return;
 
 	for (i = 0; i < s->num_bufs; ++i) {
 		buf = &s->bufs[i];
@@ -1028,7 +1060,7 @@ static int setup_stream(struct dtv_stream *stream,
 	stream->num_bufs = profile->bufnum > DTV_MAX_NUM_BUFS ?
 		DTV_MAX_NUM_BUFS : profile->bufnum;
 
-	pr_info("%s: bufsize = %d, bufnum = %d", __func__,
+	pr_info("%s: bufsize = %zu, bufnum = %d", __func__,
 		stream->buf_size, stream->num_bufs);
 
 	/* init refs to buffers */
@@ -1063,8 +1095,10 @@ static int reconfig_stream(struct tegra_dtv_context *dtv_ctx,
 	tear_down_dma(dtv_ctx);
 
 	ret = setup_stream(&dtv_ctx->stream, new);
-	if (ret < 0)
-		goto fail_setup_stream;
+	if (ret < 0) {
+		pr_debug("%s(%d) : Setup stream failed\n", __func__, __LINE__);
+		return ret;
+	}
 
 	ret = setup_dma(dtv_ctx);
 	if (ret < 0)
@@ -1072,10 +1106,8 @@ static int reconfig_stream(struct tegra_dtv_context *dtv_ctx,
 
 	return ret;
 
-fail_setup_stream:
-	destroy_stream(&dtv_ctx->stream);
 fail_setup_dma:
-	tear_down_dma(dtv_ctx);
+	destroy_stream(&dtv_ctx->stream);
 
 	return ret;
 }
@@ -1099,6 +1131,66 @@ static inline void reconfig_pm_qos(struct tegra_dtv_context *dtv_ctx,
 		dtv_ctx->profile.cpuboost, dtv_ctx->profile.bitrate);
 }
 
+static irqreturn_t tegra_dtv_irq(int irq, void *_dtv)
+{
+	struct tegra_dtv_context *dtv_ctx = _dtv;
+	irqreturn_t status = IRQ_NONE;
+	int buf_no;
+	u32 irq_src;
+
+	/*Clear the interrupts */
+	irq_src = tegra_dtv_readl(dtv_ctx, DTV_STATUS);
+	tegra_dtv_writel(dtv_ctx, irq_src, DTV_STATUS);
+
+	if (irq_src == 0)
+		goto done;
+
+	if (irq_src & DTV_RX_FIFO_OVERFLOW ||
+				irq_src & DTV_RX_FIFO_UNDERRUN) {
+		pr_debug("%s(%d) DTV_STATUS : 0x%x\n", __func__, __LINE__,
+								 irq_src);
+		if (dtv_ctx->stream.xferring) {
+			stop_xfer_unsafe(&dtv_ctx->stream);
+			/* clean up stop condition */
+			complete(&dtv_ctx->stream.stop_completion);
+			__force_xfer_stop(&dtv_ctx->stream);
+		}
+
+		status = IRQ_HANDLED;
+		dtv_ctx->xfer_status = irq_src;
+		buf_no = (dtv_ctx->stream.last_queued + 1) %
+						dtv_ctx->stream.num_bufs;
+		complete(&dtv_ctx->stream.bufs[buf_no].comp);
+	}
+
+done:
+	return status;
+}
+
+static struct tegra_dtv_chipdata tegra21_dtv_chipdata = {
+	.interrupt_supported = false,
+};
+
+static struct tegra_dtv_chipdata tegra12_dtv_chipdata = {
+	.interrupt_supported = false,
+};
+
+static struct of_device_id tegra_dtv_of_match[] = {
+	{
+		.compatible = "nvidia,tegra210-dtv",
+		.data = &tegra21_dtv_chipdata,
+	},
+	{
+		.compatible = "nvidia,tegra132-dtv",
+		.data = &tegra12_dtv_chipdata,
+	},
+	{
+		.compatible = "nvidia,tegra124-dtv",
+		.data = &tegra12_dtv_chipdata,
+	},
+};
+MODULE_DEVICE_TABLE(of, tegra_dtv_of_match);
+
 static int tegra_dtv_probe(struct platform_device *pdev)
 {
 	int ret;
@@ -1106,14 +1198,10 @@ static int tegra_dtv_probe(struct platform_device *pdev)
 	struct tegra_dtv_platform_data *pdata;
 	struct clk *clk;
 	struct resource *res;
+	const struct of_device_id *match;
 
 	pr_info("%s: probing dtv.\n", __func__);
 
-	pdata = pdev->dev.platform_data;
-	if (!pdata) {
-		dev_err(&pdev->dev, "No Platform data for tegra_dtv.\n");
-		ret = -ENODEV;
-	}
 
 	dtv_ctx = devm_kzalloc(&pdev->dev, sizeof(struct tegra_dtv_context),
 			       GFP_KERNEL);
@@ -1125,10 +1213,31 @@ static int tegra_dtv_probe(struct platform_device *pdev)
 	}
 	platform_set_drvdata(pdev, dtv_ctx);
 
+	if (pdev->dev.of_node) {
+		match = of_match_device(of_match_ptr(tegra_dtv_of_match),
+				&pdev->dev);
+		if (!match) {
+			dev_err(&pdev->dev, "Error: No device match found\n");
+			return -ENODEV;
+		}
+		dtv_ctx->chipdata = (struct tegra_dtv_chipdata *)match->data;
+
+		of_property_read_u32(pdev->dev.of_node,
+			"nvidia,dma-request-selector", &dtv_ctx->dma_req_sel);
+	}
+
+	if (pdev->dev.platform_data) {
+		pdata = pdev->dev.platform_data;
+		dtv_ctx->dma_req_sel = pdata->dma_req_selector;
+	}
+
+	if (!dtv_ctx->dma_req_sel) {
+		dev_err(&pdev->dev, "Platform data not found\n");
+		return -ENODATA;
+	}
 
 	/* for refer back */
 	dtv_ctx->pdev = pdev;
-
 	/* enable clk for dtv */
 	clk = clk_get(&pdev->dev, "dtv");
 	if (!clk) {
@@ -1159,6 +1268,8 @@ static int tegra_dtv_probe(struct platform_device *pdev)
 			   PM_QOS_CPU_FREQ_MIN_DEFAULT_VALUE);
 	pm_qos_add_request(&dtv_ctx->cpudma_lat, PM_QOS_CPU_DMA_LATENCY,
 			   PM_QOS_CPU_DMA_LAT_DEFAULT_VALUE);
+	dtv_ctx->stream.boost_cpufreq_work_flag = 1;
+	dtv_ctx->stream.set_cpufreq_normal_flag = 0;
 
 	/* get resource */
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -1169,10 +1280,27 @@ static int tegra_dtv_probe(struct platform_device *pdev)
 		goto fail_no_res;
 	}
 
+	if (pdev->dev.of_node && dtv_ctx->chipdata->interrupt_supported) {
+		dtv_ctx->irq = platform_get_irq(pdev, 0);
+		if (!dtv_ctx->irq) {
+			ret = -ENODEV;
+			pr_err("failed to get platform irq resources\n");
+			goto fail_no_res;
+		}
+
+		ret = devm_request_irq(&pdev->dev, dtv_ctx->irq, tegra_dtv_irq,
+				IRQF_DISABLED, "dtv", dtv_ctx);
+		if (ret) {
+			pr_err("cannot request irq %d err %d\n",
+							 dtv_ctx->irq, ret);
+			goto fail_no_res;
+		}
+	}
+	dtv_ctx->xfer_status = 0;
 	if (!devm_request_mem_region(&pdev->dev, res->start,
 			resource_size(res), dev_name(&pdev->dev))) {
 		ret = -EBUSY;
-		return ret;
+		goto fail_no_res;
 	}
 	dtv_ctx->phys = res->start;
 	dtv_ctx->base = devm_ioremap(&pdev->dev, res->start,
@@ -1180,18 +1308,20 @@ static int tegra_dtv_probe(struct platform_device *pdev)
 	if (!dtv_ctx->base) {
 		dev_err(&pdev->dev, "cannot ioremap iomem.\n");
 		ret = -ENOMEM;
-		return ret;
+		goto fail_no_res;
 	}
 
 	dtv_ctx->profile.bufsize = DTV_BUF_SIZE;
 	dtv_ctx->profile.bufnum = DTV_NUM_BUFS;
 	dtv_ctx->profile.cpuboost = PM_QOS_CPU_FREQ_MIN_DEFAULT_VALUE;
 	dtv_ctx->profile.bitrate = DTV_TS_MIN_BITRATE;
-	dtv_ctx->dma_req_sel = pdata->dma_req_selector;
+	pdev->dev.coherent_dma_mask = DMA_BIT_MASK(64);
 
 	ret = setup_stream(&dtv_ctx->stream, &dtv_ctx->profile);
-	if (ret < 0)
-		goto fail_setup_stream;
+	if (ret < 0) {
+		pr_err("%s(%d) : Setup stream failed\n", __func__, __LINE__);
+		goto fail_no_res;
+	}
 
 	ret = setup_dma(dtv_ctx);
 	if (ret < 0)
@@ -1219,13 +1349,11 @@ static int tegra_dtv_probe(struct platform_device *pdev)
 	return 0;
 
 fail_debugfs_reg:
-	dtv_debugfs_exit(dtv_ctx);
-fail_misc_reg:
 	misc_deregister(&dtv_ctx->miscdev);
-fail_setup_stream:
-	destroy_stream(&dtv_ctx->stream);
-fail_setup_dma:
+fail_misc_reg:
 	tear_down_dma(dtv_ctx);
+fail_setup_dma:
+	destroy_stream(&dtv_ctx->stream);
 fail_no_res:
 	pm_qos_remove_request(&dtv_ctx->min_cpufreq);
 	pm_qos_remove_request(&dtv_ctx->cpudma_lat);
@@ -1309,6 +1437,7 @@ static struct platform_driver tegra_dtv_driver = {
 	.driver = {
 		.name = TEGRA_DTV_NAME,
 		.owner = THIS_MODULE,
+		.of_match_table = of_match_ptr(tegra_dtv_of_match),
 	},
 	.probe = tegra_dtv_probe,
 	.remove = tegra_dtv_remove,

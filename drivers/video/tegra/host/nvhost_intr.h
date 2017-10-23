@@ -3,7 +3,7 @@
  *
  * Tegra Graphics Host Interrupt Management
  *
- * Copyright (c) 2010-2013, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2010-2016, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -25,27 +25,17 @@
 #include <linux/semaphore.h>
 #include <linux/interrupt.h>
 #include <linux/workqueue.h>
+#include <linux/spinlock.h>
 
 struct nvhost_channel;
+struct platform_device;
 
 enum nvhost_intr_action {
-	/**
-	 * Perform cleanup after a submit has completed.
-	 * 'data' points to a channel
-	 */
-	NVHOST_INTR_ACTION_SUBMIT_COMPLETE = 0,
-
-	/**
-	 * Wake up a interruptible task.
-	 * 'data' points to a wait_queue_head_t
-	 */
-	NVHOST_INTR_ACTION_GPFIFO_SUBMIT_COMPLETE,
-
 	/**
 	 * Signal a nvhost_sync_pt.
 	 * 'data' points to a nvhost_sync_pt
 	 */
-	NVHOST_INTR_ACTION_SIGNAL_SYNC_PT,
+	NVHOST_INTR_ACTION_SIGNAL_SYNC_PT = 0,
 
 	/**
 	 * Wake up a  task.
@@ -59,10 +49,46 @@ enum nvhost_intr_action {
 	 */
 	NVHOST_INTR_ACTION_WAKEUP_INTERRUPTIBLE,
 
+	/**
+	 * Fast notifier event
+	 * 'data' points to a callback and private data through internal
+	 * structure
+	 */
+	NVHOST_INTR_ACTION_FAST_NOTIFY,
+
+	/**
+	 * Perform cleanup after a submit has completed.
+	 * 'data' points to a channel
+	 */
+	NVHOST_INTR_ACTION_SUBMIT_COMPLETE,
+
+	/**
+	 * Notify some external function about completion
+	 * 'data' holds pointer to an internal structure that holds a
+	 * function pointer and the stored private data
+	 */
+	NVHOST_INTR_ACTION_NOTIFY,
+
 	NVHOST_INTR_ACTION_COUNT
 };
 
+#define NVHOST_INTR_HIGH_PRIO_COUNT NVHOST_INTR_ACTION_SUBMIT_COMPLETE
+#define NVHOST_INTR_LOW_PRIO_COUNT \
+	(NVHOST_INTR_ACTION_COUNT - NVHOST_INTR_HIGH_PRIO_COUNT)
+
 struct nvhost_intr;
+
+struct nvhost_waitlist {
+	struct list_head list;
+	struct kref refcount;
+	u32 thresh;
+	enum nvhost_intr_action action;
+	atomic_t state;
+	struct timespec isr_recv;
+	void *data;
+	int count;
+	wait_queue_head_t wq;
+};
 
 struct nvhost_intr_syncpt {
 	struct nvhost_intr *intr;
@@ -70,8 +96,9 @@ struct nvhost_intr_syncpt {
 	spinlock_t lock;
 	struct list_head wait_head;
 	char thresh_irq_name[12];
-	struct work_struct work;
 	struct timespec isr_recv;
+	struct work_struct low_prio_work;
+	struct list_head low_prio_handlers[NVHOST_INTR_LOW_PRIO_COUNT];
 };
 
 struct nvhost_intr {
@@ -79,8 +106,9 @@ struct nvhost_intr {
 	struct mutex mutex;
 	int general_irq;
 	int syncpt_irq;
-	struct workqueue_struct *wq;
 	u32 intstatus;
+	void (*host_isr[32])(u32, void*);
+	void *host_isr_priv[32];
 };
 #define intr_to_dev(x) container_of(x, struct nvhost_master, intr)
 #define intr_syncpt_to_intr(is) (is->intr)
@@ -122,8 +150,13 @@ void nvhost_intr_deinit(struct nvhost_intr *intr);
 void nvhost_intr_start(struct nvhost_intr *intr, u32 hz);
 void nvhost_intr_stop(struct nvhost_intr *intr);
 int nvhost_intr_release_time(void *ref, struct timespec *ts);
+void nvhost_intr_enable_host_irq(struct nvhost_intr *intr, int irq,
+				 void (*host_isr)(u32, void *),
+				 void *priv);
+void nvhost_intr_disable_host_irq(struct nvhost_intr *intr, int irq);
 
 irqreturn_t nvhost_syncpt_thresh_fn(void *dev_id);
 irqreturn_t nvhost_intr_irq_fn(int irq, void *dev_id);
+void nvhost_scale_actmon_irq(struct platform_device *pdev, int type);
 
 #endif

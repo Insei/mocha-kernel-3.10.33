@@ -4,7 +4,7 @@
  * HDMI library support functions for Nvidia Tegra processors.
  *
  * Copyright (C) 2012-2013 Google - http://www.google.com/
- * Copyright (C) 2013-2014 NVIDIA CORPORATION. All rights reserved.
+ * Copyright (C) 2013-2017 NVIDIA CORPORATION. All rights reserved.
  * Authors:	John Grossman <johngro@google.com>
  * Authors:	Mike J. Chen <mjchen@google.com>
  *
@@ -29,6 +29,10 @@
 #endif
 #include <video/tegrafb.h>
 #include "dc_priv.h"
+
+#ifdef CONFIG_ADF_TEGRA
+#include "tegra_adf.h"
+#endif
 
 #include "hdmi_state_machine.h"
 
@@ -98,6 +102,21 @@ static void hdmi_state_machine_set_state_l(int target_state, int resched_time)
 		target_state, state_names[target_state]);
 	work_state.state = target_state;
 
+	/* If virtual edid is active, schedule immediately. However, keep
+	 * the possible negative value to maintain the transition behavior.
+	 */
+	if (work_state.hdmi->dc->vedid && resched_time > 0)
+		resched_time = 0;
+
+	/* If fb for corresponding dc is not ready yet, do not proceed */
+	if ((work_state.hdmi->dc->fb == NULL)) {
+		pr_err("fb not yet ready, skip scheduling work and return\n");
+		rt_mutex_unlock(&work_lock);
+		return;
+	}
+
+	rt_mutex_unlock(&work_lock);
+
 	/* If the pending_hpd_evt flag is already set, don't bother to
 	 * reschedule the state machine worker.  We should be able to assert
 	 * that there is a worker callback already scheduled, and that it is
@@ -112,7 +131,6 @@ static void hdmi_state_machine_set_state_l(int target_state, int resched_time)
 	if (!work_state.pending_hpd_evt)
 		hdmi_state_machine_sched_work_l(resched_time);
 
-	rt_mutex_unlock(&work_lock);
 }
 
 static void hdmi_state_machine_handle_hpd_l(int cur_hpd)
@@ -171,6 +189,17 @@ static void hdmi_state_machine_handle_hpd_l(int cur_hpd)
  ************************************************************/
 static void hdmi_disable_l(struct tegra_dc_hdmi_data *hdmi)
 {
+	/* If the hotplug_state is controlled by the hotplug debug node,
+	 * the value of dc->connected is changed directly. This affects
+	 * the behavior of this function, as the state machine does not
+	 * expect dc->connected to be changed externally. In that case,
+	 * use a cached value which is only modified by the state machine.
+	 */
+	bool was_connected;
+	if (hdmi->dc->out->hotplug_state == TEGRA_HPD_STATE_NORMAL)
+		was_connected = hdmi->dc->connected;
+	else
+		was_connected = hdmi->connected_cache;
 #ifdef CONFIG_SWITCH
 	switch_set_state(&hdmi->audio_switch, 0);
 	pr_info("%s: audio_switch 0\n", __func__);
@@ -178,13 +207,32 @@ static void hdmi_disable_l(struct tegra_dc_hdmi_data *hdmi)
 	pr_info("%s: hpd_switch 0\n", __func__);
 #endif
 	tegra_nvhdcp_set_plug(hdmi->nvhdcp, 0);
+<<<<<<< HEAD
 	if (hdmi->dc->enabled) {
+=======
+	if (was_connected) {
+>>>>>>> update/master
 		pr_info("HDMI from connected to disconnected\n");
 		tegra_dc_disable(hdmi->dc);
 	}
 	hdmi->dc->connected = false;
+<<<<<<< HEAD
 	tegra_fb_update_monspecs(hdmi->dc->fb, NULL, NULL);
 	tegra_dc_ext_process_hotplug(hdmi->dc->ndev->id);
+=======
+	hdmi->connected_cache = false;
+#ifdef CONFIG_ADF_TEGRA
+	tegra_adf_process_hotplug_disconnected(hdmi->dc->adf);
+#else
+	tegra_fb_update_monspecs(hdmi->dc->fb, NULL, NULL);
+#endif
+#ifdef CONFIG_TEGRA_DC_EXTENSIONS
+	if (was_connected)
+		tegra_dc_ext_process_hotplug(hdmi->dc->ndev->id, false);
+	else
+		pr_info("%s: skipping redundant disconnect\n", __func__);
+#endif
+>>>>>>> update/master
 }
 
 static void handle_reset_l(struct tegra_dc_hdmi_data *hdmi)
@@ -261,20 +309,33 @@ static void handle_check_edid_l(struct tegra_dc_hdmi_data *hdmi)
 	/* monitors like to lie about these but they are still useful for
 	 * detecting aspect ratios
 	 */
-	hdmi->dc->out->h_size = specs.max_x * 1000;
-	hdmi->dc->out->v_size = specs.max_y * 1000;
+	hdmi->dc->out->h_size = specs.max_x * 10;
+	hdmi->dc->out->v_size = specs.max_y * 10;
 
 	hdmi->dvi = !(specs.misc & FB_MISC_HDMI);
 
-	tegra_fb_update_monspecs(hdmi->dc->fb, &specs,
-		tegra_dc_hdmi_mode_filter);
-
+#ifdef CONFIG_ADF_TEGRA
+	tegra_adf_process_hotplug_connected(hdmi->dc->adf, &specs);
+#endif
+#ifdef CONFIG_TEGRA_DC_EXTENSIONS
+	if (hdmi->dc->fb)
+		tegra_fb_update_monspecs(hdmi->dc->fb, &specs,
+			tegra_dc_hdmi_mode_filter);
+#endif
 #ifdef CONFIG_SWITCH
 	switch_set_state(&hdmi->hpd_switch, 1);
 	pr_info("Display connected, hpd_switch 1\n");
 #endif
 	hdmi->dc->connected = true;
+<<<<<<< HEAD
 	tegra_dc_ext_process_hotplug(hdmi->dc->ndev->id);
+=======
+	hdmi->connected_cache = true;
+
+#ifdef CONFIG_TEGRA_DC_EXTENSIONS
+	tegra_dc_ext_process_hotplug(hdmi->dc->ndev->id, true);
+#endif
+>>>>>>> update/master
 
 	if (unlikely(tegra_is_clk_enabled(hdmi->clk))) {
 		/* the only time this should happen is on boot, where the
@@ -482,12 +543,11 @@ void hdmi_state_machine_shutdown(void)
 void hdmi_state_machine_set_pending_hpd(void)
 {
 	rt_mutex_lock(&work_lock);
+	work_state.pending_hpd_evt = 1;
+	rt_mutex_unlock(&work_lock);
 
 	/* We always schedule work any time there is a pending HPD event */
-	work_state.pending_hpd_evt = 1;
 	hdmi_state_machine_sched_work_l(0);
-
-	rt_mutex_unlock(&work_lock);
 }
 
 int hdmi_state_machine_get_state(void)

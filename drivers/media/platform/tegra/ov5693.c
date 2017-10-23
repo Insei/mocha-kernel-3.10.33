@@ -1,5 +1,9 @@
 /*
+<<<<<<< HEAD
  * Copyright (c) 2013-2015, NVIDIA CORPORATION.  All rights reserved.
+=======
+ * Copyright (c) 2013-2016, NVIDIA CORPORATION.  All rights reserved.
+>>>>>>> update/master
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -32,6 +36,9 @@
 #include <linux/sysedp.h>
 #include <media/ov5693.h>
 #include <media/nvc.h>
+#include <media/camera_common.h>
+#include "cam_dev/camera_gpio.h"
+#include "nvc_utilities.h"
 
 #define OV5693_ID			0x5693
 #define OV5693_SENSOR_TYPE		NVC_IMAGER_TYPE_RAW
@@ -39,7 +46,6 @@
 #define OV5693_SIZEOF_I2C_BUF		16
 #define OV5693_TABLE_WAIT_MS		0
 #define OV5693_TABLE_END		1
-#define OV5693_TABLE_RESET		2
 #define OV5693_TABLE_RESET_TIMEOUT	50
 #define OV5693_LENS_MAX_APERTURE	0	/* _INT2FLOAT_DIVISOR */
 #define OV5693_LENS_FNUMBER		0	/* _INT2FLOAT_DIVISOR */
@@ -50,7 +56,8 @@
 #define OV5693_FUSE_ID_SIZE		8
 
 static struct nvc_gpio_init ov5693_gpio[] = {
-	{ OV5693_GPIO_TYPE_PWRDN, GPIOF_OUT_INIT_LOW, "pwrdn", false, true, },
+	{ OV5693_GPIO_TYPE_PWRDN, GPIOF_OUT_INIT_LOW, "pwrdn", true, true, },
+	{ OV5693_GPIO_TYPE_RESET, GPIOF_OUT_INIT_LOW, "reset", true, true, },
 };
 
 struct ov5693_info {
@@ -80,21 +87,21 @@ struct ov5693_info {
 	u8 eeprom_buf[OV5693_EEPROM_SIZE];
 };
 
-struct ov5693_reg {
-	u16 addr;
-	u16 val;
-};
-
 struct ov5693_mode_data {
 	struct nvc_imager_mode sensor_mode;
 	struct nvc_imager_dynamic_nvc sensor_dnvc;
-	struct ov5693_reg *p_mode_i2c;
+	struct reg_8 *p_mode_i2c;
 };
 
 static struct ov5693_platform_data ov5693_dflt_pdata = {
 	.cfg		= 0,
 	.num		= 0,
-	.dev_name	= "camera",
+	.dev_name	= "ov5693",
+	.regulators = {
+			.avdd = "avdd",
+			.dvdd = "dvdd",
+			.dovdd = "dovdd",
+	},
 };
 
 /*
@@ -121,8 +128,8 @@ static struct nvc_imager_static_nvc ov5693_dflt_sdata = {
 	.res_chg_wait_time	= OV5693_RES_CHG_WAIT_TIME_MS,
 };
 
-static const struct ov5693_reg ov5693_2592x1944_i2c[] = {
-	{OV5693_TABLE_RESET, 0},/* Including sw reset */
+static const struct reg_8 ov5693_2592x1944_i2c[] = {
+	{0x0100, 0x00},/* Including sw reset */
 	{0x3001, 0x0a},
 	{0x3002, 0x80},
 	{0x3006, 0x00},
@@ -347,8 +354,8 @@ static const struct ov5693_reg ov5693_2592x1944_i2c[] = {
 	{0x4806, 0x00},
 	{0x4816, 0x52},
 	{0x481f, 0x30},
-	{0x4826, 0x2c},
-	{0x4831, 0x64},
+	{0x4826, 0x32},
+	{0x4831, 0x6a},
 	{0x4d00, 0x04},
 	{0x4d01, 0x71},
 	{0x4d02, 0xfd},
@@ -392,8 +399,8 @@ static const struct ov5693_reg ov5693_2592x1944_i2c[] = {
 	{OV5693_TABLE_END, 0x0000}
 };
 
-static const struct ov5693_reg ov5693_1296x972_i2c[] = {
-	{OV5693_TABLE_RESET, 0},/* Including sw reset */
+static const struct reg_8 ov5693_1296x972_i2c[] = {
+	{0x0100, 0x00},/* Including sw reset */
 	{0x3001, 0x0a},
 	{0x3002, 0x80},
 	{0x3006, 0x00},
@@ -599,8 +606,8 @@ static const struct ov5693_reg ov5693_1296x972_i2c[] = {
 	{0x4806, 0x00},
 	{0x4816, 0x52},
 	{0x481f, 0x30},
-	{0x4826, 0x2c},
-	{0x4831, 0x64},
+	{0x4826, 0x32},
+	{0x4831, 0x6a},
 	{0x4d00, 0x04},
 	{0x4d01, 0x71},
 	{0x4d02, 0xfd},
@@ -642,8 +649,8 @@ static const struct ov5693_reg ov5693_1296x972_i2c[] = {
 	{OV5693_TABLE_END, 0x0000}
 };
 
-static const struct ov5693_reg ov5693_1920x1080_i2c[] = {
-	{OV5693_TABLE_RESET, 0x0},/*, 0xIncluding, 0xsw, 0xreset, 0x*/
+static const struct reg_8 ov5693_1920x1080_i2c[] = {
+	{0x0100, 0x00},/*, 0xIncluding, 0xsw, 0xreset, 0x*/
 	{0x3001, 0x0a},
 	{0x3002, 0x80},
 	{0x3006, 0x00},
@@ -849,8 +856,8 @@ static const struct ov5693_reg ov5693_1920x1080_i2c[] = {
 	{0x4806, 0x00},
 	{0x4816, 0x52},
 	{0x481f, 0x30},
-	{0x4826, 0x2c},
-	{0x4831, 0x64},
+	{0x4826, 0x32},
+	{0x4831, 0x6a},
 	{0x4d00, 0x04},
 	{0x4d01, 0x71},
 	{0x4d02, 0xfd},
@@ -894,10 +901,272 @@ static const struct ov5693_reg ov5693_1920x1080_i2c[] = {
 	{OV5693_TABLE_END, 0x0000}
 };
 
+static const struct reg_8 ov5693_2592x1458_i2c[] = {
+	{0x0100, 0x00},/*, 0xIncluding, 0xsw, 0xreset, 0x*/
+	{0x3001, 0x0a},
+	{0x3002, 0x80},
+	{0x3006, 0x00},
+	{0x3011, 0x21},
+	{0x3012, 0x09},
+	{0x3013, 0x10},
+	{0x3014, 0x00},
+	{0x3015, 0x08},
+	{0x3016, 0xf0},
+	{0x3017, 0xf0},
+	{0x3018, 0xf0},
+	{0x301b, 0xb4},
+	{0x301d, 0x02},
+	{0x3021, 0x00},
+	{0x3022, 0x01},
+	{0x3028, 0x44},
+	{0x3098, 0x03},
+	{0x3099, 0x1e},
+	{0x309a, 0x02},
+	{0x309b, 0x01},
+	{0x309c, 0x00},
+	{0x30a0, 0xd2},
+	{0x30a2, 0x01},
+	{0x30b2, 0x00},
+	{0x30b3, 0x68},
+	{0x30b4, 0x03},
+	{0x30b5, 0x04},
+	{0x30b6, 0x01},
+	{0x3104, 0x21},
+	{0x3106, 0x00},
+	{0x3400, 0x04},
+	{0x3401, 0x00},
+	{0x3402, 0x04},
+	{0x3403, 0x00},
+	{0x3404, 0x04},
+	{0x3405, 0x00},
+	{0x3406, 0x01},
+	{0x3500, 0x00},
+	{0x3501, 0x7b},
+	{0x3502, 0x00},
+	{0x3503, 0x07},
+	{0x3504, 0x00},
+	{0x3505, 0x00},
+	{0x3506, 0x00},
+	{0x3507, 0x02},
+	{0x3508, 0x00},
+	{0x3509, 0x10},
+	{0x350a, 0x00},
+	{0x350b, 0x40},
+	{0x3600, 0xbc},
+	{0x3601, 0x0a},
+	{0x3602, 0x38},
+	{0x3612, 0x80},
+	{0x3620, 0x44},
+	{0x3621, 0xb5},
+	{0x3622, 0x0c},
+	{0x3625, 0x10},
+	{0x3630, 0x55},
+	{0x3631, 0xf4},
+	{0x3632, 0x00},
+	{0x3633, 0x34},
+	{0x3634, 0x02},
+	{0x364d, 0x0d},
+	{0x364f, 0xdd},
+	{0x3660, 0x04},
+	{0x3662, 0x10},
+	{0x3663, 0xf1},
+	{0x3665, 0x00},
+	{0x3666, 0x20},
+	{0x3667, 0x00},
+	{0x366a, 0x80},
+	{0x3680, 0xe0},
+	{0x3681, 0x00},
+	{0x3700, 0x42},
+	{0x3701, 0x14},
+	{0x3702, 0xa0},
+	{0x3703, 0xd8},
+	{0x3704, 0x78},
+	{0x3705, 0x02},
+	{0x3708, 0xe2},
+	{0x3709, 0xc3},
+	{0x370a, 0x00},
+	{0x370b, 0x20},
+	{0x370c, 0x0c},
+	{0x370d, 0x11},
+	{0x370e, 0x00},
+	{0x370f, 0x40},
+	{0x3710, 0x00},
+	{0x371a, 0x1c},
+	{0x371b, 0x05},
+	{0x371c, 0x01},
+	{0x371e, 0xa1},
+	{0x371f, 0x0c},
+	{0x3721, 0x00},
+	{0x3724, 0x10},
+	{0x3726, 0x00},
+	{0x372a, 0x01},
+	{0x3730, 0x10},
+	{0x3738, 0x22},
+	{0x3739, 0xe5},
+	{0x373a, 0x50},
+	{0x373b, 0x02},
+	{0x373c, 0x41},
+	{0x373f, 0x02},
+	{0x3740, 0x42},
+	{0x3741, 0x02},
+	{0x3742, 0x18},
+	{0x3743, 0x01},
+	{0x3744, 0x02},
+	{0x3747, 0x10},
+	{0x374c, 0x04},
+	{0x3751, 0xf0},
+	{0x3752, 0x00},
+	{0x3753, 0x00},
+	{0x3754, 0xc0},
+	{0x3755, 0x00},
+	{0x3756, 0x1a},
+	{0x3758, 0x00},
+	{0x3759, 0x0f},
+	{0x376b, 0x44},
+	{0x375c, 0x04},
+	{0x3774, 0x10},
+	{0x3776, 0x00},
+	{0x377f, 0x08},
+	{0x3780, 0x22},
+	{0x3781, 0x0c},
+	{0x3784, 0x2c},
+	{0x3785, 0x1e},
+	{0x378f, 0xf5},
+	{0x3791, 0xb0},
+	{0x3795, 0x00},
+	{0x3796, 0x64},
+	{0x3797, 0x11},
+	{0x3798, 0x30},
+	{0x3799, 0x41},
+	{0x379a, 0x07},
+	{0x379b, 0xb0},
+	{0x379c, 0x0c},
+	{0x37c5, 0x00},
+	{0x37c6, 0x00},
+	{0x37c7, 0x00},
+	{0x37c9, 0x00},
+	{0x37ca, 0x00},
+	{0x37cb, 0x00},
+	{0x37de, 0x00},
+	{0x37df, 0x00},
+	{0x3800, 0x00},
+	{0x3801, 0x00},
+	{0x3802, 0x00},
+	{0x3803, 0xf4},
+	{0x3804, 0x0a},
+	{0x3805, 0x3f},
+	{0x3806, 0x06},
+	{0x3807, 0xb1},
+	{0x3808, 0x0a},
+	{0x3809, 0x20},
+	{0x380a, 0x05},
+	{0x380b, 0xb2},
+	{0x380c, 0x0a},
+	{0x380d, 0x80},
+	{0x380e, 0x07},
+	{0x380f, 0xc0},
+	{0x3810, 0x00},
+	{0x3811, 0x10},
+	{0x3812, 0x00},
+	{0x3813, 0x06},
+	{0x3814, 0x11},
+	{0x3815, 0x11},
+	{0x3820, 0x00},
+	{0x3821, 0x1e},
+	{0x3823, 0x00},
+	{0x3824, 0x00},
+	{0x3825, 0x00},
+	{0x3826, 0x00},
+	{0x3827, 0x00},
+	{0x382a, 0x04},
+	{0x3a04, 0x06},
+	{0x3a05, 0x14},
+	{0x3a06, 0x00},
+	{0x3a07, 0xfe},
+	{0x3b00, 0x00},
+	{0x3b02, 0x00},
+	{0x3b03, 0x00},
+	{0x3b04, 0x00},
+	{0x3b05, 0x00},
+	{0x3e07, 0x20},
+	{0x4000, 0x08},
+	{0x4001, 0x04},
+	{0x4002, 0x45},
+	{0x4004, 0x08},
+	{0x4005, 0x18},
+	{0x4006, 0x20},
+	{0x4008, 0x24},
+	{0x4009, 0x10},
+	{0x400c, 0x00},
+	{0x400d, 0x00},
+	{0x4058, 0x00},
+	{0x404e, 0x37},
+	{0x404f, 0x8f},
+	{0x4058, 0x00},
+	{0x4101, 0xb2},
+	{0x4303, 0x00},
+	{0x4304, 0x08},
+	{0x4307, 0x30},
+	{0x4311, 0x04},
+	{0x4315, 0x01},
+	{0x4511, 0x05},
+	{0x4512, 0x01},
+	{0x4800, 0x20}, /* dis-continuous */
+	{0x4806, 0x00},
+	{0x4816, 0x52},
+	{0x481f, 0x30},
+	{0x4826, 0x2c},
+	{0x4831, 0x64},
+	{0x4d00, 0x04},
+	{0x4d01, 0x71},
+	{0x4d02, 0xfd},
+	{0x4d03, 0xf5},
+	{0x4d04, 0x0c},
+	{0x4d05, 0xcc},
+	{0x4837, 0x0a},
+	{0x5000, 0x06},
+	{0x5001, 0x01},
+	{0x5002, 0x00},
+	{0x5003, 0x20},
+	{0x5046, 0x0a},
+	{0x5013, 0x00},
+	{0x5046, 0x0a},
+	{0x5780, 0xfc},
+	{0x5781, 0x13},
+	{0x5782, 0x03},
+	{0x5786, 0x20},
+	{0x5787, 0x40},
+	{0x5788, 0x08},
+	{0x5789, 0x08},
+	{0x578a, 0x02},
+	{0x578b, 0x01},
+	{0x578c, 0x01},
+	{0x578d, 0x0c},
+	{0x578e, 0x02},
+	{0x578f, 0x01},
+	{0x5790, 0x01},
+	{0x5791, 0xff},
+	{0x5842, 0x01},
+	{0x5843, 0x2b},
+	{0x5844, 0x01},
+	{0x5845, 0x92},
+	{0x5846, 0x01},
+	{0x5847, 0x8f},
+	{0x5848, 0x01},
+	{0x5849, 0x0c},
+	{0x5e00, 0x00},
+	{0x5e10, 0x0c},
+	{OV5693_TABLE_END, 0x0000}
+};
 
+<<<<<<< HEAD
 static const struct ov5693_reg ov5693_1280x720_60fps_i2c[] = {
 	{OV5693_TABLE_RESET, 0},/* Including sw reset */
 	{0x0103, 0x01},
+=======
+static const struct reg_8 ov5693_1280x720_120fps_i2c[] = {
+	{0x0100, 0x00},/* Including sw reset */
+>>>>>>> update/master
 	{0x3001, 0x0a},
 	{0x3002, 0x80},
 	{0x3006, 0x00},
@@ -1103,8 +1372,8 @@ static const struct ov5693_reg ov5693_1280x720_60fps_i2c[] = {
 	{0x4806, 0x00},
 	{0x4816, 0x52},
 	{0x481f, 0x30},
-	{0x4826, 0x2c},
-	{0x4831, 0x64},
+	{0x4826, 0x32},
+	{0x4831, 0x6a},
 	{0x4d00, 0x04},
 	{0x4d01, 0x71},
 	{0x4d02, 0xfd},
@@ -1148,8 +1417,8 @@ static const struct ov5693_reg ov5693_1280x720_60fps_i2c[] = {
 	{OV5693_TABLE_END, 0x0000}
 };
 
-static const struct ov5693_reg ov5693_2592x1944_HDR_24fps_i2c[] = {
-	{OV5693_TABLE_RESET, 0},/* Including sw reset */
+static const struct reg_8 ov5693_2592x1944_HDR_24fps_i2c[] = {
+	{0x0100, 0x00},/* Including sw reset */
 	{0x0103, 0x01},
 	{0x3001, 0x0a},
 	{0x3002, 0x80},
@@ -1356,8 +1625,8 @@ static const struct ov5693_reg ov5693_2592x1944_HDR_24fps_i2c[] = {
 	{0x4806, 0x00},
 	{0x4816, 0x52},
 	{0x481f, 0x30},
-	{0x4826, 0x2c},
-	{0x4831, 0x64},
+	{0x4826, 0x32},
+	{0x4831, 0x6a},
 	{0x4d00, 0x04},
 	{0x4d01, 0x71},
 	{0x4d02, 0xfd},
@@ -1396,8 +1665,8 @@ static const struct ov5693_reg ov5693_2592x1944_HDR_24fps_i2c[] = {
 	{OV5693_TABLE_END, 0x0000}
 };
 
-static const struct ov5693_reg ov5693_1920x1080_HDR_30fps_i2c[] = {
-	{OV5693_TABLE_RESET, 0},/* Including sw reset */
+static const struct reg_8 ov5693_1920x1080_HDR_30fps_i2c[] = {
+	{0x0100, 0x00},/* Including sw reset */
 	{0x0103, 0x01},
 	{0x3001, 0x0a},
 	{0x3002, 0x80},
@@ -1604,8 +1873,8 @@ static const struct ov5693_reg ov5693_1920x1080_HDR_30fps_i2c[] = {
 	{0x4806, 0x00},
 	{0x4816, 0x52},
 	{0x481f, 0x30},
-	{0x4826, 0x2c},
-	{0x4831, 0x64},
+	{0x4826, 0x32},
+	{0x4831, 0x6a},
 	{0x4d00, 0x04},
 	{0x4d01, 0x71},
 	{0x4d02, 0xfd},
@@ -1644,8 +1913,8 @@ static const struct ov5693_reg ov5693_1920x1080_HDR_30fps_i2c[] = {
 	{OV5693_TABLE_END, 0x0000}
 };
 
-static const struct ov5693_reg ov5693_1296x972_HDR_30fps_i2c[] = {
-	{OV5693_TABLE_RESET, 0},/* Including sw reset */
+static const struct reg_8 ov5693_1296x972_HDR_30fps_i2c[] = {
+	{0x0100, 0x00},/* Including sw reset */
 	{0x0103, 0x01},
 	{0x3001, 0x0a},
 	{0x3002, 0x80},
@@ -1852,8 +2121,8 @@ static const struct ov5693_reg ov5693_1296x972_HDR_30fps_i2c[] = {
 	{0x4806, 0x00},
 	{0x4816, 0x52},
 	{0x481f, 0x30},
-	{0x4826, 0x2c},
-	{0x4831, 0x64},
+	{0x4826, 0x32},
+	{0x4831, 0x6a},
 	{0x4d00, 0x04},
 	{0x4d01, 0x71},
 	{0x4d02, 0xfd},
@@ -1892,8 +2161,8 @@ static const struct ov5693_reg ov5693_1296x972_HDR_30fps_i2c[] = {
 	{OV5693_TABLE_END, 0x0000}
 };
 
-static const struct ov5693_reg ov5693_1280x720_HDR_60fps_i2c[] = {
-	{OV5693_TABLE_RESET, 0},/* Including sw reset */
+static const struct reg_8 ov5693_1280x720_HDR_60fps_i2c[] = {
+	{0x0100, 0x00},/* Including sw reset */
 	{0x0103, 0x01},
 	{0x3001, 0x0a},
 	{0x3002, 0x80},
@@ -2100,8 +2369,8 @@ static const struct ov5693_reg ov5693_1280x720_HDR_60fps_i2c[] = {
 	{0x4806, 0x00},
 	{0x4816, 0x52},
 	{0x481f, 0x30},
-	{0x4826, 0x2c},
-	{0x4831, 0x64},
+	{0x4826, 0x32},
+	{0x4831, 0x6a},
 	{0x4d00, 0x04},
 	{0x4d01, 0x71},
 	{0x4d02, 0xfd},
@@ -2143,6 +2412,7 @@ static const struct ov5693_reg ov5693_1280x720_HDR_60fps_i2c[] = {
 enum {
 	OV5693_MODE_2592x1944 = 0,
 	OV5693_MODE_1920x1080,
+	OV5693_MODE_2592x1458,
 	OV5693_MODE_1296x972,
 	OV5693_MODE_1280x720_60FPS,
 	OV5693_MODE_2592x1944_HDR,
@@ -2151,9 +2421,10 @@ enum {
 	OV5693_MODE_1280x720_HDR_60FPS,
 };
 
-static const struct ov5693_reg *mode_table[] = {
+static const struct reg_8 *mode_table[] = {
 	[OV5693_MODE_2592x1944]		= ov5693_2592x1944_i2c,
 	[OV5693_MODE_1920x1080]		= ov5693_1920x1080_i2c,
+	[OV5693_MODE_2592x1458]		= ov5693_2592x1458_i2c,
 	[OV5693_MODE_1296x972]		= ov5693_1296x972_i2c,
 	[OV5693_MODE_1280x720_60FPS]	= ov5693_1280x720_60fps_i2c,
 	[OV5693_MODE_2592x1944_HDR]	= ov5693_2592x1944_HDR_24fps_i2c,
@@ -2162,6 +2433,7 @@ static const struct ov5693_reg *mode_table[] = {
 	[OV5693_MODE_1280x720_HDR_60FPS] = ov5693_1280x720_HDR_60fps_i2c,
 };
 
+<<<<<<< HEAD
 static int ov5693_i2c_wr_table(struct ov5693_info *info,
 				const struct ov5693_reg table[])
 {
@@ -2212,6 +2484,9 @@ static int ov5693_i2c_wr_table(struct ov5693_info *info,
 
 
 static inline int ov5693_frame_length_reg(struct ov5693_reg *regs,
+=======
+static inline int ov5693_frame_length_reg(struct reg_8 *regs,
+>>>>>>> update/master
 					u32 frame_length)
 {
 	regs->addr = 0x380E;
@@ -2222,7 +2497,11 @@ static inline int ov5693_frame_length_reg(struct ov5693_reg *regs,
 	return 2;
 }
 
+<<<<<<< HEAD
 static inline int ov5693_coarse_time_reg(struct ov5693_reg *regs,
+=======
+static inline int ov5693_coarse_time_reg(struct reg_8 *regs,
+>>>>>>> update/master
 					u32 coarse_time, u32 coarse_time_short)
 {
 	int ret = 0;
@@ -2274,7 +2553,7 @@ static inline int ov5693_coarse_time_reg(struct ov5693_reg *regs,
 static int ov5693_set_frame_length(struct ov5693_info *info,
 				   u32 frame_length, bool group_hold)
 {
-	struct ov5693_reg reg_list[9];
+	struct reg_8 reg_list[9];
 	int err = 0;
 	int offset = 0;
 
@@ -2285,7 +2564,10 @@ static int ov5693_set_frame_length(struct ov5693_info *info,
 	reg_list[offset].addr = OV5693_TABLE_END;
 	offset++;
 
-	err = ov5693_i2c_wr_table(info, reg_list);
+	err = regmap_util_write_table_8(info->regmap,
+					reg_list, NULL, 0,
+					OV5693_TABLE_WAIT_MS,
+					OV5693_TABLE_END);
 
 	return err;
 }
@@ -2294,7 +2576,7 @@ static int ov5693_set_coarse_time(struct ov5693_info *info,
 				  u32 coarse_time, u32 coarse_time_short,
 				  bool group_hold)
 {
-	struct ov5693_reg reg_list[16];
+	struct reg_8 reg_list[16];
 	int err = 0;
 	int offset = 0;
 
@@ -2307,12 +2589,15 @@ static int ov5693_set_coarse_time(struct ov5693_info *info,
 	reg_list[offset].addr = OV5693_TABLE_END;
 	offset++;
 
-	err = ov5693_i2c_wr_table(info, reg_list);
+	err = regmap_util_write_table_8(info->regmap,
+					reg_list, NULL, 0,
+					OV5693_TABLE_WAIT_MS,
+					OV5693_TABLE_END);
 
 	return err;
 }
 
-static inline int ov5693_gain_reg(struct ov5693_reg *regs, u32 gain)
+static inline int ov5693_gain_reg(struct reg_8 *regs, u32 gain)
 {
 	(regs)->addr = 0x350A;
 	(regs)->val = gain >> 8;
@@ -2340,7 +2625,7 @@ static int ov5693_bin_wr(struct ov5693_info *info, u8 enable)
 static int ov5693_exposure_wr(struct ov5693_info *info,
 				struct ov5693_mode *mode)
 {
-	struct ov5693_reg reg_list[16];
+	struct reg_8 reg_list[16];
 	int err = 0;
 	int offset = 0;
 
@@ -2350,7 +2635,10 @@ static int ov5693_exposure_wr(struct ov5693_info *info,
 	offset += ov5693_gain_reg(reg_list + offset, mode->gain);
 
 	reg_list[offset].addr = OV5693_TABLE_END;
-	err = ov5693_i2c_wr_table(info, reg_list);
+	err = regmap_util_write_table_8(info->regmap,
+					reg_list, NULL, 0,
+					OV5693_TABLE_WAIT_MS,
+					OV5693_TABLE_END);
 
 	return err;
 }
@@ -2358,7 +2646,7 @@ static int ov5693_exposure_wr(struct ov5693_info *info,
 
 static int ov5693_set_gain(struct ov5693_info *info, u32 gain, bool group_hold)
 {
-	struct ov5693_reg reg_list[9];
+	struct reg_8 reg_list[9];
 	int err = 0;
 	int offset = 0;
 
@@ -2369,7 +2657,14 @@ static int ov5693_set_gain(struct ov5693_info *info, u32 gain, bool group_hold)
 	reg_list[offset].addr = OV5693_TABLE_END;
 	offset++;
 
+<<<<<<< HEAD
 	err = ov5693_i2c_wr_table(info, reg_list);
+=======
+	err = regmap_util_write_table_8(info->regmap,
+					reg_list, NULL, 0,
+					OV5693_TABLE_WAIT_MS,
+					OV5693_TABLE_END);
+>>>>>>> update/master
 
 	return err;
 }
@@ -2378,7 +2673,7 @@ static int ov5693_set_group_hold(struct ov5693_info *info,
 				struct ov5693_ae *ae)
 {
 	int err = 0;
-	struct ov5693_reg reg_list[16];
+	struct reg_8 reg_list[16];
 	int offset = 0;
 	bool group_hold = true; /* To use GROUP_HOLD macros */
 
@@ -2395,7 +2690,10 @@ static int ov5693_set_group_hold(struct ov5693_info *info,
 	OV5693_LEAVE_GROUP_HOLD(group_hold);
 
 	reg_list[offset].addr = OV5693_TABLE_END;
-	err |= ov5693_i2c_wr_table(info, reg_list);
+	err = regmap_util_write_table_8(info->regmap,
+					reg_list, NULL, 0,
+					OV5693_TABLE_WAIT_MS,
+					OV5693_TABLE_END);
 
 	return err;
 }
@@ -2408,7 +2706,7 @@ static int ov5693_gpio_rd(struct ov5693_info *info,
 	if (info->gpio[type].gpio) {
 		val = gpio_get_value_cansleep(info->gpio[type].gpio);
 		dev_dbg(&info->i2c_client->dev, "%s %u %d\n", __func__,
-		       info->gpio[type].gpio, val);
+			 info->gpio[type].gpio, val);
 		if (!info->gpio[type].active_high)
 			val = !val;
 		val &= 1;
@@ -2422,15 +2720,22 @@ static int ov5693_gpio_wr(struct ov5693_info *info,
 {
 	int err = -EINVAL;
 
-	if (info->gpio[type].gpio) {
-		if (!info->gpio[type].active_high)
-			val = !val;
+	if (!info->gpio[type].gpio)
+		return err;
+
+	if (info->pdata->use_cam_gpio) {
+		err = cam_gpio_ctrl(info->i2c_client,
+			 info->gpio[type].gpio, val,
+			 info->gpio[type].active_high);
+	} else {
+		val = info->gpio[type].active_high ? val : !val;
 		val &= 1;
 		err = val;
 		gpio_set_value_cansleep(info->gpio[type].gpio, val);
 		dev_dbg(&info->i2c_client->dev, "%s %u %d\n", __func__,
-		       info->gpio[type].gpio, val);
+			 info->gpio[type].gpio, val);
 	}
+
 	return err; /* return value written or error */
 }
 
@@ -2439,10 +2744,24 @@ static void ov5693_gpio_pwrdn(struct ov5693_info *info, int val)
 	int prev_val;
 
 	prev_val = ov5693_gpio_rd(info, OV5693_GPIO_TYPE_PWRDN);
-	if ((prev_val < 0) || (val == prev_val))
+	if (prev_val < 0)
 		return;
 
 	ov5693_gpio_wr(info, OV5693_GPIO_TYPE_PWRDN, val);
+	if (!val && prev_val)
+		/* if transition from assert to deassert then delay for I2C */
+		usleep_range(1, 2);
+}
+
+static void ov5693_gpio_reset(struct ov5693_info *info, int val)
+{
+	int prev_val;
+
+	prev_val = ov5693_gpio_rd(info, OV5693_GPIO_TYPE_RESET);
+	if (prev_val < 0)
+		return;
+
+	ov5693_gpio_wr(info, OV5693_GPIO_TYPE_RESET, val);
 	if (!val && prev_val)
 		/* if transition from assert to deassert then delay for I2C */
 		msleep(50);
@@ -2454,6 +2773,9 @@ static void ov5693_gpio_exit(struct ov5693_info *info)
 
 	for (i = 0; i < ARRAY_SIZE(ov5693_gpio); i++) {
 		if (info->gpio[i].gpio && info->gpio[i].own)
+			if (info->pdata->use_cam_gpio)
+				cam_gpio_deregister(info->i2c_client,
+					 info->gpio[i].gpio);
 			gpio_free(info->gpio[i].gpio);
 	}
 }
@@ -2492,6 +2814,16 @@ static void ov5693_gpio_init(struct ov5693_info *info)
 			else
 				flags = GPIOF_OUT_INIT_HIGH;
 		}
+
+		if (info->pdata->use_cam_gpio) {
+			err = cam_gpio_register(
+				 info->i2c_client, info->gpio[type].gpio);
+			if (err)
+				dev_err(&info->i2c_client->dev,
+					 "%s ERR can't register cam gpio %u!\n",
+					 __func__, info->gpio[type].gpio);
+		}
+
 		if (!info->pdata->gpio[j].init_en)
 			continue;
 
@@ -2532,6 +2864,74 @@ static int ov5693_mclk_enable(struct ov5693_info *info)
 	return err;
 }
 
+static int ov5693_platform_power_on(struct ov5693_power_rail *pw)
+{
+	int err = 0;
+	struct ov5693_info *info = container_of(pw, struct ov5693_info,
+						regulators);
+
+	if (info->pdata->power_on)
+		return info->pdata->power_on(pw);
+
+	if (info->pdata->use_vcm_vdd) {
+		err = regulator_enable(info->ext_vcm_vdd);
+		if (unlikely(err))
+			goto ov5693_vcm_fail;
+	}
+
+	if (pw->avdd)
+		err = regulator_enable(pw->avdd);
+	if (err)
+		goto ov5693_avdd_fail;
+
+	if (pw->dovdd)
+		err = regulator_enable(pw->dovdd);
+	if (err)
+		goto ov5693_iovdd_fail;
+
+	ov5693_gpio_pwrdn(info, 1);
+	usleep_range(2000, 2010);
+	ov5693_gpio_reset(info, 1);
+
+	usleep_range(1350, 1360);
+
+	return 0;
+
+ov5693_iovdd_fail:
+	regulator_disable(pw->avdd);
+
+ov5693_avdd_fail:
+	if (info->pdata->use_vcm_vdd)
+		regulator_disable(info->ext_vcm_vdd);
+
+ov5693_vcm_fail:
+	pr_err("%s FAILED\n", __func__);
+	return err;
+}
+
+static int ov5693_platform_power_off(struct ov5693_power_rail *pw)
+{
+	struct ov5693_info *info = container_of(pw, struct ov5693_info,
+						regulators);
+
+	if (info->pdata->power_off)
+		return info->pdata->power_off(pw);
+
+	usleep_range(21, 25);
+	ov5693_gpio_pwrdn(info, 0);
+	ov5693_gpio_reset(info, 0);
+	usleep_range(2000, 2010);
+
+	if (pw->dovdd)
+		regulator_disable(pw->dovdd);
+	if (pw->avdd)
+		regulator_disable(pw->avdd);
+	if (info->pdata->use_vcm_vdd)
+		regulator_disable(info->ext_vcm_vdd);
+
+	return 0;
+}
+
 static int ov5693_power_off(struct ov5693_info *info)
 {
 	struct ov5693_power_rail *pw = &info->regulators;
@@ -2540,18 +2940,13 @@ static int ov5693_power_off(struct ov5693_info *info)
 	if (false == info->power_on)
 		return 0;
 
-	if (info->pdata && info->pdata->power_off) {
-		err = info->pdata->power_off(pw);
-		if (0 > err)
-			return err;
-		info->power_on = false;
-		ov5693_mclk_disable(info);
-		sysedp_set_state(info->sysedpc, 0);
-	} else {
-		dev_err(&info->i2c_client->dev,
-			"%s ERR: has no power_off function\n", __func__);
-		err = -EINVAL;
-	}
+	err = ov5693_platform_power_off(pw);
+	if (err < 0)
+		return err;
+	info->power_on = false;
+	ov5693_mclk_disable(info);
+	sysedp_set_state(info->sysedpc, 0);
+
 	return err;
 }
 
@@ -2567,19 +2962,11 @@ static int ov5693_power_on(struct ov5693_info *info, bool standby)
 	if (err)
 		return err;
 
-	if (info->pdata && info->pdata->power_on) {
-		err = info->pdata->power_on(pw);
-		if (err >= 0) {
-			info->power_on = true;
-			info->pwr_dev = NVC_PWR_ON;
-		}
-	} else {
-		dev_err(&info->i2c_client->dev,
-			"%s ERR: has no power_on function\n", __func__);
-		err = -EINVAL;
-	}
-
-	if (err < 0)
+	err = ov5693_platform_power_on(pw);
+	if (err >= 0) {
+		info->power_on = true;
+		info->pwr_dev = NVC_PWR_ON;
+	} else
 		ov5693_mclk_disable(info);
 
 	return err;
@@ -2655,10 +3042,13 @@ static void ov5693_regulator_get(struct ov5693_info *info,
 	struct regulator *reg = NULL;
 	int err = 0;
 
+	if (vreg_name == NULL)
+		return;
+
 	reg = devm_regulator_get(&info->i2c_client->dev, vreg_name);
 	if (IS_ERR(reg)) {
-		dev_err(&info->i2c_client->dev, "%s %s ERR: %d\n",
-			__func__, vreg_name, (int)reg);
+		dev_err(&info->i2c_client->dev, "%s %s ERR: %p\n",
+			__func__, vreg_name, reg);
 		err = PTR_ERR(reg);
 		reg = NULL;
 	} else {
@@ -2675,11 +3065,12 @@ static void ov5693_pm_init(struct ov5693_info *info)
 
 	ov5693_gpio_init(info);
 
-	ov5693_regulator_get(info, &pw->dvdd, "dvdd");
+	ov5693_regulator_get(info, &pw->avdd, info->pdata->regulators.avdd);
 
-	ov5693_regulator_get(info, &pw->avdd, "avdd_ov5693");
+	ov5693_regulator_get(info, &pw->dvdd, info->pdata->regulators.dvdd);
 
-	ov5693_regulator_get(info, &pw->dovdd, "dovdd");
+	ov5693_regulator_get(info, &pw->dovdd, info->pdata->regulators.dovdd);
+
 	info->power_on = false;
 }
 
@@ -2709,7 +3100,11 @@ static int ov5693_mode_wr_full(struct ov5693_info *info, u32 mode_index)
 
 	ov5693_pm_dev_wr(info, NVC_PWR_ON);
 	ov5693_bin_wr(info, 0);
-	err = ov5693_i2c_wr_table(info, mode_table[mode_index]);
+	err = regmap_util_write_table_8(info->regmap,
+					mode_table[mode_index],
+					NULL, 0,
+					OV5693_TABLE_WAIT_MS,
+					OV5693_TABLE_END);
 	if (!err) {
 		dev_dbg(&info->i2c_client->dev,
 			"init done(mode=%d)!!!\n", mode_index);
@@ -2731,6 +3126,13 @@ static int ov5693_set_mode(struct ov5693_info *info,
 	int err = 0;
 	pr_info("%s: mode->res_x = %d\n", __func__, mode->res_x);
 	pr_info("%s: mode->res_y = %d\n", __func__, mode->res_y);
+
+	dev_info(&info->i2c_client->dev,
+			"[OV5693] sensor %s:%d ++\n", __func__, __LINE__);
+	dev_info(&info->i2c_client->dev,
+			 "%s: xres %u yres %u framelength %u coarsetime %u gain %u, hdr %d\n",
+			 __func__, mode->res_x, mode->res_y, mode->frame_length,
+			 mode->coarse_time, mode->gain, mode->hdr_en);
 
 	if (!mode->res_x && !mode->res_y) {
 		if (mode->frame_length || mode->coarse_time || mode->gain) {
@@ -2760,6 +3162,8 @@ static int ov5693_set_mode(struct ov5693_info *info,
 			mode_index = OV5693_MODE_1296x972;
 		else if (mode->res_x == 1920 && mode->res_y == 1080)
 			mode_index = OV5693_MODE_1920x1080;
+		else if (mode->res_x == 2592 && mode->res_y == 1458)
+			mode_index = OV5693_MODE_2592x1458;
 		else if (mode->res_x == 1280 && mode->res_y == 720)
 			mode_index = OV5693_MODE_1280x720_60FPS;
 	}
@@ -2806,12 +3210,17 @@ static int ov5693_get_fuse_id(struct ov5693_info *info)
 
 	/* if fuse id already cached skip reading again */
 	if (info->fuseid.size > 0)
+<<<<<<< HEAD
 	{
 		return 0;
 	}
 
 	/* delay to ensure i2c is ready after poweron */
 	usleep_range(150, 200);
+=======
+		return 0;
+
+>>>>>>> update/master
 	err = regmap_write(info->regmap, 0x0100, 0x01);
 	if (err != 0) {
 		dev_err(&info->i2c_client->dev,
@@ -2827,6 +3236,7 @@ static int ov5693_get_fuse_id(struct ov5693_info *info)
 			"%s ERR %d: cannot write bank index 0\n", __func__,
 			err);
 		return err;
+<<<<<<< HEAD
 	}
 	usleep_range(10000, 11000);
 
@@ -2838,6 +3248,19 @@ static int ov5693_get_fuse_id(struct ov5693_info *info)
 	}
 	usleep_range(10000, 11000);
 
+=======
+	}
+	usleep_range(10000, 11000);
+
+	err = regmap_write(info->regmap, 0x3D81, 0x01);
+	if (err != 0) {
+		dev_err(&info->i2c_client->dev,
+			"%s ERR %d: cannot load OTP data\n", __func__, err);
+		return err;
+	}
+	usleep_range(10000, 11000);
+
+>>>>>>> update/master
 	err = regmap_bulk_read(info->regmap, 0x3D00,
 		info->fuseid.data, OV5693_FUSE_ID_SIZE);
 	if (err != 0) {
@@ -2949,12 +3372,51 @@ ov5693_write_eeprom(struct ov5693_info *info, u16 addr, u8 val)
 	return regmap_write(info->eeprom[addr >> 8].regmap, addr & 0xFF, val);
 }
 
+static int
+ov5693_hw_detect(struct ov5693_info *info)
+{
+	if (ov5693_power_on(info, false))
+		return -1;
+
+	if (ov5693_get_fuse_id(info))
+		return -1;
+
+	if (ov5693_power_off(info))
+		return -1;
+
+	return 0;
+}
+
 static long ov5693_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct ov5693_info *info = file->private_data;
 	int err;
 
 	switch (_IOC_NR(cmd)) {
+	case _IOC_NR(OV5693_IOCTL_SET_POWER):
+	{
+		u32 powerlevel = (u32) arg;
+
+		if (powerlevel > NVC_PWR_ON) {
+			dev_err(&info->i2c_client->dev,
+				"%s:Invalid power level.\n",
+			__func__);
+			return -EFAULT;
+		}
+
+		err = ov5693_pm_wr(info, powerlevel);
+		return err;
+	}
+	case _IOC_NR(OV5693_IOCTL_GET_CAPS):
+		if (copy_to_user((void __user *)arg,
+				 info->pdata->cap,
+				 sizeof(struct nvc_imager_cap))) {
+			dev_err(&info->i2c_client->dev,
+				"%s copy_to_user err line %d\n",
+				__func__, __LINE__);
+			return -EFAULT;
+		}
+		return 0;
 	case _IOC_NR(OV5693_IOCTL_SET_MODE):
 	{
 		struct ov5693_mode mode;
@@ -3071,6 +3533,9 @@ static long ov5693_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	case _IOC_NR(OV5693_IOCTL_GET_EEPROM_DATA):
 		{
+			if (!info->pdata->has_eeprom)
+				return -EFAULT;
+
 			ov5693_read_eeprom(info,
 				0,
 				OV5693_EEPROM_SIZE,
@@ -3090,6 +3555,12 @@ static long ov5693_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		{
 			int i;
 
+<<<<<<< HEAD
+=======
+			if (!info->pdata->has_eeprom)
+				return -EFAULT;
+
+>>>>>>> update/master
 			if (copy_from_user(info->eeprom_buf,
 				(const void __user *)arg, OV5693_EEPROM_SIZE)) {
 				dev_err(&info->i2c_client->dev,
@@ -3115,17 +3586,23 @@ static long ov5693_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 static void ov5693_sdata_init(struct ov5693_info *info)
 {
+	struct nvc_imager_static_nvc *static_info;
+
 	memcpy(&info->sdata, &ov5693_dflt_sdata, sizeof(info->sdata));
-	if (info->pdata->lens_focal_length)
-		info->sdata.focal_len = info->pdata->lens_focal_length;
-	if (info->pdata->lens_max_aperture)
-		info->sdata.max_aperture = info->pdata->lens_max_aperture;
-	if (info->pdata->lens_fnumber)
-		info->sdata.fnumber = info->pdata->lens_fnumber;
-	if (info->pdata->lens_view_angle_h)
-		info->sdata.view_angle_h = info->pdata->lens_view_angle_h;
-	if (info->pdata->lens_view_angle_v)
-		info->sdata.view_angle_v = info->pdata->lens_view_angle_v;
+	if (!info->pdata->static_info)
+		return;
+
+	static_info = info->pdata->static_info;
+	if (static_info->focal_len)
+		info->sdata.focal_len = static_info->focal_len;
+	if (static_info->max_aperture)
+		info->sdata.max_aperture = static_info->max_aperture;
+	if (static_info->fnumber)
+		info->sdata.fnumber = static_info->fnumber;
+	if (static_info->view_angle_h)
+		info->sdata.view_angle_h = static_info->view_angle_h;
+	if (static_info->view_angle_v)
+		info->sdata.view_angle_v = static_info->view_angle_v;
 }
 
 static int ov5693_open(struct inode *inode, struct file *file)
@@ -3144,7 +3621,7 @@ static int ov5693_open(struct inode *inode, struct file *file)
 	return err;
 }
 
-int ov5693_release(struct inode *inode, struct file *file)
+static int ov5693_release(struct inode *inode, struct file *file)
 {
 	struct ov5693_info *info = file->private_data;
 
@@ -3178,7 +3655,8 @@ static int ov5693_remove(struct i2c_client *client)
 	dev_dbg(&info->i2c_client->dev, "%s\n", __func__);
 	misc_deregister(&info->miscdev);
 	sysedp_free_consumer(info->sysedpc);
-	ov5693_eeprom_device_release(info);
+	if (info->pdata->has_eeprom)
+		ov5693_eeprom_device_release(info);
 	ov5693_del(info);
 	return 0;
 }
@@ -3189,65 +3667,6 @@ static struct of_device_id ov5693_of_match[] = {
 };
 
 MODULE_DEVICE_TABLE(of, ov5693_of_match);
-
-static int ov5693_platform_power_on(struct ov5693_power_rail *pw)
-{
-	int err;
-	struct ov5693_info *info = container_of(pw, struct ov5693_info,
-						regulators);
-
-	if (info->pdata->use_vcm_vdd) {
-		err = regulator_enable(info->ext_vcm_vdd);
-		if (unlikely(err))
-			goto ov5693_vcm_fail;
-	}
-
-	ov5693_gpio_pwrdn(info, 0);
-	usleep_range(10, 20);
-
-	err = regulator_enable(pw->avdd);
-	if (err)
-		goto ov5693_avdd_fail;
-
-	err = regulator_enable(pw->dovdd);
-	if (err)
-		goto ov5693_iovdd_fail;
-
-	usleep_range(1, 2);
-	ov5693_gpio_pwrdn(info, 1);
-
-	usleep_range(300, 310);
-
-	return 0;
-
-ov5693_iovdd_fail:
-	regulator_disable(pw->avdd);
-
-ov5693_avdd_fail:
-	if (info->pdata->use_vcm_vdd)
-		regulator_disable(info->ext_vcm_vdd);
-
-ov5693_vcm_fail:
-	pr_err("%s FAILED\n", __func__);
-	return err;
-}
-
-static int ov5693_platform_power_off(struct ov5693_power_rail *pw)
-{
-	struct ov5693_info *info = container_of(pw, struct ov5693_info,
-						regulators);
-
-	usleep_range(21, 25);
-	ov5693_gpio_pwrdn(info, 0);
-	usleep_range(1, 2);
-
-	regulator_disable(pw->dovdd);
-	regulator_disable(pw->avdd);
-	if (info->pdata->use_vcm_vdd)
-		regulator_disable(info->ext_vcm_vdd);
-
-	return 0;
-}
 
 static int ov5693_parse_dt_gpio(struct device_node *np, const char *name,
 				enum ov5693_gpio_type type,
@@ -3270,44 +3689,67 @@ static struct ov5693_platform_data *ov5693_parse_dt(struct i2c_client *client)
 	struct device_node *np = client->dev.of_node;
 	struct ov5693_platform_data *pdata;
 	struct nvc_gpio_pdata *gpio_pdata = NULL;
+	int num;
 
-	pdata = devm_kzalloc(&client->dev, sizeof(*pdata), GFP_KERNEL);
+	dev_dbg(&client->dev, "%s: %s\n", __func__, np->full_name);
+	num = sizeof(*pdata) + sizeof(*pdata->cap) + sizeof(*pdata->static_info)
+		+ sizeof(*gpio_pdata) * ARRAY_SIZE(ov5693_gpio);
+	pdata = devm_kzalloc(&client->dev, num, GFP_KERNEL);
 	if (!pdata) {
 		dev_err(&client->dev, "Failed to allocate pdata\n");
 		return ERR_PTR(-ENOMEM);
 	}
 
-	gpio_pdata = devm_kzalloc(&client->dev,
-		sizeof(*gpio_pdata) * ARRAY_SIZE(ov5693_gpio), GFP_KERNEL);
-	if (!gpio_pdata) {
-		dev_err(&client->dev, "cannot allocate gpio data memory\n");
-		return ERR_PTR(-ENOMEM);
-	}
+	/* init with default platform data values in board file or driver */
+	if (client->dev.platform_data)
+		memcpy(pdata, client->dev.platform_data, sizeof(*pdata));
+	else
+		memcpy(pdata, &ov5693_dflt_pdata, sizeof(*pdata));
 
-	/* init with default platform data values */
-	memcpy(pdata, &ov5693_dflt_pdata, sizeof(*pdata));
+	if (pdata->cap)
+		memcpy((void *)(pdata + 1), pdata->cap, sizeof(*pdata->cap));
+
+	pdata->cap = (void *)(pdata + 1);
+	pdata->static_info = (void *)(pdata->cap + 1);
+	gpio_pdata = (void *)(pdata->static_info + 1);
+
+	/* regulator info */
+	of_property_read_string(np, "avdd", &pdata->regulators.avdd);
+	of_property_read_string(np, "dvdd", &pdata->regulators.dvdd);
+	of_property_read_string(np, "dovdd", &pdata->regulators.dovdd);
 
 	/* extra regulators info */
-	pdata->use_vcm_vdd = of_property_read_bool(np, "nvidia,use-vcm-vdd");
+	pdata->use_vcm_vdd = of_property_read_bool(np, "use-vcm-vdd");
 
 	/* generic info */
-	of_property_read_u32(np, "nvidia,num", &pdata->num);
-	of_property_read_string(np, "nvidia,dev-name", &pdata->dev_name);
+	of_property_read_string(np, "dev_name", &pdata->dev_name);
+	of_property_read_u32(np, "num", &pdata->num);
+	if (of_property_read_bool(np, "has-eeprom"))
+		pdata->has_eeprom = true;
+	if (of_property_read_bool(np, "off-to-standby"))
+		pdata->cfg |= NVC_CFG_OFF2STDBY;
+	if (of_property_read_bool(np, "boot-init"))
+		pdata->cfg |= NVC_CFG_BOOT_INIT;
+	if (of_property_read_bool(np, "nodev-check"))
+		pdata->cfg |= NVC_CFG_NODEV;
 
 	/* ov5693 gpios */
 	pdata->gpio_count = 0;
 	pdata->gpio_count += ov5693_parse_dt_gpio(np,
-				"reset-gpios", OV5693_GPIO_TYPE_PWRDN,
+				"cam2-gpios", OV5693_GPIO_TYPE_PWRDN,
+				&gpio_pdata[pdata->gpio_count]);
+	pdata->gpio_count += ov5693_parse_dt_gpio(np,
+				"reset-gpios", OV5693_GPIO_TYPE_RESET,
 				&gpio_pdata[pdata->gpio_count]);
 	pdata->gpio = gpio_pdata;
 
-	/* MCLK clock info */
-	of_property_read_string(np, "nvidia,mclk_name",
-				&pdata->mclk_name);
+	pdata->use_cam_gpio = of_property_read_bool(np, "cam,use-cam-gpio");
 
-	/* ov5693 power functions */
-	pdata->power_on = ov5693_platform_power_on;
-	pdata->power_off = ov5693_platform_power_off;
+	/* MCLK clock info */
+	of_property_read_string(np, "mclk", &pdata->mclk_name);
+
+	/* get cap info */
+	nvc_imager_parse_caps(np, pdata->cap, pdata->static_info);
 
 	return pdata;
 }
@@ -3324,7 +3766,6 @@ static int ov5693_probe(
 		.reg_bits = 16,
 		.val_bits = 8,
 	};
-
 
 	dev_dbg(&client->dev, "%s\n", __func__);
 	info = devm_kzalloc(&client->dev, sizeof(*info), GFP_KERNEL);
@@ -3370,11 +3811,17 @@ static int ov5693_probe(
 		return err;
 	}
 
-	err = ov5693_eeprom_device_init(info);
-	if (err) {
-		dev_err(&client->dev,
+	if (info->pdata->has_eeprom) {
+		err = ov5693_eeprom_device_init(info);
+		if (err) {
+			dev_err(&client->dev,
 			"Failed to allocate eeprom register map: %d\n", err);
+<<<<<<< HEAD
 	return err;
+=======
+			return err;
+		}
+>>>>>>> update/master
 	}
 
 	mclk_name = info->pdata->mclk_name ?
@@ -3388,10 +3835,14 @@ static int ov5693_probe(
 
 	i2c_set_clientdata(client, info);
 	ov5693_pm_init(info);
+<<<<<<< HEAD
 	if (!info->regulators.avdd || !info->regulators.dovdd)
 		return -EFAULT;
 
+=======
+>>>>>>> update/master
 	ov5693_sdata_init(info);
+
 	if (info->pdata->cfg & (NVC_CFG_NODEV | NVC_CFG_BOOT_INIT)) {
 		if (info->pdata->probe_clock) {
 			clock_probe_rate = 6000;  /* initial_clcok*/
@@ -3412,6 +3863,9 @@ static int ov5693_probe(
 		snprintf(info->devname, sizeof(info->devname), "%s.%u",
 			 info->devname, info->pdata->num);
 
+	if (ov5693_hw_detect(info))
+		return -ENODEV;
+
 	info->miscdev.name = info->devname;
 	info->miscdev.fops = &ov5693_fileops;
 	info->miscdev.minor = MISC_DYNAMIC_MINOR;
@@ -3431,6 +3885,7 @@ static int ov5693_probe(
 
 static const struct i2c_device_id ov5693_id[] = {
 	{ "ov5693", 0 },
+	{ "ov5693.1", 0 },
 	{ },
 };
 

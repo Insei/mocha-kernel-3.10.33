@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2014 NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2012-2015 NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -44,7 +44,7 @@ static unsigned int sample_rate = 20;		/* msec */
 #define NR_FSHIFT	(1 << NR_FSHIFT_EXP)
 /* avg run threads * 8 (e.g., 11 = 1.375 threads) */
 static unsigned int default_thresholds[] = {
-	10, 18, 20, UINT_MAX
+	10, 14, 20, UINT_MAX
 };
 
 static unsigned int nr_run_last;
@@ -160,20 +160,13 @@ static void runnables_avg_sampler(unsigned long data)
 	}
 }
 
-static unsigned int get_lightest_loaded_cpu_n(void)
+static unsigned int get_last_online_cpu_n(void)
 {
-	unsigned long min_avg_runnables = ULONG_MAX;
 	unsigned int cpu = nr_cpu_ids;
 	int i;
 
-	for_each_online_cpu(i) {
-		struct runnables_avg_sample *s = &per_cpu(avg_nr_sample, i);
-		unsigned int nr_runnables = s->avg;
-		if (i > 0 && min_avg_runnables > nr_runnables) {
-			cpu = i;
-			min_avg_runnables = nr_runnables;
-		}
-	}
+	for_each_online_cpu(i)
+		cpu = i;
 
 	return cpu;
 }
@@ -192,7 +185,7 @@ static void runnables_work_func(struct work_struct *work)
 		if (cpu < nr_cpu_ids)
 			cpuquiet_wake_cpu(cpu, false);
 	} else if (action < 0) {
-		cpu = get_lightest_loaded_cpu_n();
+		cpu = get_last_online_cpu_n();
 		if (cpu < nr_cpu_ids)
 			cpuquiet_quiesence_cpu(cpu, false);
 	}
@@ -292,7 +285,6 @@ static void runnables_device_busy(void)
 	mutex_lock(&runnables_lock);
 	if (runnables_state == RUNNING) {
 		runnables_state = IDLE;
-		cancel_work_sync(&runnables_work);
 		del_timer_sync(&runnables_timer);
 	}
 	mutex_unlock(&runnables_lock);
@@ -314,7 +306,6 @@ static void runnables_stop(void)
 
 	runnables_state = DISABLED;
 	del_timer_sync(&runnables_timer);
-	cancel_work_sync(&runnables_work);
 	kobject_put(runnables_kobject);
 	kfree(runnables_kobject);
 

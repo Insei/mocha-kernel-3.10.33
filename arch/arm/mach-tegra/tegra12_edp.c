@@ -16,27 +16,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <linux/kernel.h>
-#include <linux/init.h>
-#include <linux/string.h>
-#include <linux/module.h>
-#include <linux/clk.h>
-#include <linux/kobject.h>
-#include <linux/err.h>
-#include <linux/tegra-fuse.h>
+#ifdef CONFIG_ARCH_TEGRA_12x_SOC
 
+#include <linux/tegra-fuse.h>
 #include <mach/edp.h>
 
-#include "clock.h"
-#include "common.h"
-
-#define CORE_MODULES_STATES 1
-#define TEMPERATURE_RANGES 5
-#define CAP_CLKS_NUM 2
-#define	TOTAL_CAPS (CORE_EDP_PROFILES_NUM * CORE_MODULES_STATES *\
-			TEMPERATURE_RANGES * CAP_CLKS_NUM)
-
-#ifdef CONFIG_SYSEDP_FRAMEWORK
+#if defined(CONFIG_SYSEDP_FRAMEWORK) && !defined(CONFIG_ARCH_TEGRA_13x_SOC)
 static struct tegra_sysedp_corecap td580d_sysedp_corecap[] = {
 /*
 TD580D/CD580M/SD580N
@@ -204,6 +189,10 @@ struct tegra_sysedp_corecap *tegra_get_sysedp_corecap(unsigned int *sz)
 	gpu_speedo_id = tegra_gpu_speedo_id();
 
 	switch (cpu_speedo_id) {
+<<<<<<< HEAD
+=======
+	case 0x6:
+>>>>>>> update/master
 	case 0x5:
 	case 0x2:
 		if (gpu_speedo_id == 1) {
@@ -236,6 +225,7 @@ struct tegra_sysedp_corecap *tegra_get_sysedp_corecap(unsigned int *sz)
 }
 #endif
 
+<<<<<<< HEAD
 struct core_edp_entry {
 	int sku;
 	unsigned int cap_mA;
@@ -476,3 +466,6 @@ int __init tegra12x_select_core_edp_table(unsigned int regulator_mA,
 
 	return 0;
 }
+=======
+#endif /* CONFIG_ARCH_TEGRA_12x_SOC */
+>>>>>>> update/master

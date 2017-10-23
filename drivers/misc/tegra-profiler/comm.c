@@ -1,7 +1,11 @@
 /*
  * drivers/misc/tegra-profiler/comm.c
  *
+<<<<<<< HEAD
  * Copyright (c) 2013-2015, NVIDIA CORPORATION.  All rights reserved.
+=======
+ * Copyright (c) 2013-2016, NVIDIA CORPORATION.  All rights reserved.
+>>>>>>> update/master
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -26,7 +30,7 @@
 #include <linux/err.h>
 #include <linux/mm.h>
 
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
 
 #include <linux/tegra_profiler.h>
 
@@ -65,6 +69,10 @@ struct quadd_comm_ctx {
 
 struct comm_cpu_context {
 	struct quadd_ring_buffer rb;
+<<<<<<< HEAD
+=======
+	int params_ok;
+>>>>>>> update/master
 };
 
 static struct quadd_comm_ctx comm_ctx;
@@ -74,6 +82,10 @@ static int __maybe_unused
 rb_is_full(struct quadd_ring_buffer *rb)
 {
 	struct quadd_ring_buffer_hdr *rb_hdr = rb->rb_hdr;
+<<<<<<< HEAD
+=======
+
+>>>>>>> update/master
 	return (rb_hdr->pos_write + 1) % rb_hdr->size == rb_hdr->pos_read;
 }
 
@@ -81,6 +93,10 @@ static int __maybe_unused
 rb_is_empty(struct quadd_ring_buffer *rb)
 {
 	struct quadd_ring_buffer_hdr *rb_hdr = rb->rb_hdr;
+<<<<<<< HEAD
+=======
+
+>>>>>>> update/master
 	return rb_hdr->pos_read == rb_hdr->pos_write;
 }
 
@@ -130,10 +146,17 @@ write_sample(struct quadd_ring_buffer *rb,
 	ssize_t err;
 	size_t length_sample, fill_count;
 	struct quadd_ring_buffer_hdr *rb_hdr = rb->rb_hdr, new_hdr;
+<<<<<<< HEAD
 
 	if (!rb_hdr)
 		return -EIO;
 
+=======
+
+	if (!rb_hdr)
+		return -EIO;
+
+>>>>>>> update/master
 	length_sample = sizeof(*sample);
 	for (i = 0; i < vec_count; i++)
 		length_sample += vec[i].len;
@@ -256,6 +279,10 @@ find_mmap(unsigned long vm_start)
 
 	list_for_each_entry(entry, &comm_ctx.mmap_areas, list) {
 		struct vm_area_struct *mmap_vma = entry->mmap_vma;
+<<<<<<< HEAD
+=======
+
+>>>>>>> update/master
 		if (vm_start == mmap_vma->vm_start)
 			return entry;
 	}
@@ -321,6 +348,76 @@ init_mmap_hdr(struct quadd_mmap_rb_info *mmap_rb,
 
 	cpu_id = mmap_rb->cpu_id;
 	cc = &per_cpu(cpu_ctx, cpu_id);
+<<<<<<< HEAD
+
+	rb = &cc->rb;
+
+	spin_lock_irqsave(&rb->lock, flags);
+
+	mmap->rb = rb;
+
+	rb->mmap = mmap;
+
+	rb->max_fill_count = 0;
+	rb->nr_skipped_samples = 0;
+
+	vma = mmap->mmap_vma;
+
+	size = vma->vm_end - vma->vm_start;
+	size -= sizeof(*mmap_hdr) + sizeof(*rb_hdr);
+
+	mmap_hdr = mmap->data;
+
+	mmap_hdr->magic = QUADD_MMAP_HEADER_MAGIC;
+	mmap_hdr->version = QUADD_MMAP_HEADER_VERSION;
+	mmap_hdr->cpu_id = cpu_id;
+	mmap_hdr->samples_version = QUADD_SAMPLES_VERSION;
+
+	rb_hdr = (struct quadd_ring_buffer_hdr *)(mmap_hdr + 1);
+	rb->rb_hdr = rb_hdr;
+
+	rb_hdr->size = size;
+	rb_hdr->pos_read = 0;
+	rb_hdr->pos_write = 0;
+
+	rb_hdr->max_fill_count = 0;
+	rb_hdr->skipped_samples = 0;
+
+	rb->buf = (char *)(rb_hdr + 1);
+
+	rb_hdr->state = QUADD_RB_STATE_ACTIVE;
+
+	spin_unlock_irqrestore(&rb->lock, flags);
+
+	pr_info("[cpu: %d] init_mmap_hdr: vma: %#lx - %#lx, data: %p - %p\n",
+		cpu_id,
+		vma->vm_start, vma->vm_end,
+		mmap->data, mmap->data + vma->vm_end - vma->vm_start);
+
+	return 0;
+}
+
+static void rb_stop(void)
+{
+	int cpu_id;
+	struct quadd_ring_buffer *rb;
+	struct quadd_ring_buffer_hdr *rb_hdr;
+	struct comm_cpu_context *cc;
+
+	for_each_possible_cpu(cpu_id) {
+		cc = &per_cpu(cpu_ctx, cpu_id);
+
+		rb = &cc->rb;
+		rb_hdr = rb->rb_hdr;
+
+		if (!rb_hdr)
+			continue;
+
+		pr_info("[%d] skipped samples/max filling: %zu/%zu\n",
+			cpu_id, rb->nr_skipped_samples, rb->max_fill_count);
+
+		rb_hdr->state = QUADD_RB_STATE_STOPPED;
+=======
 
 	rb = &cc->rb;
 
@@ -408,6 +505,56 @@ static void rb_reset(struct quadd_ring_buffer *rb)
 	spin_unlock_irqrestore(&rb->lock, flags);
 }
 
+static int
+ready_to_profile(void)
+{
+	int cpuid;
+
+	if (!comm_ctx.params_ok)
+		return 0;
+
+	for_each_possible_cpu(cpuid) {
+		struct comm_cpu_context *cc = &per_cpu(cpu_ctx, cpuid);
+
+		if (!cc->params_ok)
+			return 0;
+>>>>>>> update/master
+	}
+}
+
+<<<<<<< HEAD
+static void rb_reset(struct quadd_ring_buffer *rb)
+{
+	unsigned long flags;
+
+	if (!rb)
+		return;
+
+	spin_lock_irqsave(&rb->lock, flags);
+
+	rb->mmap = NULL;
+	rb->buf = NULL;
+	rb->rb_hdr = NULL;
+
+	spin_unlock_irqrestore(&rb->lock, flags);
+=======
+	return 1;
+}
+
+static void
+reset_params_ok_flag(void)
+{
+	int cpu_id;
+
+	comm_ctx.params_ok = 0;
+	for_each_possible_cpu(cpu_id) {
+		struct comm_cpu_context *cc = &per_cpu(cpu_ctx, cpu_id);
+
+		cc->params_ok = 0;
+	}
+>>>>>>> update/master
+}
+
 static long
 device_ioctl(struct file *file,
 	     unsigned int ioctl_num,
@@ -416,6 +563,8 @@ device_ioctl(struct file *file,
 	int err = 0;
 	struct quadd_mmap_area *mmap;
 	struct quadd_parameters *user_params;
+	struct quadd_pmu_setup_for_cpu *cpu_pmu_params;
+	struct quadd_comm_cap_for_cpu *per_cpu_cap;
 	struct quadd_comm_cap cap;
 	struct quadd_module_state state;
 	struct quadd_module_version versions;
@@ -427,14 +576,60 @@ device_ioctl(struct file *file,
 	if (ioctl_num != IOCTL_SETUP &&
 	    ioctl_num != IOCTL_GET_CAP &&
 	    ioctl_num != IOCTL_GET_STATE &&
+	    ioctl_num != IOCTL_SETUP_PMU_FOR_CPU &&
+	    ioctl_num != IOCTL_GET_CAP_FOR_CPU &&
 	    ioctl_num != IOCTL_GET_VERSION) {
+<<<<<<< HEAD
 		if (!comm_ctx.params_ok) {
+=======
+		if (!ready_to_profile()) {
+>>>>>>> update/master
 			err = -EACCES;
 			goto error_out;
 		}
 	}
 
 	switch (ioctl_num) {
+	case IOCTL_SETUP_PMU_FOR_CPU:
+		if (atomic_read(&comm_ctx.active)) {
+			pr_err("error: tegra profiler is active\n");
+			err = -EBUSY;
+			goto error_out;
+		}
+
+		cpu_pmu_params = vmalloc(sizeof(*cpu_pmu_params));
+		if (!cpu_pmu_params) {
+			err = -ENOMEM;
+			goto error_out;
+		}
+
+		if (copy_from_user(cpu_pmu_params,
+				   (void __user *)ioctl_param,
+				   sizeof(*cpu_pmu_params))) {
+			pr_err("setup failed\n");
+			vfree(cpu_pmu_params);
+			err = -EFAULT;
+			goto error_out;
+		}
+
+		per_cpu(cpu_ctx, cpu_pmu_params->cpuid).params_ok = 0;
+
+		err = comm_ctx.control->set_parameters_for_cpu(cpu_pmu_params);
+		if (err) {
+			pr_err("error: setup failed\n");
+			vfree(cpu_pmu_params);
+			goto error_out;
+		}
+
+		per_cpu(cpu_ctx, cpu_pmu_params->cpuid).params_ok = 1;
+
+		pr_info("setup PMU success for cpu: %d\n",
+			cpu_pmu_params->cpuid);
+
+		vfree(cpu_pmu_params);
+		break;
+
+
 	case IOCTL_SETUP:
 		if (atomic_read(&comm_ctx.active)) {
 			pr_err("error: tegra profiler is active\n");
@@ -483,6 +678,7 @@ device_ioctl(struct file *file,
 		break;
 
 	case IOCTL_GET_CAP:
+		memset(&cap, 0, sizeof(cap));
 		comm_ctx.control->get_capabilities(&cap);
 		if (copy_to_user((void __user *)ioctl_param, &cap,
 				 sizeof(struct quadd_comm_cap))) {
@@ -492,7 +688,40 @@ device_ioctl(struct file *file,
 		}
 		break;
 
+	case IOCTL_GET_CAP_FOR_CPU:
+		per_cpu_cap = vmalloc(sizeof(*per_cpu_cap));
+		if (!per_cpu_cap) {
+			err = -ENOMEM;
+			goto error_out;
+		}
+
+		if (copy_from_user(per_cpu_cap, (void __user *)ioctl_param,
+				   sizeof(*per_cpu_cap))) {
+			pr_err("setup failed\n");
+			vfree(per_cpu_cap);
+			err = -EFAULT;
+			goto error_out;
+		}
+		comm_ctx.control->get_capabilities_for_cpu(per_cpu_cap->cpuid,
+							   per_cpu_cap);
+
+		if (copy_to_user((void __user *)ioctl_param, per_cpu_cap,
+				 sizeof(*per_cpu_cap))) {
+			pr_err("error: get_capabilities failed\n");
+			vfree(per_cpu_cap);
+			err = -EFAULT;
+			goto error_out;
+		}
+
+		vfree(per_cpu_cap);
+		break;
+
 	case IOCTL_GET_VERSION:
+<<<<<<< HEAD
+=======
+		memset(&versions, 0, sizeof(versions));
+
+>>>>>>> update/master
 		strcpy((char *)versions.branch, QUADD_MODULE_BRANCH);
 		strcpy((char *)versions.version, QUADD_MODULE_VERSION);
 
@@ -536,6 +765,7 @@ device_ioctl(struct file *file,
 
 	case IOCTL_STOP:
 		if (atomic_cmpxchg(&comm_ctx.active, 1, 0)) {
+			reset_params_ok_flag();
 			comm_ctx.control->stop();
 			wake_up_all(&comm_ctx.read_wait);
 			rb_stop();
@@ -770,10 +1000,8 @@ static int comm_init(void)
 	struct miscdevice *misc_dev;
 
 	misc_dev = kzalloc(sizeof(*misc_dev), GFP_KERNEL);
-	if (!misc_dev) {
-		pr_err("Error: alloc error\n");
+	if (!misc_dev)
 		return -ENOMEM;
-	}
 
 	misc_dev->minor = MISC_DYNAMIC_MINOR;
 	misc_dev->name = QUADD_DEVICE_NAME;
@@ -790,7 +1018,10 @@ static int comm_init(void)
 	mutex_init(&comm_ctx.io_mutex);
 	atomic_set(&comm_ctx.active, 0);
 
+<<<<<<< HEAD
 	comm_ctx.params_ok = 0;
+=======
+>>>>>>> update/master
 	comm_ctx.nr_users = 0;
 
 	init_waitqueue_head(&comm_ctx.read_wait);
@@ -812,6 +1043,11 @@ static int comm_init(void)
 		spin_lock_init(&rb->lock);
 	}
 
+<<<<<<< HEAD
+=======
+	reset_params_ok_flag();
+
+>>>>>>> update/master
 	return 0;
 }
 

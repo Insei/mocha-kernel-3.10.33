@@ -6,6 +6,9 @@
 
 #include <linux/ktime.h>
 #include <linux/tracepoint.h>
+#include <linux/ftrace_event.h>
+
+#define TPS(x)  tracepoint_string(x)
 
 DECLARE_EVENT_CLASS(cpu,
 
@@ -123,6 +126,44 @@ TRACE_EVENT(cpu_scale,
 		  (unsigned long)__entry->state)
 );
 
+TRACE_EVENT(pm_qos_request,
+
+	TP_PROTO(u32 class, s32 value, u32 priority, u64 request),
+
+	TP_ARGS(class, value, priority, request),
+
+	TP_STRUCT__entry(
+		__field(u32, class)
+		__field(s32, value)
+		__field(u32, priority)
+		__field(u64, request)
+	),
+
+	TP_fast_assign(
+		__entry->class = class;
+		__entry->value = value;
+		__entry->priority = priority;
+		__entry->request = request;
+	),
+
+	TP_printk("class=%lu, value=%d, prio=%lu, request=0x%lx",
+		  (unsigned long)__entry->class,
+		  (int)__entry->value,
+		  (unsigned long)__entry->priority,
+		  (unsigned long)__entry->request)
+);
+
+#define pm_verb_symbolic(event) \
+	__print_symbolic(event, \
+		{ PM_EVENT_SUSPEND, "suspend" }, \
+		{ PM_EVENT_RESUME, "resume" }, \
+		{ PM_EVENT_FREEZE, "freeze" }, \
+		{ PM_EVENT_QUIESCE, "quiesce" }, \
+		{ PM_EVENT_HIBERNATE, "hibernate" }, \
+		{ PM_EVENT_THAW, "thaw" }, \
+		{ PM_EVENT_RESTORE, "restore" }, \
+		{ PM_EVENT_RECOVER, "recover" })
+
 DEFINE_EVENT(cpu, cpu_frequency,
 
 	TP_PROTO(unsigned int frequency, unsigned int cpu_id),
@@ -130,21 +171,75 @@ DEFINE_EVENT(cpu, cpu_frequency,
 	TP_ARGS(frequency, cpu_id)
 );
 
-TRACE_EVENT(machine_suspend,
+TRACE_EVENT(device_pm_callback_start,
 
-	TP_PROTO(unsigned int state),
+	TP_PROTO(struct device *dev, const char *pm_ops, int event_in),
 
-	TP_ARGS(state),
+	TP_ARGS(dev, pm_ops, event_in),
 
 	TP_STRUCT__entry(
-		__field(	u32,		state		)
+		__string(device, dev_name(dev))
+		__string(driver, dev_driver_string(dev))
+		__string(parent, dev->parent ? dev_name(dev->parent) : "none")
+		__string(pm_ops, pm_ops ? pm_ops : "none ")
+		__field(int, event)
 	),
 
 	TP_fast_assign(
-		__entry->state = state;
+		__assign_str(device, dev_name(dev));
+		__assign_str(driver, dev_driver_string(dev));
+		__assign_str(parent, dev->parent ? dev_name(dev->parent) : "none");
+		__assign_str(pm_ops, pm_ops ? pm_ops : "none ");
+		__entry->event = event_in;
 	),
 
-	TP_printk("state=%lu", (unsigned long)__entry->state)
+	TP_printk("%s %s, parent: %s, %s[%s]", __get_str(driver),
+		__get_str(device), __get_str(parent), __get_str(pm_ops),
+		pm_verb_symbolic(__entry->event))
+);
+
+TRACE_EVENT(device_pm_callback_end,
+
+	TP_PROTO(struct device *dev, int error_in),
+
+	TP_ARGS(dev, error_in),
+
+	TP_STRUCT__entry(
+		__string(device, dev_name(dev))
+		__string(driver, dev_driver_string(dev))
+		__field(int, error)
+	),
+
+	TP_fast_assign(
+		__assign_str(device, dev_name(dev));
+		__assign_str(driver, dev_driver_string(dev));
+		__entry->error = error_in;
+	),
+
+	TP_printk("%s %s, err=%d",
+		__get_str(driver), __get_str(device), __entry->error)
+);
+
+TRACE_EVENT(suspend_resume,
+
+	TP_PROTO(const char *action, int val, bool start),
+
+	TP_ARGS(action, val, start),
+
+	TP_STRUCT__entry(
+		__field(const char *, action)
+		__field(int, val)
+		__field(bool, start)
+	),
+
+	TP_fast_assign(
+		__entry->action = action;
+		__entry->val = val;
+		__entry->start = start;
+	),
+
+	TP_printk("%s[%u] %s", __entry->action, (unsigned int)__entry->val,
+		(__entry->start)?"begin":"end")
 );
 
 DECLARE_EVENT_CLASS(wakeup_source,
@@ -292,6 +387,34 @@ DEFINE_EVENT(power_domain, power_domain_target,
 
 	TP_ARGS(name, state, cpu_id)
 );
+
+TRACE_EVENT(powergate,
+
+	TP_PROTO(const char *func, const char *name, int id, bool start, int ret),
+
+	TP_ARGS(func, name, id, start, ret),
+
+	TP_STRUCT__entry(
+		__field(const char *, func);
+		__field(const char *, name)
+		__field(int, id)
+		__field(bool, start)
+		__field(int, ret)
+	),
+
+	TP_fast_assign(
+		__entry->func = func;
+		__entry->name = name;
+		__entry->id = id;
+		__entry->start = start;
+		__entry->ret = ret;
+	),
+
+	TP_printk("%s called for %s with id = %u at %s ret = %u\n",
+		 __entry->func, __entry->name, (unsigned int)__entry->id,
+		(__entry->start)?"ENTRY":"EXIT", (unsigned int)__entry->ret)
+);
+
 #endif /* _TRACE_POWER_H */
 
 /* This part must be outside protection */

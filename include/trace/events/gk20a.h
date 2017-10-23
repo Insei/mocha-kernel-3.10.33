@@ -1,7 +1,7 @@
 /*
  * gk20a event logging to ftrace.
  *
- * Copyright (c) 2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2014-2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -38,6 +38,156 @@ DEFINE_EVENT(gk20a, gk20a_channel_open,
 DEFINE_EVENT(gk20a, gk20a_channel_release,
 	TP_PROTO(const char *name),
 	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, gk20a_pm_unrailgate,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, gk20a_finalize_poweron,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, gk20a_finalize_poweron_done,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, gk20a_gpfifo_submit_wait_for_space,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, gk20a_gpfifo_submit_wait_for_space_done,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, gk20a_mm_l2_invalidate,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, gk20a_mm_l2_invalidate_done,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, gk20a_mm_l2_flush,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, gk20a_mm_l2_flush_done,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, gk20a_mm_tlb_invalidate,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, gk20a_mm_tlb_invalidate_done,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, gk20a_mm_fb_flush,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, gk20a_mm_fb_flush_done,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, mc_gk20a_intr_thread_stall,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, mc_gk20a_intr_thread_stall_done,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, mc_gk20a_intr_stall,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, mc_gk20a_intr_stall_done,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, gr_gk20a_handle_sw_method,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, gk20a_mm_g_elpg_flush_locked,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DEFINE_EVENT(gk20a, gk20a_mm_g_elpg_flush_locked_done,
+	TP_PROTO(const char *name),
+	TP_ARGS(name)
+);
+
+DECLARE_EVENT_CLASS(gk20a_channel,
+	TP_PROTO(int channel),
+	TP_ARGS(channel),
+	TP_STRUCT__entry(__field(int, channel)),
+	TP_fast_assign(__entry->channel = channel;),
+	TP_printk("ch id %d", __entry->channel)
+);
+DEFINE_EVENT(gk20a_channel, gk20a_channel_update,
+	TP_PROTO(int channel),
+	TP_ARGS(channel)
+);
+DEFINE_EVENT(gk20a_channel, gk20a_free_channel,
+	TP_PROTO(int channel),
+	TP_ARGS(channel)
+);
+DEFINE_EVENT(gk20a_channel, gk20a_open_new_channel,
+	TP_PROTO(int channel),
+	TP_ARGS(channel)
+);
+DEFINE_EVENT(gk20a_channel, gk20a_release_used_channel,
+	TP_PROTO(int channel),
+	TP_ARGS(channel)
+);
+
+DECLARE_EVENT_CLASS(gk20a_channel_getput,
+	TP_PROTO(int channel, const char *caller),
+	TP_ARGS(channel, caller),
+	TP_STRUCT__entry(
+		__field(int, channel)
+		__field(const char *, caller)
+	),
+	TP_fast_assign(
+		__entry->channel = channel;
+		__entry->caller = caller;
+	),
+	TP_printk("channel %d caller %s", __entry->channel, __entry->caller)
+);
+DEFINE_EVENT(gk20a_channel_getput, gk20a_channel_get,
+	TP_PROTO(int channel, const char *caller),
+	TP_ARGS(channel, caller)
+);
+DEFINE_EVENT(gk20a_channel_getput, gk20a_channel_put,
+	TP_PROTO(int channel, const char *caller),
+	TP_ARGS(channel, caller)
+);
+DEFINE_EVENT(gk20a_channel_getput, gk20a_channel_put_nofree,
+	TP_PROTO(int channel, const char *caller),
+	TP_ARGS(channel, caller)
 );
 
 TRACE_EVENT(gk20a_push_cmdbuf,
@@ -222,6 +372,18 @@ TRACE_EVENT(gk20a_as_ioctl_unmap_buffer,
 	TP_printk("name=%s ",  __entry->name)
 );
 
+TRACE_EVENT(gk20a_as_ioctl_get_va_regions,
+	TP_PROTO(const char *name),
+	TP_ARGS(name),
+	TP_STRUCT__entry(
+			 __field(const char *, name)
+			 ),
+	TP_fast_assign(
+		       __entry->name = name;
+		       ),
+	TP_printk("name=%s ",  __entry->name)
+);
+
 TRACE_EVENT(gk20a_mmu_fault,
 	    TP_PROTO(u32 fault_hi, u32 fault_lo,
 		     u32 fault_info,
@@ -256,6 +418,76 @@ TRACE_EVENT(gk20a_mmu_fault,
 		      __entry->fault_hi, __entry->fault_lo,
 		      __entry->fault_info, __entry->instance, __entry->engine_id,
 		      __entry->engine, __entry->client, __entry->fault_type)
+);
+
+TRACE_EVENT(gk20a_ltc_cbc_ctrl_start,
+		TP_PROTO(const char *name, u32 cbc_ctrl, u32 min_value,
+		u32 max_value),
+		TP_ARGS(name, cbc_ctrl, min_value, max_value),
+
+	TP_STRUCT__entry(
+		__field(const char *, name)
+		__field(u32, cbc_ctrl)
+		__field(u32, min_value)
+		__field(u32, max_value)
+	),
+
+	TP_fast_assign(
+		__entry->name = name;
+		__entry->cbc_ctrl = cbc_ctrl;
+		__entry->min_value = min_value;
+		__entry->max_value = max_value;
+	),
+
+	TP_printk("name=%s, cbc_ctrl=%d, min_value=%u, max_value=%u",
+		__entry->name, __entry->cbc_ctrl, __entry->min_value,
+		__entry->max_value)
+);
+
+TRACE_EVENT(gk20a_ltc_cbc_ctrl_done,
+	TP_PROTO(const char *name),
+	TP_ARGS(name),
+	TP_STRUCT__entry(
+			 __field(const char *, name)
+			 ),
+	TP_fast_assign(
+		       __entry->name = name;
+		       ),
+	TP_printk("name=%s ",  __entry->name)
+
+);
+
+DECLARE_EVENT_CLASS(gk20a_cde,
+	TP_PROTO(const void *ctx),
+	TP_ARGS(ctx),
+	TP_STRUCT__entry(__field(const void *, ctx)),
+	TP_fast_assign(__entry->ctx = ctx;),
+	TP_printk("ctx=%p", __entry->ctx)
+);
+
+DEFINE_EVENT(gk20a_cde, gk20a_cde_remove_ctx,
+	TP_PROTO(const void *ctx),
+	TP_ARGS(ctx)
+);
+
+DEFINE_EVENT(gk20a_cde, gk20a_cde_release,
+	TP_PROTO(const void *ctx),
+	TP_ARGS(ctx)
+);
+
+DEFINE_EVENT(gk20a_cde, gk20a_cde_get_context,
+	TP_PROTO(const void *ctx),
+	TP_ARGS(ctx)
+);
+
+DEFINE_EVENT(gk20a_cde, gk20a_cde_allocate_context,
+	TP_PROTO(const void *ctx),
+	TP_ARGS(ctx)
+);
+
+DEFINE_EVENT(gk20a_cde, gk20a_cde_finished_ctx_cb,
+	TP_PROTO(const void *ctx),
+	TP_ARGS(ctx)
 );
 
 #endif /*  _TRACE_GK20A_H */

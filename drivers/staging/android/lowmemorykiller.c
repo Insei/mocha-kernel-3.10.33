@@ -44,6 +44,9 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/lowmemorykiller.h>
 
+#define CREATE_TRACE_POINTS
+#include <trace/events/lowmemorykiller.h>
+
 static uint32_t lowmem_debug_level = 1;
 static short lowmem_adj[6] = {
 	0,
@@ -61,7 +64,6 @@ static int lowmem_minfree[6] = {
 static int lowmem_minfree_size = 4;
 
 static unsigned long lowmem_deathpending_timeout;
-
 #define lowmem_print(level, ts, x...)				\
 	do {							\
 		unsigned long start_jiffies = jiffies;		\
@@ -70,6 +72,17 @@ static unsigned long lowmem_deathpending_timeout;
 		ts = ts + jiffies - start_jiffies;		\
 	} while (0)
 
+<<<<<<< HEAD
+#define lowmem_print(level, ts, x...)				\
+	do {							\
+		unsigned long start_jiffies = jiffies;		\
+		if (lowmem_debug_level >= (level))		\
+			pr_info(x);				\
+		ts = ts + jiffies - start_jiffies;		\
+	} while (0)
+
+=======
+>>>>>>> update/master
 #define lowmem_send_sig(selected, ts)				\
 	do {							\
 		unsigned long start_jiffies = jiffies;		\
@@ -99,10 +112,27 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 	int selected_tasksize = 0;
 	short selected_oom_score_adj;
 	int array_size = ARRAY_SIZE(lowmem_adj);
+<<<<<<< HEAD
 	int other_free = global_page_state(NR_FREE_PAGES) - totalreserve_pages;
 	int other_file = global_page_state(NR_FILE_PAGES) -
 						global_page_state(NR_SHMEM) -
 						total_swapcache_pages();
+=======
+	int other_free = global_page_state(NR_FREE_PAGES) -
+			 global_page_state(NR_FREE_CMA_PAGES) -
+			 totalreserve_pages
+#ifdef CONFIG_TEGRA_NVMAP
+			 + nvmap_page_pool_get_unused_pages()
+#endif
+			 ;
+	int other_file = global_page_state(NR_FILE_PAGES)
+			- global_page_state(NR_SHMEM)
+			- global_page_state(NR_FILE_MAPPED)
+			- total_swapcache_pages();
+
+	if (other_file < 0)
+		other_file = 0;
+>>>>>>> update/master
 
 	if (lowmem_adj_size < array_size)
 		array_size = lowmem_adj_size;
@@ -138,6 +168,7 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 	rcu_read_lock();
 	for_each_process(tsk) {
 		struct task_struct *p;
+		task_count += 1;
 		short oom_score_adj;
 		task_count += 1;
 		if (tsk->flags & PF_KTHREAD)
@@ -182,16 +213,38 @@ static int lowmem_shrink(struct shrinker *s, struct shrink_control *sc)
 		selected = p;
 		selected_tasksize = tasksize;
 		selected_oom_score_adj = oom_score_adj;
+<<<<<<< HEAD
 
+=======
+>>>>>>> update/master
 		lowmem_print(2, jiffies_lowmem_ts,
 				"select '%s' (%d), adj %hd, size %d, to kill\n",
 				p->comm, p->pid, oom_score_adj, tasksize);
 	}
 	if (selected) {
+<<<<<<< HEAD
 		lowmem_print(1, jiffies_lowmem_ts, "Killing '%s' (%d)\n",
 			     selected->comm, selected->pid);
 		lowmem_deathpending_timeout = jiffies + TIMEOUT_GAP;
 		lowmem_send_sig(selected, jiffies_sigkill_ts);
+=======
+		lowmem_print(1, jiffies_lowmem_ts,
+				"Killing '%s' (%d), adj %hd,\n" \
+				"   to free %ldkB on behalf of '%s' (%d) because\n" \
+				"   cache %ldkB is below limit %ldkB for oom_score_adj %hd\n" \
+				"   Free memory is %ldkB above reserved\n",
+			     selected->comm, selected->pid,
+			     selected_oom_score_adj,
+			     selected_tasksize * (long)(PAGE_SIZE / 1024),
+			     current->comm, current->pid,
+			     other_file * (long)(PAGE_SIZE / 1024),
+			     minfree * (long)(PAGE_SIZE / 1024),
+			     min_score_adj,
+			     other_free * (long)(PAGE_SIZE / 1024));
+		lowmem_deathpending_timeout = jiffies + HZ;
+		lowmem_send_sig(selected, jiffies_sigkill_ts);
+		set_tsk_thread_flag(selected, TIF_MEMDIE);
+>>>>>>> update/master
 		rem -= selected_tasksize;
 	}
 	lowmem_print(4, jiffies_lowmem_ts,
@@ -262,7 +315,11 @@ static void lowmem_autodetect_oom_adj_values(void)
 		lowmem_adj[i] = oom_score_adj;
 		lowmem_print(1, jiffies_lowmem_ts,
 			"oom_adj %d => oom_score_adj %d\n",
+<<<<<<< HEAD
 			     oom_adj, oom_score_adj);
+=======
+			oom_adj, oom_score_adj);
+>>>>>>> update/master
 	}
 }
 

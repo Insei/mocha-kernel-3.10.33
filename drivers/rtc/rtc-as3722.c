@@ -130,6 +130,7 @@ static int as3722_rtc_read_alarm(struct device *dev, struct rtc_wkalrm *alrm)
 	}
 
 	as3722_reg_to_time(as_time_array, &alrm->time);
+	alrm->enabled = (as3722_rtc->irq_enable) ? 1 : 0;
 	return 0;
 }
 
@@ -238,14 +239,32 @@ static int as3722_rtc_remove(struct platform_device *pdev)
 	return 0;
 }
 
+void as3722_rtc_shutdown(struct platform_device *pdev)
+{
+	struct as3722_rtc *as3722_rtc = platform_get_drvdata(pdev);
+
+	as3722_rtc_alarm_irq_enable(as3722_rtc->dev, 0);
+	rtc_device_shutdown(as3722_rtc->rtc);
+}
+
 #ifdef CONFIG_PM_SLEEP
 static int as3722_rtc_suspend(struct device *dev)
 {
 	struct as3722_rtc *as3722_rtc = dev_get_drvdata(dev);
 
-	if (device_may_wakeup(dev))
-		enable_irq_wake(as3722_rtc->alarm_irq);
+	if (device_may_wakeup(dev)) {
+		int ret;
+		struct rtc_wkalrm alm;
 
+		enable_irq_wake(as3722_rtc->alarm_irq);
+		ret = as3722_rtc_read_alarm(dev, &alm);
+		if (!ret)
+			dev_info(dev, "%s() alrm %d time %d %d %d %d %d %d\n",
+				__func__, alm.enabled,
+				alm.time.tm_year, alm.time.tm_mon,
+				alm.time.tm_mday, alm.time.tm_hour,
+				alm.time.tm_min, alm.time.tm_sec);
+	}
 	return 0;
 }
 
@@ -253,8 +272,17 @@ static int as3722_rtc_resume(struct device *dev)
 {
 	struct as3722_rtc *as3722_rtc = dev_get_drvdata(dev);
 
-	if (device_may_wakeup(dev))
+	if (device_may_wakeup(dev)) {
+		int ret;
+		struct rtc_time tm;
+
 		disable_irq_wake(as3722_rtc->alarm_irq);
+		ret = as3722_rtc_read_time(dev, &tm);
+		if (!ret)
+			dev_info(dev, "%s() %d %d %d %d %d %d\n",
+				__func__, tm.tm_year, tm.tm_mon, tm.tm_mday,
+				tm.tm_hour, tm.tm_min, tm.tm_sec);
+	}
 	return 0;
 }
 #endif
@@ -266,6 +294,7 @@ static const struct dev_pm_ops as3722_rtc_pm_ops = {
 static struct platform_driver as3722_rtc_driver = {
 	.probe = as3722_rtc_probe,
 	.remove = as3722_rtc_remove,
+	.shutdown = as3722_rtc_shutdown,
 	.driver = {
 		.name = "as3722-rtc",
 		.pm = &as3722_rtc_pm_ops,

@@ -5,6 +5,11 @@
 #include "tegra124-platforms/tegra124-loki-gpuovr-p2530-c00.dtsi"
 
 / {
+<<<<<<< HEAD
+=======
+	nvidia,dtsfilename = __FILE__;
+
+>>>>>>> update/master
 	i2c@7000c400 {
 		ina3221x@40 {
 			channel@0 {
@@ -12,6 +17,7 @@
 			};
 		};
 	};
+<<<<<<< HEAD
 
 	i2c@7000c000 {
 		jsa1127@39 {
@@ -24,4 +30,6 @@
 			onsemi,alert-low-rsoc = <2>;
 		};
 	};
+=======
+>>>>>>> update/master
 };

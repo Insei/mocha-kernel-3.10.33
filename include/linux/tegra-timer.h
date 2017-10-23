@@ -1,7 +1,7 @@
 /*
  * include/linux/tegra-timer.h
  *
- * Copyright (c) 2012-2014 NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2012-2016 NVIDIA Corporation. All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -25,16 +25,15 @@
 #define TIMERUS_USEC_CFG	0x14
 #define TIMERUS_CNTR_FREEZE	0x4c
 
-#define TIMER1_OFFSET		0x0
 #define TIMER2_OFFSET		0x8
 #define TIMER3_OFFSET 		0x50
 #define TIMER4_OFFSET 		0x58
 #define TIMER5_OFFSET 		0x60
 #define TIMER6_OFFSET 		0x68
-#define TIMER7_OFFSET		0x70
-#define TIMER8_OFFSET		0x78
-#define TIMER9_OFFSET		0x80
-#define TIMER10_OFFSET		0x88
+#define TIMER10_OFFSET		0x90
+#define TIMER11_OFFSET		0x98
+#define TIMER12_OFFSET		0xa0
+#define TIMER13_OFFSET		0xa8
 
 #define TIMER_PTV		0x0
 #define TIMER_PCR		0x4
@@ -43,12 +42,6 @@
 void __init tegra20_init_timer(void);
 #else
 void __init tegra30_init_timer(void);
-#endif
-
-#ifdef CONFIG_TEGRA_LP0_IN_IDLE
-void tegra_rtc_set_trigger(unsigned long cycles);
-#else
-static inline void tegra_rtc_set_trigger(unsigned long cycles) {}
 #endif
 
 struct tegra_twd_context {
@@ -102,7 +95,14 @@ static inline void tegra_tsc_wait_for_suspend(void) {};
 static inline void tegra_tsc_wait_for_resume(void) {};
 #endif
 
-u64 tegra_rtc_read_ms(void);
+u32 notrace tegra_read_usec_raw(void);
+
+#if defined(CONFIG_ARCH_TEGRA_21x_SOC)
+int tegra210_timer_get_remain(unsigned int cpu, u64 *time);
+#else
+static inline int tegra210_timer_get_remain(unsigned int cpu, u64 *time)
+{ return -ETIME; }
+#endif
 
 int hotplug_cpu_register(struct device_node *);
 #endif /* _MACH_TEGRA_TIMER_H_ */

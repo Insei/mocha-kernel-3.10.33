@@ -393,7 +393,7 @@ static struct sg_table *vb2_dc_get_base_sgt(struct vb2_dc_buf *buf)
 	return sgt;
 }
 
-static struct dma_buf *vb2_dc_get_dmabuf(void *buf_priv)
+static struct dma_buf *vb2_dc_get_dmabuf(void *buf_priv, unsigned long flags)
 {
 	struct vb2_dc_buf *buf = buf_priv;
 	struct dma_buf *dbuf;
@@ -404,7 +404,7 @@ static struct dma_buf *vb2_dc_get_dmabuf(void *buf_priv)
 	if (WARN_ON(!buf->sgt_base))
 		return NULL;
 
-	dbuf = dma_buf_export(buf, &vb2_dc_dmabuf_ops, buf->size, 0);
+	dbuf = dma_buf_export(buf, &vb2_dc_dmabuf_ops, buf->size, flags);
 	if (IS_ERR(dbuf))
 		return NULL;
 
@@ -441,9 +441,13 @@ static int vb2_dc_get_user_pages(unsigned long start, struct page **pages,
 		}
 	} else {
 		int n;
+		int flags = FOLL_TOUCH | FOLL_GET | FOLL_FORCE | FOLL_DURABLE;
 
-		n = get_user_pages(current, current->mm, start & PAGE_MASK,
-			n_pages, write, 1, pages, NULL);
+		if (write)
+			flags |= FOLL_WRITE;
+
+		n = __get_user_pages(current, current->mm, start & PAGE_MASK,
+			n_pages, flags, pages, NULL, NULL);
 		/* negative error means that no page was pinned */
 		n = max(n, 0);
 		if (n != n_pages) {

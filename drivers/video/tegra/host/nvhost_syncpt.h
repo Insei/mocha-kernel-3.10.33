@@ -3,7 +3,7 @@
  *
  * Tegra Graphics Host Syncpoints
  *
- * Copyright (c) 2010-2014, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2010-2015, NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -26,6 +26,13 @@
 #include <linux/nvhost.h>
 #include <linux/atomic.h>
 
+/* when searching for free syncpt id, start from this base */
+#define NVHOST_FREE_SYNCPT_BASE(sp)	\
+	(nvhost_syncpt_pts_base(sp) + 1)
+
+/* timeout to wait for a syncpt to become free */
+#define NVHOST_SYNCPT_FREE_WAIT_TIMEOUT (1 * HZ)
+
 struct nvhost_syncpt;
 
 /* Attribute struct for sysfs min and max attributes */
@@ -36,12 +43,17 @@ struct nvhost_syncpt_attr {
 };
 
 struct nvhost_syncpt {
+	bool *assigned;
+	bool *in_use;
+	bool *client_managed;
 	struct kobject *kobj;
+	struct mutex syncpt_mutex;
 	atomic_t *min_val;
 	atomic_t *max_val;
-	u32 *base_val;
 	atomic_t *lock_counts;
+	atomic_t *ref;
 	const char **syncpt_names;
+	const char **last_used_by;
 	struct nvhost_syncpt_attr *syncpt_attrs;
 #ifdef CONFIG_TEGRA_GRHOST_SYNC
 	struct nvhost_sync_timeline **timeline;
@@ -50,6 +62,7 @@ struct nvhost_syncpt {
 	struct nvhost_syncpt_attr invalid_max_attr;
 	struct nvhost_syncpt_attr invalid_name_attr;
 	struct nvhost_syncpt_attr invalid_syncpt_type_attr;
+	struct nvhost_syncpt_attr invalid_assigned_attr;
 #endif
 };
 
@@ -57,7 +70,7 @@ int nvhost_syncpt_init(struct platform_device *, struct nvhost_syncpt *);
 void nvhost_syncpt_deinit(struct nvhost_syncpt *);
 
 #define syncpt_to_dev(sp) container_of(sp, struct nvhost_master, syncpt)
-#define SYNCPT_CHECK_PERIOD (2 * HZ)
+#define SYNCPT_CHECK_PERIOD (6 * HZ)
 #define MAX_STUCK_CHECK_COUNT 15
 
 /**
@@ -95,10 +108,16 @@ static inline u32 nvhost_syncpt_read_min(struct nvhost_syncpt *sp, u32 id)
 void nvhost_syncpt_patch_check(struct nvhost_syncpt *sp);
 void nvhost_syncpt_set_min_eq_max(struct nvhost_syncpt *sp, u32 id);
 int nvhost_syncpt_client_managed(struct nvhost_syncpt *sp, u32 id);
+int nvhost_syncpt_nb_hw_pts(struct nvhost_syncpt *sp);
 int nvhost_syncpt_nb_pts(struct nvhost_syncpt *sp);
-int nvhost_syncpt_nb_bases(struct nvhost_syncpt *sp);
+int nvhost_syncpt_pts_base(struct nvhost_syncpt *sp);
+bool nvhost_syncpt_is_valid_hw_pt(struct nvhost_syncpt *sp, u32 id);
+bool nvhost_syncpt_is_valid_pt(struct nvhost_syncpt *sp, u32 id);
+int nvhost_nb_syncpts_store(struct nvhost_syncpt *sp, const char *buf);
 int nvhost_syncpt_nb_mlocks(struct nvhost_syncpt *sp);
 void nvhost_syncpt_set_manager(struct nvhost_syncpt *sp, int id, bool client);
+int nvhost_syncpt_graphics_host_sp(struct nvhost_syncpt *sp);
+int nvhost_syncpt_pts_limit(struct nvhost_syncpt *sp);
 
 /**
  * Returns true if syncpoint min == max
@@ -112,25 +131,28 @@ static inline bool nvhost_syncpt_min_eq_max(struct nvhost_syncpt *sp, u32 id)
 	return (min == max);
 }
 
-int nvhost_syncpt_get_waitbase(struct nvhost_channel *ch, int id);
-
 void nvhost_syncpt_cpu_incr(struct nvhost_syncpt *sp, u32 id);
 
 u32 nvhost_syncpt_update_min(struct nvhost_syncpt *sp, u32 id);
+u32 nvhost_syncpt_set_min_cached(struct nvhost_syncpt *sp, u32 id, u32 val);
 bool nvhost_syncpt_is_expired(struct nvhost_syncpt *sp, u32 id, u32 thresh);
+bool nvhost_is_syncpt_assigned(struct nvhost_syncpt *sp, u32 id);
 int nvhost_syncpt_compare(struct nvhost_syncpt *sp, u32 id,
 				u32 thresh_a, u32 thresh_b);
 
 void nvhost_syncpt_save(struct nvhost_syncpt *sp);
 
+const char *nvhost_syncpt_get_last_client(struct platform_device *pdev, int id);
+
 void nvhost_syncpt_reset(struct nvhost_syncpt *sp);
 void nvhost_syncpt_reset_client(struct platform_device *pdev);
 
+<<<<<<< HEAD
+=======
+const char *nvhost_syncpt_get_name_from_id(struct nvhost_syncpt *sp, int id);
+>>>>>>> update/master
 int nvhost_syncpt_read_check(struct nvhost_syncpt *sp, u32 id, u32 *val);
 u32 nvhost_syncpt_read(struct nvhost_syncpt *sp, u32 id);
-u32 nvhost_syncpt_read_wait_base(struct nvhost_syncpt *sp, u32 id);
-void nvhost_syncpt_cpu_set_wait_base(struct platform_device *pdev, u32 id,
-					u32 val);
 
 int nvhost_syncpt_incr(struct nvhost_syncpt *sp, u32 id);
 
@@ -147,13 +169,6 @@ static inline int nvhost_syncpt_wait(struct nvhost_syncpt *sp, u32 id, u32 thres
 
 int nvhost_syncpt_patch_wait(struct nvhost_syncpt *sp, void *patch_addr);
 
-void nvhost_syncpt_debug(struct nvhost_syncpt *sp);
-
-static inline int nvhost_syncpt_is_valid(struct nvhost_syncpt *sp, u32 id)
-{
-	return id != NVSYNCPT_INVALID && id < nvhost_syncpt_nb_pts(sp);
-}
-
 int nvhost_mutex_try_lock(struct nvhost_syncpt *sp, int idx);
 
 void nvhost_mutex_unlock(struct nvhost_syncpt *sp, int idx);
@@ -162,4 +177,12 @@ bool nvhost_syncpt_wrapping_comparison(u32 syncpt, u32 threshold);
 
 struct nvhost_sync_timeline *nvhost_syncpt_timeline(struct nvhost_syncpt *sp,
 		int idx);
+int nvhost_syncpt_mark_unused(struct nvhost_syncpt *sp, u32 syncptid);
+int nvhost_syncpt_mark_used(struct nvhost_syncpt *sp,
+			    u32 chid, u32 syncptid);
+
+int nvhost_syncpt_get_ref(struct nvhost_syncpt *sp, u32 id);
+void nvhost_syncpt_put_ref(struct nvhost_syncpt *sp, u32 id);
+int nvhost_syncpt_read_ref(struct nvhost_syncpt *sp, u32 id);
+
 #endif

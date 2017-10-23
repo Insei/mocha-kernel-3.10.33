@@ -1,11 +1,5 @@
 menu "Device Drivers"
 
-source "drivers/cpufreq/Kconfig"
-
-source "drivers/cpuidle/Kconfig"
-
-source "drivers/cpuquiet/Kconfig"
-
 source "drivers/base/Kconfig"
 
 source "drivers/bus/Kconfig"
@@ -69,6 +63,8 @@ source "drivers/ptp/Kconfig"
 source "drivers/pinctrl/Kconfig"
 
 source "drivers/gpio/Kconfig"
+
+source "drivers/padctrl/Kconfig"
 
 source "drivers/w1/Kconfig"
 
@@ -176,8 +172,19 @@ source "drivers/ipack/Kconfig"
 
 source "drivers/reset/Kconfig"
 
+<<<<<<< HEAD
 source "drivers/tspdrv/Kconfig"
 
 source "drivers/gpu/nvgpu/Kconfig"
 
+=======
+source "drivers/edp/Kconfig"
+
+source "drivers/gpu/nvgpu/Kconfig"
+
+source "drivers/phy/Kconfig"
+
+source "drivers/android/Kconfig"
+
+>>>>>>> update/master
 endmenu

@@ -2,6 +2,7 @@
  * Generic helpers for smp ipi calls
  *
  * (C) Jens Axboe <jens.axboe@oracle.com> 2008
+ * Copyright (c) 2014, NVIDIA CORPORATION.  All rights reserved.
  */
 #include <linux/rcupdate.h>
 #include <linux/rculist.h>
@@ -12,10 +13,10 @@
 #include <linux/gfp.h>
 #include <linux/smp.h>
 #include <linux/cpu.h>
+#include <asm/relaxed.h>
 
 #include "smpboot.h"
 
-#ifdef CONFIG_USE_GENERIC_SMP_HELPERS
 enum {
 	CSD_FLAG_LOCK		= 0x01,
 };
@@ -102,8 +103,8 @@ void __init call_function_init(void)
  */
 static void csd_lock_wait(struct call_single_data *csd)
 {
-	while (csd->flags & CSD_FLAG_LOCK)
-		cpu_relax();
+	while (cpu_relaxed_read_short(&csd->flags) & CSD_FLAG_LOCK)
+		cpu_read_relax();
 }
 
 static void csd_lock(struct call_single_data *csd)
@@ -173,6 +174,7 @@ void generic_exec_single(int cpu, struct call_single_data *csd, int wait)
 void generic_smp_call_function_single_interrupt(void)
 {
 	struct call_single_queue *q = &__get_cpu_var(call_single_queue);
+	static bool warned;
 	LIST_HEAD(list);
 
 	/*
@@ -191,6 +193,10 @@ void generic_smp_call_function_single_interrupt(void)
 		csd = list_entry(list.next, struct call_single_data, list);
 		list_del(&csd->list);
 
+		if (unlikely(!cpu_online(smp_processor_id())) && !warned)
+			pr_err("IPI callback %pS sent to offline CPU\n",
+				csd->func);
+
 		/*
 		 * 'csd' can be invalid after this call if flags == 0
 		 * (when called through generic_exec_single()),
@@ -206,6 +212,9 @@ void generic_smp_call_function_single_interrupt(void)
 		if (csd_flags & CSD_FLAG_LOCK)
 			csd_unlock(csd);
 	}
+
+	if (unlikely(!cpu_online(smp_processor_id())) && !warned)
+		warned = true;
 }
 
 static DEFINE_PER_CPU_SHARED_ALIGNED(struct call_single_data, csd_data);
@@ -470,7 +479,6 @@ int smp_call_function(smp_call_func_t func, void *info, int wait)
 	return 0;
 }
 EXPORT_SYMBOL(smp_call_function);
-#endif /* USE_GENERIC_SMP_HELPERS */
 
 /* Setup configured maximum number of CPUs to activate */
 unsigned int setup_max_cpus = NR_CPUS;

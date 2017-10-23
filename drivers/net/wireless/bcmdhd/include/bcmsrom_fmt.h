@@ -1,15 +1,24 @@
 /*
  * SROM format definition.
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
  *
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+ * 
+>>>>>>> update/master
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
  * under the terms of the GNU General Public License version 2 (the "GPL"),
  * available at http://www.broadcom.com/licenses/GPLv2.php, with the
  * following added to such license:
+<<<<<<< HEAD
  *
+=======
+ * 
+>>>>>>> update/master
  *      As a special exception, the copyright holders of this software give you
  * permission to link this software with independent modules, and to copy and
  * distribute the resulting executable under terms of your choice, provided that
@@ -17,12 +26,20 @@
  * the license of that module.  An independent module is a module which is not
  * derived from this software.  The special exception does not apply to any
  * modifications of the software.
+<<<<<<< HEAD
  *
+=======
+ * 
+>>>>>>> update/master
  *      Notwithstanding the above, under no circumstances may you combine this
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
+<<<<<<< HEAD
  * $Id: bcmsrom_fmt.h 427005 2013-10-02 00:15:10Z $
+=======
+ * $Id: bcmsrom_fmt.h 473704 2014-04-29 15:49:57Z $
+>>>>>>> update/master
  */
 
 #ifndef	_bcmsrom_fmt_h_
@@ -30,8 +47,13 @@
 
 #define SROM_MAXREV		11	/* max revisiton supported by driver */
 
+<<<<<<< HEAD
 /* Maximum srom: 6 Kilobits == 768 bytes */
 #define	SROM_MAX		768
+=======
+/* Maximum srom: 12 Kilobits == 1536 bytes */
+#define	SROM_MAX		1536
+>>>>>>> update/master
 #define SROM_MAXW		384
 #define VARS_MAX		4096
 

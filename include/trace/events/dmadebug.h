@@ -3,7 +3,7 @@
  *
  * DMA debugging event logging to ftrace.
  *
- * Copyright (c) 2013, NVIDIA Corporation.
+ * Copyright (c) 2013-2014, NVIDIA Corporation.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,6 +31,7 @@
 #include <linux/types.h>
 #include <linux/device.h>
 #include <linux/dma-debug.h>
+#include <asm/io.h>
 
 DECLARE_EVENT_CLASS(dmadebug,
 	TP_PROTO(struct device *dev, dma_addr_t dma_addr, size_t size, \
@@ -40,6 +41,7 @@ DECLARE_EVENT_CLASS(dmadebug,
 
 	TP_STRUCT__entry(
 		__field(struct device *, dev)
+		__string(name, dev_name(dev))
 		__field(dma_addr_t, dma_addr)
 		__field(size_t, size)
 		__field(struct page *, page)
@@ -47,14 +49,16 @@ DECLARE_EVENT_CLASS(dmadebug,
 
 	TP_fast_assign(
 		__entry->dev = dev;
+		__assign_str(name, dev_name(dev));
 		__entry->dma_addr = dma_addr;
 		__entry->size = size;
 		__entry->page = page;
 	),
 
-	TP_printk("device=%s, addr=%p, size=%d page=%pa platformdata=%s",
-		   dev_name(__entry->dev), &__entry->dma_addr,
-		   __entry->size, __entry->page,
+	TP_printk("device=%s, iova=%pad, size=%zu phys=%llx platformdata=%s",
+		   __get_str(name), &__entry->dma_addr,
+		   __entry->size,
+		   (unsigned long long)page_to_phys(__entry->page),
 		   debug_dma_platformdata(__entry->dev))
 );
 
@@ -70,6 +74,47 @@ DMADEBUGEVENT(dmadebug_map_sg);
 DMADEBUGEVENT(dmadebug_unmap_sg);
 
 #undef DMADEBUGEVENT
+
+DECLARE_EVENT_CLASS(dmadebug2,
+	TP_PROTO(struct device *dev, dma_addr_t dma_addr, size_t size,
+		struct page **pages, void *cpu_addr),
+
+	TP_ARGS(dev, dma_addr, size, pages, cpu_addr),
+
+	TP_STRUCT__entry(
+		__field(struct device *, dev)
+		__string(name, dev_name(dev))
+		__field(dma_addr_t, dma_addr)
+		__field(size_t, size)
+		__field(struct page **, pages)
+		__field(void *, cpu_addr)
+	),
+
+	TP_fast_assign(
+		__entry->dev = dev;
+		__assign_str(name, dev_name(dev));
+		__entry->dma_addr = dma_addr;
+		__entry->size = size;
+		__entry->pages = pages;
+		__entry->cpu_addr = cpu_addr;
+	),
+
+	TP_printk("device=%s, iova=%pad, size=%zu pages=%p, va=%p,"
+		  " platformdata=%s",
+		   __get_str(name), &__entry->dma_addr,
+		   __entry->size, (void *)__entry->pages, __entry->cpu_addr,
+		   debug_dma_platformdata(__entry->dev))
+);
+#define DMADEBUGEVENT2(ev) DEFINE_EVENT(dmadebug2, ev, \
+	TP_PROTO(struct device *dev, dma_addr_t dma_addr, size_t size, \
+		struct page **pages, void *cpu_addr), \
+	TP_ARGS(dev, dma_addr, size, pages, cpu_addr) \
+)
+
+DMADEBUGEVENT2(dmadebug_alloc_attrs);
+DMADEBUGEVENT2(dmadebug_free_attrs);
+
+#undef DMADEBUGEVENT2
 
 #endif /*  _TRACE_DMADEBUG_H */
 

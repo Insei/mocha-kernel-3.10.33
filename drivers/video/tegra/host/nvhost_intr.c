@@ -3,7 +3,7 @@
  *
  * Tegra Graphics Host Interrupt Management
  *
- * Copyright (c) 2010-2014, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2010-2016, NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -33,20 +33,14 @@
 #include <linux/gk20a.h>
 
 #include "nvhost_channel.h"
-#include "nvhost_hwctx.h"
 #include "chip_support.h"
 
 /*** Wait list management ***/
 
-struct nvhost_waitlist {
-	struct list_head list;
-	struct kref refcount;
-	u32 thresh;
-	enum nvhost_intr_action action;
-	atomic_t state;
-	struct timespec isr_recv;
-	void *data;
-	int count;
+struct nvhost_waitlist_external_notifier {
+	struct nvhost_master *master;
+	void (*callback)(void *, int);
+	void *private_data;
 };
 
 enum waitlist_state {
@@ -55,6 +49,14 @@ enum waitlist_state {
 	WLS_CANCELLED,
 	WLS_HANDLED
 };
+
+static inline bool nvhost_intr_is_virtual_dev(struct nvhost_intr_syncpt *sp)
+{
+	struct nvhost_intr *intr = intr_syncpt_to_intr(sp);
+	struct nvhost_master *host = intr_to_dev(intr);
+
+	return nvhost_dev_is_virtual(host->dev);
+}
 
 static void waiter_release(struct kref *kref)
 {
@@ -97,7 +99,7 @@ static bool add_waiter_to_queue(struct nvhost_waitlist *waiter,
  */
 static void remove_completed_waiters(struct list_head *head, u32 sync,
 			struct timespec isr_recv,
-			struct list_head completed[NVHOST_INTR_ACTION_COUNT])
+			struct list_head *completed[NVHOST_INTR_ACTION_COUNT])
 {
 	struct list_head *dest;
 	struct nvhost_waitlist *waiter, *next, *prev;
@@ -107,7 +109,7 @@ static void remove_completed_waiters(struct list_head *head, u32 sync,
 			break;
 
 		waiter->isr_recv = isr_recv;
-		dest = completed + waiter->action;
+		dest = *(completed + waiter->action);
 
 		/* consolidate submit cleanups */
 		if (waiter->action == NVHOST_INTR_ACTION_SUBMIT_COMPLETE
@@ -130,7 +132,7 @@ static void remove_completed_waiters(struct list_head *head, u32 sync,
 	}
 }
 
-void reset_threshold_interrupt(struct nvhost_intr *intr,
+static void reset_threshold_interrupt(struct nvhost_intr *intr,
 			       struct list_head *head,
 			       unsigned int id)
 {
@@ -144,8 +146,20 @@ void reset_threshold_interrupt(struct nvhost_intr *intr,
 
 static void action_submit_complete(struct nvhost_waitlist *waiter)
 {
-	struct nvhost_channel *channel = waiter->data;
-	int nr_completed = waiter->count;
+	struct nvhost_channel *channel;
+	int nr_completed;
+
+	if (!waiter) {
+		pr_warn("%s: Empty Waiter\n", __func__);
+		return;
+	}
+
+	nr_completed = waiter->count;
+	channel = waiter->data;
+	if (!channel || !channel->dev) {
+		pr_warn("%s: Channel un-mapped\n", __func__);
+		return;
+	}
 
 	nvhost_cdma_update(&channel->cdma);
 	nvhost_module_idle_mult(channel->dev, nr_completed);
@@ -157,25 +171,35 @@ static void action_submit_complete(struct nvhost_waitlist *waiter)
 			channel->cdma.med_prio_count,
 			channel->cdma.low_prio_count);
 
-}
+	nvhost_putchannel(channel, nr_completed);
 
-static void action_gpfifo_submit_complete(struct nvhost_waitlist *waiter)
-{
-	struct channel_gk20a *ch20a = waiter->data;
-	gk20a_channel_update(ch20a, waiter->count);
 }
 
 static void action_wakeup(struct nvhost_waitlist *waiter)
 {
-	wait_queue_head_t *wq = waiter->data;
+	wait_queue_head_t *wq = &waiter->wq;
 
+	WARN_ON(atomic_xchg(&waiter->state, WLS_HANDLED) != WLS_REMOVED);
 	wake_up(wq);
+}
+
+static void action_notify(struct nvhost_waitlist *waiter)
+{
+	struct nvhost_waitlist_external_notifier *notifier = waiter->data;
+	struct nvhost_master *master = notifier->master;
+
+	notifier->callback(notifier->private_data, waiter->count);
+
+	nvhost_module_idle_mult(master->dev, waiter->count);
+	kfree(notifier);
+	waiter->data = NULL;
 }
 
 static void action_wakeup_interruptible(struct nvhost_waitlist *waiter)
 {
-	wait_queue_head_t *wq = waiter->data;
+	wait_queue_head_t *wq = &waiter->wq;
 
+	WARN_ON(atomic_xchg(&waiter->state, WLS_HANDLED) != WLS_REMOVED);
 	wake_up_interruptible(wq);
 }
 
@@ -183,33 +207,41 @@ static void action_signal_sync_pt(struct nvhost_waitlist *waiter)
 {
 #ifdef CONFIG_TEGRA_GRHOST_SYNC
 	struct nvhost_sync_pt *pt = waiter->data;
-	nvhost_sync_pt_signal(pt);
+	ktime_t time = timespec_to_ktime(waiter->isr_recv);
+	nvhost_sync_pt_signal(pt, ktime_to_ns(time));
 #endif
 }
 
 typedef void (*action_handler)(struct nvhost_waitlist *waiter);
 
 static action_handler action_handlers[NVHOST_INTR_ACTION_COUNT] = {
-	action_submit_complete,
-	action_gpfifo_submit_complete,
 	action_signal_sync_pt,
 	action_wakeup,
 	action_wakeup_interruptible,
+	action_notify,
+	action_submit_complete,
+	action_notify,
 };
 
-static void run_handlers(struct list_head completed[NVHOST_INTR_ACTION_COUNT])
+static void run_handlers(struct list_head *completed[NVHOST_INTR_ACTION_COUNT])
 {
-	struct list_head *head = completed;
 	int i;
 
-	for (i = 0; i < NVHOST_INTR_ACTION_COUNT; ++i, ++head) {
+	for (i = 0; i < NVHOST_INTR_ACTION_COUNT; ++i) {
+		struct list_head *head = completed[i];
 		action_handler handler = action_handlers[i];
 		struct nvhost_waitlist *waiter, *next;
+
+		if (!head)
+			continue;
 
 		list_for_each_entry_safe(waiter, next, head, list) {
 			list_del(&waiter->list);
 			handler(waiter);
-			WARN_ON(atomic_xchg(&waiter->state, WLS_HANDLED) != WLS_REMOVED);
+			if (handler != action_wakeup_interruptible &&
+			    handler != action_wakeup)
+				WARN_ON(atomic_xchg(&waiter->state, WLS_HANDLED)
+					!= WLS_REMOVED);
 			kref_put(&waiter->refcount, waiter_release);
 		}
 	}
@@ -222,30 +254,88 @@ static int process_wait_list(struct nvhost_intr *intr,
 			     struct nvhost_intr_syncpt *syncpt,
 			     u32 threshold)
 {
-	struct list_head completed[NVHOST_INTR_ACTION_COUNT];
-	unsigned int i;
+	struct list_head *completed[NVHOST_INTR_ACTION_COUNT] = {NULL};
+	struct list_head high_prio_handlers[NVHOST_INTR_HIGH_PRIO_COUNT];
+	bool run_low_prio_work = false;
+	unsigned int i, j;
 	int empty;
 
-	for (i = 0; i < NVHOST_INTR_ACTION_COUNT; ++i)
-		INIT_LIST_HEAD(completed + i);
-
+	/* take lock on waiter list */
 	spin_lock(&syncpt->lock);
 
+	/* keep high priority workers in local list */
+	for (i = 0; i < NVHOST_INTR_HIGH_PRIO_COUNT; ++i) {
+		INIT_LIST_HEAD(high_prio_handlers + i);
+		completed[i] = high_prio_handlers + i;
+	}
+
+	/* .. and low priority workers in global list */
+	for (j = 0; i < NVHOST_INTR_ACTION_COUNT; ++i, ++j)
+		completed[i] = syncpt->low_prio_handlers + j;
+
+	/* this functions fills completed data */
 	remove_completed_waiters(&syncpt->wait_head, threshold,
 		syncpt->isr_recv, completed);
 
+	/* check if there are still waiters left */
 	empty = list_empty(&syncpt->wait_head);
+
+	/* if not, disable interrupt. If yes, update the inetrrupt */
 	if (empty)
 		intr_op().disable_syncpt_intr(intr, syncpt->id);
 	else
 		reset_threshold_interrupt(intr, &syncpt->wait_head,
 					  syncpt->id);
 
+	/* remove low priority handlers from this list */
+	for (i = NVHOST_INTR_HIGH_PRIO_COUNT;
+	     i < NVHOST_INTR_ACTION_COUNT; ++i) {
+		if (!list_empty(completed[i]))
+			run_low_prio_work = true;
+		completed[i] = NULL;
+	}
+
+	/* release waiter lock */
 	spin_unlock(&syncpt->lock);
 
 	run_handlers(completed);
 
+	/* schedule a separate task to handle low priority handlers */
+	if (run_low_prio_work)
+		schedule_work(&syncpt->low_prio_work);
+
 	return empty;
+}
+
+static void nvhost_syncpt_low_prio_work(struct work_struct *work)
+{
+	struct nvhost_intr_syncpt *syncpt = container_of(work,
+						     struct nvhost_intr_syncpt,
+						     low_prio_work);
+	struct list_head *completed[NVHOST_INTR_ACTION_COUNT] = {NULL};
+	struct list_head low_prio_handlers[NVHOST_INTR_LOW_PRIO_COUNT];
+	unsigned int i, j;
+
+	/* go through low priority handlers.. */
+	spin_lock(&syncpt->lock);
+	for (i = 0, j = NVHOST_INTR_HIGH_PRIO_COUNT;
+	     j < NVHOST_INTR_ACTION_COUNT;
+	     i++, j++) {
+		struct list_head *handler = low_prio_handlers + i;
+
+		/* move entries from low priority queue into local queue */
+		INIT_LIST_HEAD(handler);
+		list_cut_position(handler,
+				  &syncpt->low_prio_handlers[i],
+				  syncpt->low_prio_handlers[i].prev);
+
+		/* maintain local completed list */
+		completed[j] = handler;
+	}
+	spin_unlock(&syncpt->lock);
+
+	/* ..and run them */
+	run_handlers(completed);
 }
 
 /*** host syncpt interrupt service functions ***/
@@ -260,7 +350,11 @@ irqreturn_t nvhost_syncpt_thresh_fn(void *dev_id)
 	struct nvhost_intr *intr = intr_syncpt_to_intr(syncpt);
 	struct nvhost_master *dev = intr_to_dev(intr);
 
-	(void)process_wait_list(intr, syncpt,
+	if (nvhost_dev_is_virtual(dev->dev))
+		(void)process_wait_list(intr, syncpt,
+				nvhost_syncpt_read_min(&dev->syncpt, id));
+	else
+		(void)process_wait_list(intr, syncpt,
 				nvhost_syncpt_update_min(&dev->syncpt, id));
 
 	return IRQ_HANDLED;
@@ -310,6 +404,7 @@ int nvhost_intr_add_action(struct nvhost_intr *intr, u32 id, u32 thresh,
 
 	/* initialize a new waiter */
 	INIT_LIST_HEAD(&waiter->list);
+	init_waitqueue_head(&waiter->wq);
 	kref_init(&waiter->refcount);
 	if (ref)
 		kref_get(&waiter->refcount);
@@ -341,11 +436,84 @@ int nvhost_intr_add_action(struct nvhost_intr *intr, u32 id, u32 thresh,
 	return 0;
 }
 
-void *nvhost_intr_alloc_waiter()
+void *nvhost_intr_alloc_waiter(void)
 {
 	return kzalloc(sizeof(struct nvhost_waitlist),
 			GFP_KERNEL|__GFP_REPEAT);
 }
+
+static int __nvhost_intr_register_notifier(struct platform_device *pdev,
+				  u32 id, u32 thresh,
+				  enum nvhost_intr_action action,
+				  void (*callback)(void *, int),
+				  void *private_data)
+{
+	struct nvhost_waitlist *waiter;
+	struct nvhost_waitlist_external_notifier *notifier;
+	struct nvhost_master *master = nvhost_get_host(pdev);
+	int err = 0;
+
+	if (!callback)
+		return -EINVAL;
+
+	waiter = kzalloc(sizeof(*waiter), GFP_KERNEL | __GFP_REPEAT);
+	if (!waiter) {
+		err = -ENOMEM;
+		goto err_alloc_waiter;
+	}
+	notifier = kzalloc(sizeof(*notifier), GFP_KERNEL | __GFP_REPEAT);
+	if (!notifier) {
+		err = -ENOMEM;
+		goto err_alloc_notifier;
+	}
+
+	notifier->master = master;
+	notifier->callback = callback;
+	notifier->private_data = private_data;
+
+	/* make sure host1x stays on */
+	err = nvhost_module_busy(master->dev);
+	if (err)
+		goto err_busy;
+
+	err = nvhost_intr_add_action(&master->intr,
+				     id, thresh,
+				     action,
+				     notifier,
+				     waiter,
+				     NULL);
+
+	return err;
+
+err_busy:
+	kfree(notifier);
+err_alloc_notifier:
+	kfree(waiter);
+err_alloc_waiter:
+	return err;
+}
+
+int nvhost_intr_register_notifier(struct platform_device *pdev,
+				  u32 id, u32 thresh,
+				  void (*callback)(void *, int),
+				  void *private_data)
+{
+	return __nvhost_intr_register_notifier(pdev, id, thresh,
+				  NVHOST_INTR_ACTION_NOTIFY,
+				  callback, private_data);
+}
+EXPORT_SYMBOL(nvhost_intr_register_notifier);
+
+int nvhost_intr_register_fast_notifier(struct platform_device *pdev,
+				  u32 id, u32 thresh,
+				  void (*callback)(void *, int),
+				  void *private_data)
+{
+	return __nvhost_intr_register_notifier(pdev, id, thresh,
+				  NVHOST_INTR_ACTION_FAST_NOTIFY,
+				  callback, private_data);
+}
+EXPORT_SYMBOL(nvhost_intr_register_fast_notifier);
 
 void nvhost_intr_put_ref(struct nvhost_intr *intr, u32 id, void *ref)
 {
@@ -369,14 +537,13 @@ void nvhost_intr_put_ref(struct nvhost_intr *intr, u32 id, void *ref)
 
 int nvhost_intr_init(struct nvhost_intr *intr, u32 irq_gen, u32 irq_sync)
 {
-	unsigned int id;
+	unsigned int id, i;
 	struct nvhost_intr_syncpt *syncpt;
 	struct nvhost_master *host = intr_to_dev(intr);
-	u32 nb_pts = nvhost_syncpt_nb_pts(&host->syncpt);
+	u32 nb_pts = nvhost_syncpt_nb_hw_pts(&host->syncpt);
 
 	mutex_init(&intr->mutex);
 	intr->syncpt_irq = irq_sync;
-	intr->wq = create_workqueue("host_syncpt");
 	intr->general_irq = irq_gen;
 
 	for (id = 0, syncpt = intr->syncpt;
@@ -389,6 +556,10 @@ int nvhost_intr_init(struct nvhost_intr *intr, u32 irq_gen, u32 irq_sync)
 		snprintf(syncpt->thresh_irq_name,
 			sizeof(syncpt->thresh_irq_name),
 			"host_sp_%02d", id);
+		for (i = 0; i < NVHOST_INTR_LOW_PRIO_COUNT; ++i)
+			INIT_LIST_HEAD(syncpt->low_prio_handlers + i);
+		INIT_WORK(&syncpt->low_prio_work,
+			  nvhost_syncpt_low_prio_work);
 	}
 
 	return 0;
@@ -397,7 +568,6 @@ int nvhost_intr_init(struct nvhost_intr *intr, u32 irq_gen, u32 irq_sync)
 void nvhost_intr_deinit(struct nvhost_intr *intr)
 {
 	nvhost_intr_stop(intr);
-	destroy_workqueue(intr->wq);
 }
 
 void nvhost_intr_start(struct nvhost_intr *intr, u32 hz)
@@ -417,7 +587,7 @@ void nvhost_intr_stop(struct nvhost_intr *intr)
 {
 	unsigned int id;
 	struct nvhost_intr_syncpt *syncpt;
-	u32 nb_pts = nvhost_syncpt_nb_pts(&intr_to_dev(intr)->syncpt);
+	u32 nb_pts = nvhost_syncpt_nb_hw_pts(&intr_to_dev(intr)->syncpt);
 
 	mutex_lock(&intr->mutex);
 
@@ -447,4 +617,26 @@ void nvhost_intr_stop(struct nvhost_intr *intr)
 	intr_op().free_syncpt_irq(intr);
 
 	mutex_unlock(&intr->mutex);
+}
+
+void nvhost_intr_enable_host_irq(struct nvhost_intr *intr, int irq,
+				 void (*host_isr)(u32, void *),
+				 void *priv)
+{
+	if (!irq)
+		return;
+
+	intr->host_isr[irq] = host_isr;
+	intr->host_isr_priv[irq] = priv;
+	intr_op().enable_host_irq(intr, irq);
+}
+
+void nvhost_intr_disable_host_irq(struct nvhost_intr *intr, int irq)
+{
+	if (!irq)
+		return;
+
+	intr_op().disable_host_irq(intr, irq);
+	intr->host_isr[irq] = NULL;
+	intr->host_isr_priv[irq] = NULL;
 }

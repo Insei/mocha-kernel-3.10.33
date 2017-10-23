@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -23,7 +23,16 @@ struct bq27441_platform_data {
 	unsigned long taper_rate;
 	unsigned long terminate_voltage; /* in mV */
 	unsigned long v_at_chg_term; /* in mV */
+	u32 threshold_soc;
+	u32 maximum_soc;
+	u32 cc_gain;
+	u32 cc_delta;
+	u32 qmax_cell;
+	u32 reserve_cap;
 	const char *tz_name;
+	bool enable_temp_prop;
+	bool support_battery_current;
+	u32 full_charge_capacity;
 };
 
 #endif

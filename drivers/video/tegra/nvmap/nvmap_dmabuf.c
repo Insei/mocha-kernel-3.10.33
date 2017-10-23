@@ -1,7 +1,7 @@
 /*
  * dma_buf exporter for nvmap
  *
- * Copyright (c) 2012-2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2012-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -32,6 +32,7 @@
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
 #include <linux/stringify.h>
+#include <linux/of.h>
 
 #include <trace/events/nvmap.h>
 
@@ -165,6 +166,7 @@ static void nvmap_dmabuf_detach(struct dma_buf *dmabuf,
  * Add this sgt to the stash - should be called when the SGT's ref count hits
  * 0.
  */
+#ifdef CONFIG_NVMAP_DMABUF_STASH
 static void __nvmap_dmabuf_add_stash(struct nvmap_handle_sgt *nvmap_sgt)
 {
 	pr_debug("Adding mapping to stash.\n");
@@ -174,6 +176,7 @@ static void __nvmap_dmabuf_add_stash(struct nvmap_handle_sgt *nvmap_sgt)
 	stash_stat_inc(stashed_maps);
 	stash_stat_add_iova(nvmap_sgt->owner->handle);
 }
+#endif
 
 /*
  * Make sure this mapping is no longer stashed - this corresponds to a "hit". If
@@ -195,6 +198,20 @@ static void __nvmap_dmabuf_del_stash(struct nvmap_handle_sgt *nvmap_sgt)
 	stash_stat_sub_iova(nvmap_sgt->owner->handle);
 }
 
+static inline bool access_vpr_phys(struct device *dev) {
+	if (!to_dma_iommu_mapping(dev))
+		return true;
+
+	/*
+	 * Assumes gpu nodes always have DT entry, this is valid as device
+	 * specifying access-vpr-phys will do so through its DT entry.
+	 */
+	if (!dev->of_node)
+		return false;
+
+	return !!of_find_property(dev->of_node, "access-vpr-phys", NULL);
+}
+
 /*
  * Free an sgt completely. This will bypass the ref count. This also requires
  * the nvmap_sgt's owner's lock is already taken.
@@ -206,7 +223,12 @@ static void __nvmap_dmabuf_free_sgt_locked(struct nvmap_handle_sgt *nvmap_sgt)
 
 	list_del(&nvmap_sgt->maps_entry);
 
-	if (info->handle->heap_pgalloc) {
+	if (!(nvmap_dev->dynamic_dma_map_mask & info->handle->heap_type)) {
+		sg_dma_address(nvmap_sgt->sgt->sgl) = 0;
+	} else if (info->handle->heap_type == NVMAP_HEAP_CARVEOUT_VPR &&
+			access_vpr_phys(nvmap_sgt->dev)) {
+		sg_dma_address(nvmap_sgt->sgt->sgl) = 0;
+	} else {
 		dma_set_attr(DMA_ATTR_SKIP_IOVA_GAP, &attrs);
 		dma_set_attr(DMA_ATTR_SKIP_CPU_SYNC, &attrs);
 		dma_unmap_sg_attrs(nvmap_sgt->dev,
@@ -224,7 +246,8 @@ static void __nvmap_dmabuf_free_sgt_locked(struct nvmap_handle_sgt *nvmap_sgt)
  * mapping itself - this merely takes the passed nvmap_sgt out of the stash
  * and decrements the necessary cache stats.
  */
-void __nvmap_dmabuf_evict_stash_locked(struct nvmap_handle_sgt *nvmap_sgt)
+static void __nvmap_dmabuf_evict_stash_locked(
+			struct nvmap_handle_sgt *nvmap_sgt)
 {
 	if (!list_empty(&nvmap_sgt->stash_entry))
 		list_del_init(&nvmap_sgt->stash_entry);
@@ -236,7 +259,7 @@ void __nvmap_dmabuf_evict_stash_locked(struct nvmap_handle_sgt *nvmap_sgt)
 /*
  * Locks the stash before doing the eviction.
  */
-void __nvmap_dmabuf_evict_stash(struct nvmap_handle_sgt *nvmap_sgt)
+static void __nvmap_dmabuf_evict_stash(struct nvmap_handle_sgt *nvmap_sgt)
 {
 	mutex_lock(&nvmap_stashed_maps_lock);
 	__nvmap_dmabuf_evict_stash_locked(nvmap_sgt);
@@ -370,7 +393,15 @@ static struct sg_table *nvmap_dmabuf_map_dma_buf(
 		return sgt;
 	}
 
-	if (info->handle->heap_pgalloc && info->handle->alloc) {
+	if (!info->handle->alloc) {
+		goto err_map;
+	} else if (!(nvmap_dev->dynamic_dma_map_mask &
+			info->handle->heap_type)) {
+		sg_dma_address(sgt->sgl) = info->handle->carveout->base;
+	} else if (info->handle->heap_type == NVMAP_HEAP_CARVEOUT_VPR &&
+			access_vpr_phys(attach->dev)) {
+		sg_dma_address(sgt->sgl) = 0;
+	} else {
 		dma_set_attr(DMA_ATTR_SKIP_IOVA_GAP, &attrs);
 		dma_set_attr(DMA_ATTR_SKIP_CPU_SYNC, &attrs);
 		ents = dma_map_sg_attrs(attach->dev, sgt->sgl,
@@ -379,9 +410,12 @@ static struct sg_table *nvmap_dmabuf_map_dma_buf(
 			err = -ENOMEM;
 			goto err_map;
 		}
+<<<<<<< HEAD
 		BUG_ON(ents != 1);
 	} else if (!info->handle->alloc) {
 		goto err_map;
+=======
+>>>>>>> update/master
 	}
 
 	if (__nvmap_dmabuf_prep_sgt_locked(attach, dir, sgt)) {
@@ -565,6 +599,12 @@ static struct dma_buf_ops nvmap_dma_buf_ops = {
 	.get_drvdata	= nvmap_dmabuf_get_private,
 };
 
+bool dmabuf_is_nvmap(struct dma_buf *dmabuf)
+{
+	return dmabuf->ops == &nvmap_dma_buf_ops;
+}
+EXPORT_SYMBOL(dmabuf_is_nvmap);
+
 /*
  * Make a dmabuf object for an nvmap handle.
  */
@@ -601,24 +641,26 @@ err_nomem:
 	return ERR_PTR(err);
 }
 
-int __nvmap_dmabuf_fd(struct dma_buf *dmabuf, int flags)
+int __nvmap_dmabuf_fd(struct nvmap_client *client,
+		      struct dma_buf *dmabuf, int flags)
 {
-	int fd;
+	int start_fd = CONFIG_NVMAP_FD_START;
 
+#ifdef CONFIG_NVMAP_DEFER_FD_RECYCLE
+	if (client->next_fd < CONFIG_NVMAP_FD_START)
+		client->next_fd = CONFIG_NVMAP_FD_START;
+	start_fd = client->next_fd++;
+	if (client->next_fd >= CONFIG_NVMAP_DEFER_FD_RECYCLE_MAX_FD)
+		client->next_fd = CONFIG_NVMAP_FD_START;
+#endif
 	if (!dmabuf || !dmabuf->file)
 		return -EINVAL;
-	/* Allocate fd from 1024 onwards to overcome
+	/* Allocate fd from start_fd(>=1024) onwards to overcome
 	 * __FD_SETSIZE limitation issue for select(),
 	 * pselect() syscalls.
 	 */
-	fd = __alloc_fd(current->files, 1024,
-			sysctl_nr_open, flags);
-	if (fd < 0)
-		return fd;
-
-	fd_install(fd, dmabuf->file);
-
-	return fd;
+	return __alloc_fd(current->files, start_fd,
+			  sysctl_nr_open, flags);
 }
 
 int nvmap_get_dmabuf_fd(struct nvmap_client *client, struct nvmap_handle *h)
@@ -629,13 +671,9 @@ int nvmap_get_dmabuf_fd(struct nvmap_client *client, struct nvmap_handle *h)
 	dmabuf = __nvmap_dmabuf_export(client, h);
 	if (IS_ERR(dmabuf))
 		return PTR_ERR(dmabuf);
-	fd = __nvmap_dmabuf_fd(dmabuf, O_CLOEXEC);
-	if (fd < 0)
-		goto err_out;
-	return fd;
-
-err_out:
-	dma_buf_put(dmabuf);
+	fd = __nvmap_dmabuf_fd(client, dmabuf, O_CLOEXEC);
+	if (IS_ERR_VALUE(fd))
+		dma_buf_put(dmabuf);
 	return fd;
 }
 
@@ -686,8 +724,8 @@ struct dma_buf *__nvmap_dmabuf_export_from_ref(struct nvmap_handle_ref *ref)
  * returned by this function is freed concurrently while the caller is still
  * using it.
  */
-struct nvmap_handle *nvmap_get_id_from_dmabuf_fd(struct nvmap_client *client,
-						 int fd)
+struct nvmap_handle *nvmap_handle_get_from_dmabuf_fd(
+					struct nvmap_client *client, int fd)
 {
 	struct nvmap_handle *handle = ERR_PTR(-EINVAL);
 	struct dma_buf *dmabuf;
@@ -696,7 +734,7 @@ struct nvmap_handle *nvmap_get_id_from_dmabuf_fd(struct nvmap_client *client,
 	dmabuf = dma_buf_get(fd);
 	if (IS_ERR(dmabuf))
 		return ERR_CAST(dmabuf);
-	if (dmabuf->ops == &nvmap_dma_buf_ops) {
+	if (dmabuf_is_nvmap(dmabuf)) {
 		info = dmabuf->priv;
 		handle = info->handle;
 		if (!nvmap_handle_get(handle))
@@ -717,7 +755,11 @@ int nvmap_ioctl_share_dmabuf(struct file *filp, void __user *arg)
 	if (copy_from_user(&op, (void __user *)arg, sizeof(op)))
 		return -EFAULT;
 
+<<<<<<< HEAD
 	handle = unmarshal_user_handle(op.id);
+=======
+	handle = nvmap_handle_get_from_fd(op.id);
+>>>>>>> update/master
 	if (!handle)
 		return -EINVAL;
 
@@ -737,7 +779,7 @@ int nvmap_get_dmabuf_param(struct dma_buf *dmabuf, u32 param, u64 *result)
 {
 	struct nvmap_handle_info *info;
 
-	if (dmabuf->ops != &nvmap_dma_buf_ops)
+	if (!dmabuf_is_nvmap(dmabuf))
 		return -EINVAL;
 
 	if (WARN_ON(!virt_addr_valid(dmabuf)))
@@ -746,25 +788,7 @@ int nvmap_get_dmabuf_param(struct dma_buf *dmabuf, u32 param, u64 *result)
 	info = dmabuf->priv;
 	return __nvmap_get_handle_param(NULL, info->handle, param, result);
 }
-
-struct sg_table *nvmap_dmabuf_sg_table(struct dma_buf *dmabuf)
-{
-	struct nvmap_handle_info *info;
-
-	if (WARN_ON(!virt_addr_valid(dmabuf)))
-		return ERR_PTR(-EINVAL);
-
-	info = dmabuf->priv;
-	return __nvmap_sg_table(NULL, info->handle);
-}
-
-void nvmap_dmabuf_free_sg_table(struct dma_buf *dmabuf, struct sg_table *sgt)
-{
-	if (WARN_ON(!virt_addr_valid(sgt)))
-		return;
-
-	__nvmap_free_sg_table(NULL, NULL, sgt);
-}
+EXPORT_SYMBOL(nvmap_get_dmabuf_param);
 
 /*
  * List detailed info for all buffers allocated.
@@ -791,13 +815,14 @@ static int __nvmap_dmabuf_stashes_show(struct seq_file *s, void *data)
 		}
 
 		seq_printf(s, "%s: ", name);
-		seq_printf(s, " flags = 0x%08lx, refs = %d\n",
+		seq_printf(s, " flags = 0x%08x, refs = %d\n",
 			   handle->flags, atomic_read(&handle->ref));
 
-		seq_printf(s, "  device = %s\n",
-			   dev_name(handle->attachment->dev));
+		seq_printf(s, "  device = %s, mapping = %p\n",
+			   dev_name(handle->attachment->dev),
+			   nvmap_sgt->mapping);
 		addr = sg_dma_address(nvmap_sgt->sgt->sgl);
-		seq_printf(s, "  IO addr = 0x%pa + 0x%zx\n",
+		seq_printf(s, "  IO addr = %pa + 0x%zx\n",
 			&addr, handle->size);
 
 		/* Cleanup. */

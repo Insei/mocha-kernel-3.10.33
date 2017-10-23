@@ -226,7 +226,7 @@ void __init dove_init_early(void)
 	orion_time_set_base(TIMER_VIRT_BASE);
 	mvebu_mbus_init("marvell,dove-mbus",
 			BRIDGE_WINS_BASE, BRIDGE_WINS_SZ,
-			DOVE_MC_WINS_BASE, DOVE_MC_WINS_SZ);
+			DOVE_MC_WINS_BASE, DOVE_MC_WINS_SZ, 0);
 }
 
 static int __init dove_find_tclk(void)
@@ -382,7 +382,7 @@ void __init dove_init(void)
 	dove_xor1_init();
 }
 
-void dove_restart(char mode, const char *cmd)
+void dove_restart(enum reboot_mode mode, const char *cmd)
 {
 	/*
 	 * Enable soft reset to assert RSTOUTn.

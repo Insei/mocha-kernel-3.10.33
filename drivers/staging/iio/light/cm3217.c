@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 /* Copyright (c) 2013-2014, NVIDIA CORPORATION.  All rights reserved.
+=======
+/* Copyright (c) 2013-2015, NVIDIA CORPORATION.  All rights reserved.
+>>>>>>> update/master
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -271,6 +275,8 @@ static ssize_t cm3217_chan_regulator_enable(struct device *dev,
 
 success:
 	inf->als_state = enable;
+	if (!enable && regulator_is_enabled(inf->vreg[0].consumer))
+		cm3217_cmd_wr(inf, 0, 0);
 fail:
 	return ret ? ret : 1;
 }
@@ -320,6 +326,7 @@ static ssize_t cm3217_enable_store(struct device *dev,
 	mutex_lock(&indio_dev->mlock);
 	if (enable) {
 		err = cm3217_cmd_wr(inf, 0, 0);
+		inf->raw_illuminance_val = -EINVAL;
 		queue_delayed_work(inf->wq, &inf->dw, CM3217_HW_DELAY);
 	} else {
 		cancel_delayed_work_sync(&inf->dw);
@@ -342,6 +349,8 @@ static ssize_t cm3217_raw_illuminance_val_show(struct device *dev,
 	if (inf->als_state != CHIP_POWER_ON_ALS_ON)
 		return sprintf(buf, "-1\n");
 	queue_delayed_work(inf->wq, &inf->dw, 0);
+	if (inf->raw_illuminance_val == -EINVAL)
+		return sprintf(buf, "-1\n");
 	return sprintf(buf, "%d\n", inf->raw_illuminance_val);
 }
 
@@ -385,30 +394,12 @@ static const struct iio_info cm3217_iio_info = {
 	.driver_module = THIS_MODULE
 };
 
-#ifdef CONFIG_PM_SLEEP
-static int cm3217_suspend(struct device *dev)
+static int cm3217_remove(struct i2c_client *client)
 {
-	struct i2c_client *client = to_i2c_client(dev);
 	struct iio_dev *indio_dev = i2c_get_clientdata(client);
 	struct cm3217_inf *inf = iio_priv(indio_dev);
-	int ret = 0;
 
-	if (inf->als_state != CHIP_POWER_OFF)
-		ret = cm3217_vreg_dis_all(inf);
-
-	if (ret)
-		dev_err(&client->adapter->dev,
-				"%s err in reg enable\n", __func__);
-	return ret;
-}
-
-static int cm3217_resume(struct device *dev)
-{
-	struct i2c_client *client = to_i2c_client(dev);
-	struct iio_dev *indio_dev = i2c_get_clientdata(client);
-	struct cm3217_inf *inf = iio_priv(indio_dev);
-	int ret = 0;
-
+<<<<<<< HEAD
 	if (inf->als_state != CHIP_POWER_OFF)
 		ret = cm3217_vreg_en_all(inf);
 
@@ -434,6 +425,8 @@ static int cm3217_remove(struct i2c_client *client)
 	struct iio_dev *indio_dev = i2c_get_clientdata(client);
 	struct cm3217_inf *inf = iio_priv(indio_dev);
 
+=======
+>>>>>>> update/master
 	iio_device_unregister(indio_dev);
 	destroy_workqueue(inf->wq);
 	cm3217_vreg_exit(inf);
@@ -458,6 +451,18 @@ static int cm3217_probe(struct i2c_client *client,
 
 	inf = iio_priv(indio_dev);
 
+<<<<<<< HEAD
+=======
+	ls_spec = of_get_ls_spec(&client->dev);
+	if (!ls_spec) {
+		dev_warn(&client->dev,
+			"devname:%s func:%s line:%d invalid meta data, use default\n",
+			id->name, __func__, __LINE__);
+	} else {
+		fill_ls_attrs(ls_spec, cm3217_attrs);
+	}
+
+>>>>>>> update/master
 	inf->wq = create_singlethread_workqueue(CM3217_NAME);
 	if (!inf->wq) {
 		dev_err(&client->dev, "%s workqueue err\n", __func__);
@@ -477,6 +482,7 @@ static int cm3217_probe(struct i2c_client *client,
 	inf->als_state = 0;
 
 	i2c_set_clientdata(client, indio_dev);
+<<<<<<< HEAD
 
 	ls_spec = of_get_ls_spec(&client->dev);
 	if (!ls_spec) {
@@ -487,6 +493,8 @@ static int cm3217_probe(struct i2c_client *client,
 		fill_ls_attrs(ls_spec, cm3217_attrs);
 	}
 	i2c_set_clientdata(client, indio_dev);
+=======
+>>>>>>> update/master
 	indio_dev->info = &cm3217_iio_info;
 	indio_dev->name = id->name;
 	indio_dev->dev.parent = &client->dev;
@@ -497,6 +505,10 @@ static int cm3217_probe(struct i2c_client *client,
 		goto err_iio_register;
 	}
 
+<<<<<<< HEAD
+=======
+	inf->raw_illuminance_val = -EINVAL;
+>>>>>>> update/master
 	dev_info(&client->dev, "%s success\n", __func__);
 	return 0;
 
@@ -511,7 +523,7 @@ err_wq:
 }
 
 static const struct i2c_device_id cm3217_i2c_device_id[] = {
-	{"cm3217", 0},
+	{"cm3217-siio", 0},
 	{}
 };
 
@@ -529,7 +541,7 @@ static void cm3217_shutdown(struct i2c_client *client)
 
 #ifdef CONFIG_OF
 static const struct of_device_id cm3217_of_match[] = {
-	{ .compatible = "capella,cm3217", },
+	{ .compatible = "capella,cm3217-siio", },
 	{ },
 };
 MODULE_DEVICE_TABLE(of, cm3217_of_match);
@@ -543,7 +555,6 @@ static struct i2c_driver cm3217_driver = {
 		.name	= "cm3217",
 		.owner	= THIS_MODULE,
 		.of_match_table = of_match_ptr(cm3217_of_match),
-		.pm = CM3217_PM_OPS,
 	},
 	.shutdown = cm3217_shutdown,
 };

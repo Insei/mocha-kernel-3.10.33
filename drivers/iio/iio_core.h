@@ -36,6 +36,7 @@ int __iio_add_chan_devattr(const char *postfix,
 
 /* Event interface flags */
 #define IIO_BUSY_BIT_POS 1
+#define IIO_DISCONNECTING_BIT_POS 2
 
 #ifdef CONFIG_IIO_BUFFER
 struct poll_table_struct;
@@ -49,10 +50,14 @@ ssize_t iio_buffer_read_first_n_outer(struct file *filp, char __user *buf,
 #define iio_buffer_poll_addr (&iio_buffer_poll)
 #define iio_buffer_read_first_n_outer_addr (&iio_buffer_read_first_n_outer)
 
+void iio_buffer_wakeup_poll(struct iio_dev *indio_dev);
+
 #else
 
 #define iio_buffer_poll_addr NULL
 #define iio_buffer_read_first_n_outer_addr NULL
+
+static inline void iio_buffer_wakeup_poll(struct iio_dev *indio_dev) {}
 
 #endif
 

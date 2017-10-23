@@ -38,6 +38,12 @@
 
 #include "nvc_utilities.h"
 
+#define CONFIG_T210_FPGA 0
+
+#if CONFIG_T210_FPGA
+#include <linux/vi_i2c.h>
+#endif
+
 struct imx135_reg {
 	u16 addr;
 	u8 val;
@@ -55,6 +61,8 @@ struct imx135_info {
 	struct mutex			imx135_camera_lock;
 	struct dentry			*debugdir;
 	atomic_t			in_use;
+	struct imx135_eeprom_data eeprom[IMX135_EEPROM_NUM_BLOCKS];
+	u8 eeprom_buf[IMX135_EEPROM_SIZE];
 };
 
 static const struct regmap_config sensor_regmap_config = {
@@ -2075,6 +2083,161 @@ static struct imx135_reg mode_3904x2196[] = {
 	{IMX135_TABLE_END, 0x00}
 };
 
+static struct imx135_reg mode_3840x2160[] = {
+	/*software reset*/
+	{0x0103, 0x01},
+	/*global settings*/
+	{0x0101, 0x00},
+	{0x0105, 0x01},
+	{0x0110, 0x00},
+	{0x0220, 0x01},
+	{0x3302, 0x11},
+	{0x3833, 0x20},
+	{0x3873, 0x03},
+	{0x3893, 0x00},
+	{0x3906, 0x08},
+	{0x3907, 0x01},
+	{0x391B, 0x00},
+	{0x3C09, 0x01},
+	{0x600A, 0x00},
+	{0x3008, 0xB0},
+	{0x320A, 0x01},
+	{0x320D, 0x10},
+	{0x3216, 0x2E},
+	{0x322C, 0x02},
+	{0x3409, 0x0C},
+	{0x340C, 0x2D},
+	{0x3411, 0x39},
+	{0x3414, 0x1E},
+	{0x3427, 0x04},
+	{0x3480, 0x1E},
+	{0x3484, 0x1E},
+	{0x3488, 0x1E},
+	{0x348C, 0x1E},
+	{0x3490, 0x1E},
+	{0x3494, 0x1E},
+	{0x3511, 0x8F},
+	{0x364F, 0x2D},
+	/*Clock Setting*/
+	{0x011E, 0x18},
+	{0x011F, 0x00},
+	{0x0301, 0x05},
+	{0x0303, 0x01},
+	{0x0305, 0x0C},
+	{0x0309, 0x05},
+	{0x030B, 0x01},
+	{0x030C, 0x01},
+	{0x030D, 0xC2},
+	{0x030E, 0x01},
+	{0x3A06, 0x11},
+	/*Mode Settings*/
+	{0x0108, 0x03},
+	{0x0112, 0x0E},
+	{0x0113, 0x0A},
+	{0x0381, 0x01},
+	{0x0383, 0x01},
+	{0x0385, 0x01},
+	{0x0387, 0x01},
+	{0x0390, 0x00},
+	{0x0391, 0x11},
+	{0x0392, 0x00},
+	{0x0401, 0x00},
+	{0x0404, 0x00},
+	{0x0405, 0x10},
+	{0x4082, 0x01},
+	{0x4083, 0x01},
+	{0x7006, 0x04},
+	/*Optinal/Function settings*/
+	{0x0700, 0x00},
+	{0x3A63, 0x00},
+	{0x4100, 0xF8},
+	{0x4203, 0xFF},
+	{0x4344, 0x00},
+	{0x441C, 0x01},
+	/*Size Setting*/
+	{0x0340, 0x0A},
+	{0x0341, 0x40},
+	{0x0342, 0x11},
+	{0x0343, 0xDC},
+	{0x0344, 0x00},
+	{0x0345, 0x9C},
+	{0x0346, 0x01},
+	{0x0347, 0xD0},
+	{0x0348, 0x0F},
+	{0x0349, 0xD3},
+	{0x034A, 0x0A},
+	{0x034B, 0x5F},
+	{0x034C, 0x0F},
+	{0x034D, 0x00},
+	{0x034E, 0x08},
+	{0x034F, 0x70},
+	{0x0350, 0x00},
+	{0x0351, 0x00},
+	{0x0352, 0x00},
+	{0x0353, 0x00},
+	{0x0354, 0x0F},
+	{0x0355, 0x00},
+	{0x0356, 0x08},
+	{0x0357, 0x70},
+	{0x301D, 0x30},
+	{0x3310, 0x0F},
+	{0x3311, 0x38},
+	{0x3312, 0x08},
+	{0x3313, 0x90},
+	{0x331C, 0x0F},
+	{0x331D, 0x32},
+	{0x4084, 0x00},
+	{0x4085, 0x00},
+	{0x4086, 0x00},
+	{0x4087, 0x00},
+	{0x4400, 0x00},
+	/*Global Timing Setting*/
+	{0x0830, 0x87},
+	{0x0831, 0x3F},
+	{0x0832, 0x67},
+	{0x0833, 0x3F},
+	{0x0834, 0x3F},
+	{0x0835, 0x4F},
+	{0x0836, 0xDF},
+	{0x0837, 0x47},
+	{0x0839, 0x1F},
+	{0x083A, 0x17},
+	{0x083B, 0x02},
+	/*Integration Time Setting*/
+	{0x0202, 0x0A},
+	{0x0203, 0x3C},
+	/*Gain Setting*/
+	{0x0205, 0x00},
+	{0x020E, 0x01},
+	{0x020F, 0x00},
+	{0x0210, 0x01},
+	{0x0211, 0x00},
+	{0x0212, 0x01},
+	{0x0213, 0x00},
+	{0x0214, 0x01},
+	{0x0215, 0x00},
+	/*HDR Setting*/
+	{0x0230, 0x00},
+	{0x0231, 0x00},
+	{0x0233, 0x00},
+	{0x0234, 0x00},
+	{0x0235, 0x40},
+	{0x0238, 0x01},
+	{0x0239, 0x04},
+	{0x023B, 0x00},
+	{0x023C, 0x01},
+	{0x33B0, 0x0F},
+	{0x33B1, 0x38},
+	{0x33B3, 0x01},
+	{0x33B4, 0x01},
+	{0x3800, 0x00},
+	{0x3A43, 0x01},
+	/*stream on*/
+	{0x0100, 0x01},
+	{IMX135_TABLE_WAIT_MS, IMX135_WAIT_MS},
+	{IMX135_TABLE_END, 0x00}
+};
+
 static struct imx135_reg mode_2080x1560[] = {
 	/* software reset */
 	{0x0103, 0x01},
@@ -2766,12 +2929,159 @@ static struct imx135_reg mode_quality[] = {
 	{IMX135_TABLE_END, 0x00}
 };
 
+#if CONFIG_T210_FPGA
+static struct imx135_reg mode_1952x1096[] = {
+	/* software reset */
+	{0x0103, 0x01},
+	/* global settings */
+	{0x0101, 0x00},
+	{0x0105, 0x01},
+	{0x0110, 0x00},
+	{0x0220, 0x01},
+	{0x3302, 0x11},
+	{0x3833, 0x20},
+	{0x3893, 0x00},
+	{0x3906, 0x08},
+	{0x3907, 0x01},
+	{0x391B, 0x01},
+	{0x3C09, 0x01},
+	{0x600A, 0x00},
+	{0x3008, 0xB0},
+	{0x320A, 0x01},
+	{0x320D, 0x10},
+	{0x3216, 0x2E},
+	{0x322C, 0x02},
+	{0x3409, 0x0C},
+	{0x340C, 0x2D},
+	{0x3411, 0x39},
+	{0x3414, 0x1E},
+	{0x3427, 0x04},
+	{0x3480, 0x1E},
+	{0x3484, 0x1E},
+	{0x3488, 0x1E},
+	{0x348C, 0x1E},
+	{0x3490, 0x1E},
+	{0x3494, 0x1E},
+	{0x3511, 0x8F},
+	{0x364F, 0x2D},
+	{0x011E, 0x0D},
+	{0x011F, 0x00},
+	{0x0301, 0x05},
+	{0x0303, 0x01},
+	{0x0305, 0x0C},
+	{0x0309, 0x05},
+	{0x030B, 0x02},
+	{0x030C, 0x00},
+	{0x030D, 0x41},
+	{0x030E, 0x01},
+	{0x3A06, 0x12},
+	{0x0108, 0x03},
+	{0x0112, 0x0A},
+	{0x0113, 0x0A},
+	{0x0381, 0x01},
+	{0x0383, 0x01},
+	{0x0385, 0x01},
+	{0x0387, 0x01},
+	{0x0390, 0x01},
+	{0x0391, 0x22},
+	{0x0392, 0x00},
+	{0x0401, 0x02},
+	{0x0404, 0x00},
+	{0x0405, 0x11},
+	{0x4082, 0x00},
+	{0x4083, 0x00},
+	{0x4203, 0xFF},
+	{0x7006, 0x04},
+	{0x0340, 0x0A},
+	{0x0341, 0x40},
+	{0x0342, 0x11},
+	{0x0343, 0xDC},
+	{0x0344, 0x00},
+	{0x0345, 0x22},
+	{0x0346, 0x01},
+	{0x0347, 0x8C},
+	{0x0348, 0x10},
+	{0x0349, 0x4D},
+	{0x034A, 0x0A},
+	{0x034B, 0xA7},
+	{0x034C, 0x07},
+	{0x034D, 0x9C},
+	{0x034E, 0x04},
+	{0x034F, 0x48},
+	{0x0350, 0x00},
+	{0x0351, 0x00},
+	{0x0352, 0x00},
+	{0x0353, 0x00},
+	{0x0354, 0x08},
+	{0x0355, 0x16},
+	{0x0356, 0x04},
+	{0x0357, 0x8E},
+	{0x301D, 0x30},
+	{0x3310, 0x07},
+	{0x3311, 0x9C},
+	{0x3312, 0x04},
+	{0x3313, 0x48},
+	{0x331C, 0x00},
+	{0x331D, 0xD2},
+	{0x4084, 0x07},
+	{0x4085, 0x9C},
+	{0x4086, 0x04},
+	{0x4087, 0x48},
+	{0x4400, 0x00},
+	{0x0830, 0x87},
+	{0x0831, 0x3F},
+	{0x0832, 0x10},
+	{0x0833, 0x3F},
+	{0x0834, 0x3F},
+	{0x0835, 0x4F},
+	{0x0836, 0xDF},
+	{0x0837, 0x47},
+	{0x0839, 0x1F},
+	{0x083A, 0x17},
+	{0x083B, 0x02},
+	{0x0202, 0x0C},
+	{0x0203, 0xCC},
+	{0x0205, 0x00},
+	{0x020E, 0x01},
+	{0x020F, 0x00},
+	{0x0210, 0x01},
+	{0x0211, 0x00},
+	{0x0212, 0x01},
+	{0x0213, 0x00},
+	{0x0214, 0x01},
+	{0x0215, 0x00},
+	{0x0230, 0x00},
+	{0x0231, 0x00},
+	{0x0233, 0x00},
+	{0x0234, 0x00},
+	{0x0235, 0x40},
+	{0x0238, 0x00},
+	{0x0239, 0x04},
+	{0x023B, 0x00},
+	{0x023C, 0x01},
+	{0x33B0, 0x04},
+	{0x33B1, 0x00},
+	{0x33B3, 0x00},
+	{0x33B4, 0x01},
+	{0x3800, 0x00},
+	{0x0601, 0x00},
+	{0x0100, 0x01},
+	{0x0100, 0x01},
+	{IMX135_TABLE_WAIT_MS, IMX135_WAIT_MS},
+	{IMX135_TABLE_END, 0x00}
+};
+#endif
+
 enum {
 	IMX135_MODE_4208X3120,
 	IMX135_MODE_1920X1080,
+#if CONFIG_T210_FPGA
+	IMX135_MODE_1952X1096,
+#endif
 	IMX135_MODE_1280X720,
 	IMX135_MODE_2616X1472,
 	IMX135_MODE_3896X2192,
+	IMX135_MODE_3840X2160,
 	IMX135_MODE_2104X1560,
 	IMX135_MODE_QUALITY_HDR,
 	IMX135_MODE_QUALITY,
@@ -2785,9 +3095,13 @@ enum {
 static struct imx135_reg *mode_table[] = {
 	[IMX135_MODE_4208X3120] = mode_4208x3120,
 	[IMX135_MODE_1920X1080] = mode_1920x1080,
+#if CONFIG_T210_FPGA
+	[IMX135_MODE_1952X1096] = mode_1952x1096,
+#endif
 	[IMX135_MODE_1280X720]  = mode_1280x720,
 	[IMX135_MODE_2616X1472]  = mode_2616x1472,
 	[IMX135_MODE_3896X2192]  = mode_3896x2192,
+	[IMX135_MODE_3840X2160] = mode_3840x2160,
 	[IMX135_MODE_2104X1560]  = mode_2104x1560,
 	[IMX135_MODE_QUALITY_HDR]  = mode_quality_hdr,
 	[IMX135_MODE_QUALITY]  = mode_quality,
@@ -2868,7 +3182,12 @@ imx135_get_gain_short_reg(struct imx135_reg *regs, u16 gain)
 static inline int
 imx135_read_reg(struct imx135_info *info, u16 addr, u8 *val)
 {
+#if !CONFIG_T210_FPGA
 	return regmap_read(info->regmap, addr, (unsigned int *) val);
+#else
+	*val = vi_i2c_read_method(addr);
+#endif
+	return 0;
 }
 
 static int
@@ -2876,7 +3195,11 @@ imx135_write_reg(struct imx135_info *info, u16 addr, u8 val)
 {
 	int err;
 
+#if !CONFIG_T210_FPGA
 	err = regmap_write(info->regmap, addr, val);
+#else
+	err = vi_i2c_write_direct_test(addr, val);
+#endif
 
 	if (err)
 		pr_err("%s:i2c write failed, %x = %x\n",
@@ -2974,6 +3297,7 @@ imx135_set_mode(struct imx135_info *info, struct imx135_mode *mode)
 	int err;
 	struct imx135_reg reg_list[8];
 
+	pr_info("[IMX135] sensor %s:%d ++\n", __func__, __LINE__);
 	pr_info("%s: xres %u yres %u framelength %u coarsetime %u gain %u, hdr %d\n",
 			 __func__, mode->xres, mode->yres, mode->frame_length,
 			 mode->coarse_time, mode->gain, mode->hdr_en);
@@ -2993,6 +3317,9 @@ imx135_set_mode(struct imx135_info *info, struct imx135_mode *mode)
 	} else if (mode->xres == 3896 && mode->yres == 2192) {
 		sensor_mode = IMX135_MODE_3896X2192;
 		quality_hdr = 1;
+	} else if (mode->xres == 3840 && mode->yres == 2160) {
+		sensor_mode = IMX135_MODE_3840X2160;
+		quality_hdr = 1;
 	} else if (mode->xres == 2104 && mode->yres == 1560) {
 		sensor_mode = IMX135_MODE_2104X1560;
 		quality_hdr = 1;
@@ -3011,12 +3338,24 @@ imx135_set_mode(struct imx135_info *info, struct imx135_mode *mode)
 	} else if (mode->xres == 640 && mode->yres == 480) {
 		sensor_mode = IMX135_MODE_640X480;
 		quality_hdr = 0;
+#if CONFIG_T210_FPGA
+	} else if (mode->xres == 1952 && mode->yres == 1096) {
+		sensor_mode = IMX135_MODE_1952X1096;
+		quality_hdr = 0;
+#endif
 	} else {
 		pr_err("%s: invalid resolution supplied to set mode %d %d\n",
 			 __func__, mode->xres, mode->yres);
 		return -EINVAL;
 	}
 
+#if CONFIG_T210_FPGA
+	err = imx135_write_table(info,
+				mode_table[sensor_mode],
+				reg_list, 5);
+	if (err)
+		return err;
+#else
 	/* get a list of override regs for the asking frame length, */
 	/* coarse integration time, and gain.                       */
 	imx135_get_frame_length_regs(reg_list, mode->frame_length);
@@ -3046,6 +3385,8 @@ imx135_set_mode(struct imx135_info *info, struct imx135_mode *mode)
 		return err;
 
 	imx135_set_flash_output(info);
+
+#endif
 
 	info->mode = sensor_mode;
 	pr_info("[IMX135]: stream on.\n");
@@ -3281,6 +3622,66 @@ static int imx135_mclk_enable(struct imx135_info *info)
 	return err;
 }
 
+static int
+imx135_eeprom_device_release(struct imx135_info *info)
+{
+	int i;
+
+	for (i = 0; i < IMX135_EEPROM_NUM_BLOCKS; i++) {
+		if (info->eeprom[i].i2c_client != NULL) {
+			i2c_unregister_device(info->eeprom[i].i2c_client);
+			info->eeprom[i].i2c_client = NULL;
+		}
+	}
+
+	return 0;
+}
+
+static int
+imx135_eeprom_device_init(struct imx135_info *info)
+{
+	char *dev_name = "eeprom_imx135";
+	static struct regmap_config eeprom_regmap_config = {
+		.reg_bits = 8,
+		.val_bits = 8,
+	};
+	int i;
+	int err;
+
+	for (i = 0; i < IMX135_EEPROM_NUM_BLOCKS; i++) {
+		info->eeprom[i].adap = i2c_get_adapter(
+				info->i2c_client->adapter->nr);
+		memset(&info->eeprom[i].brd, 0, sizeof(info->eeprom[i].brd));
+		strncpy(info->eeprom[i].brd.type, dev_name,
+				sizeof(info->eeprom[i].brd.type));
+		info->eeprom[i].brd.addr = IMX135_EEPROM_ADDRESS + i;
+		info->eeprom[i].i2c_client = i2c_new_device(
+				info->eeprom[i].adap, &info->eeprom[i].brd);
+
+		info->eeprom[i].regmap = devm_regmap_init_i2c(
+			info->eeprom[i].i2c_client, &eeprom_regmap_config);
+		if (IS_ERR(info->eeprom[i].regmap)) {
+			err = PTR_ERR(info->eeprom[i].regmap);
+			imx135_eeprom_device_release(info);
+			return err;
+		}
+	}
+
+	return 0;
+}
+
+static int
+imx135_read_eeprom(struct imx135_info *info, u8 reg, u16 length, u8 *buf)
+{
+	return regmap_raw_read(info->eeprom[0].regmap, reg, &buf[reg], length);
+}
+
+static int
+imx135_write_eeprom(struct imx135_info *info, u16 addr, u8 val)
+{
+	return regmap_write(info->eeprom[addr >> 8].regmap, addr & 0xFF, val);
+}
+
 static long
 imx135_ioctl(struct file *file,
 			 unsigned int cmd, unsigned long arg)
@@ -3392,11 +3793,51 @@ imx135_ioctl(struct file *file,
 	case _IOC_NR(IMX135_IOCTL_GET_FLASH_CAP):
 		err = imx135_get_flash_cap(info);
 		break;
+
+	case NVC_IOCTL_GET_EEPROM_DATA:
+	{
+		imx135_read_eeprom(info,
+			0,
+			IMX135_EEPROM_SIZE,
+			info->eeprom_buf);
+
+		if (copy_to_user((void __user *)arg,
+			info->eeprom_buf, IMX135_EEPROM_SIZE)) {
+			dev_err(&info->i2c_client->dev,
+				"%s:Failed to copy status to user\n",
+				__func__);
+			return -EFAULT;
+		}
+		return 0;
+	}
+
+	case NVC_IOCTL_SET_EEPROM_DATA:
+	{
+		int i;
+		if (copy_from_user(info->eeprom_buf,
+			(const void __user *)arg, IMX135_EEPROM_SIZE)) {
+			dev_err(&info->i2c_client->dev,
+					"%s:Failed to read from user buffer\n",
+					__func__);
+			return -EFAULT;
+		}
+		for (i = 0; i < IMX135_EEPROM_SIZE; i++) {
+			imx135_write_eeprom(info,
+				i,
+				info->eeprom_buf[i]);
+			msleep(20);
+		}
+		return 0;
+	}
+
 	default:
 		pr_err("%s:unknown cmd.\n", __func__);
 		err = -EINVAL;
 	}
 
+#if CONFIG_T210_FPGA
+	err = 0;
+#endif
 	return err;
 }
 
@@ -3432,21 +3873,21 @@ static ssize_t imx135_debugfs_write(
 	if (copy_from_user(&buffer, buf, sizeof(buffer)))
 		goto debugfs_write_fail;
 
-	if (sscanf(buf, "0x%x 0x%x", &address, &data) == 2)
+	if (sscanf(buffer, "0x%x 0x%x", &address, &data) == 2)
 		goto set_attr;
-	if (sscanf(buf, "0X%x 0X%x", &address, &data) == 2)
+	if (sscanf(buffer, "0X%x 0X%x", &address, &data) == 2)
 		goto set_attr;
-	if (sscanf(buf, "%d %d", &address, &data) == 2)
+	if (sscanf(buffer, "%d %d", &address, &data) == 2)
 		goto set_attr;
 
-	if (sscanf(buf, "0x%x 0x%x", &address, &data) == 1)
+	if (sscanf(buffer, "0x%x 0x%x", &address, &data) == 1)
 		goto read;
-	if (sscanf(buf, "0X%x 0X%x", &address, &data) == 1)
+	if (sscanf(buffer, "0X%x 0X%x", &address, &data) == 1)
 		goto read;
-	if (sscanf(buf, "%d %d", &address, &data) == 1)
+	if (sscanf(buffer, "%d %d", &address, &data) == 1)
 		goto read;
 
-	dev_err(&i2c_client->dev, "SYNTAX ERROR: %s\n", buf);
+	dev_err(&i2c_client->dev, "SYNTAX ERROR: %s\n", buffer);
 	return -EFAULT;
 
 set_attr:
@@ -3571,9 +4012,12 @@ static int imx135_power_on(struct imx135_power_rail *pw)
 
 	}
 
-	gpio_set_value(info->pdata->reset_gpio, 0);
-	gpio_set_value(info->pdata->af_gpio, 1);
-	gpio_set_value(info->pdata->cam1_gpio, 0);
+	if (info->pdata->reset_gpio > 0)
+		gpio_set_value(info->pdata->reset_gpio, 0);
+	if (info->pdata->af_gpio > 0)
+		gpio_set_value(info->pdata->af_gpio, 1);
+	if (info->pdata->cam1_gpio > 0)
+		gpio_set_value(info->pdata->cam1_gpio, 0);
 	usleep_range(10, 20);
 
 	err = regulator_enable(pw->avdd);
@@ -3585,8 +4029,10 @@ static int imx135_power_on(struct imx135_power_rail *pw)
 		goto imx135_iovdd_fail;
 
 	usleep_range(1, 2);
-	gpio_set_value(info->pdata->reset_gpio, 1);
-	gpio_set_value(info->pdata->cam1_gpio, 1);
+	if (info->pdata->reset_gpio > 0)
+		gpio_set_value(info->pdata->reset_gpio, 1);
+	if (info->pdata->cam1_gpio > 0)
+		gpio_set_value(info->pdata->cam1_gpio, 1);
 
 	usleep_range(300, 310);
 
@@ -3700,13 +4146,13 @@ static int imx135_regulator_get(struct imx135_info *info,
 
 	reg = regulator_get(&info->i2c_client->dev, vreg_name);
 	if (unlikely(IS_ERR(reg))) {
-		dev_err(&info->i2c_client->dev, "%s %s ERR: %d\n",
-			__func__, vreg_name, (int)reg);
+		dev_err(&info->i2c_client->dev, "%s %s ERR: %p\n",
+			__func__, vreg_name, reg);
 		err = PTR_ERR(reg);
 		reg = NULL;
 	} else
-		dev_dbg(&info->i2c_client->dev, "%s: %s\n",
-			__func__, vreg_name);
+		dev_dbg(&info->i2c_client->dev, "%s: %s %p\n",
+			__func__, vreg_name, reg);
 
 	*vreg = reg;
 	return err;
@@ -3718,7 +4164,7 @@ static int imx135_power_get(struct imx135_info *info)
 	int err = 0;
 
 	err |= imx135_regulator_get(info, &pw->avdd, "vana"); /* ananlog 2.7v */
-	err |= imx135_regulator_get(info, &pw->dvdd, "vdig"); /* digital 1.2v */
+	err |= imx135_regulator_get(info, &pw->dvdd, "vdig_lv"); /* dig 1.05v */
 	err |= imx135_regulator_get(info, &pw->iovdd, "vif"); /* IO 1.8v */
 
 	return err;
@@ -3766,6 +4212,7 @@ static struct imx135_platform_data *imx135_parse_dt(struct i2c_client *client)
 		return NULL;
 	}
 
+	of_property_read_string(np, "clocks", &board_info_pdata->mclk_name);
 	board_info_pdata->cam1_gpio = of_get_named_gpio(np, "cam1-gpios", 0);
 	board_info_pdata->reset_gpio = of_get_named_gpio(np, "reset-gpios", 0);
 	board_info_pdata->af_gpio = of_get_named_gpio(np, "af-gpios", 0);
@@ -3838,6 +4285,15 @@ imx135_probe(struct i2c_client *client,
 	}
 
 	i2c_set_clientdata(client, info);
+
+	/* eeprom interface */
+	err = imx135_eeprom_device_init(info);
+	if (err) {
+		dev_err(&client->dev,
+			"Failed to allocate eeprom register map: %d\n", err);
+		return err;
+	}
+
 	/* create debugfs interface */
 	imx135_create_debugfs(info);
 	return 0;
@@ -3858,6 +4314,7 @@ imx135_remove(struct i2c_client *client)
 	imx135_power_put(&info->power);
 
 	imx135_remove_debugfs(info);
+	imx135_eeprom_device_release(info);
 	return 0;
 }
 

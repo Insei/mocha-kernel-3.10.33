@@ -3,7 +3,11 @@
  *
  * NVIDIA Tegra Sysfs for BCMDHD driver
  *
+<<<<<<< HEAD
  * Copyright (C) 2014 NVIDIA Corporation. All rights reserved.
+=======
+ * Copyright (C) 2014-2015 NVIDIA Corporation. All rights reserved.
+>>>>>>> update/master
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -32,6 +36,11 @@ ping_work_func(struct work_struct *work)
 {
 	struct delayed_work *dwork = to_delayed_work(work);
 
+<<<<<<< HEAD
+=======
+	UNUSED_PARAMETER(dwork);
+
+>>>>>>> update/master
 //	pr_info("%s\n", __func__);
 
 	/* create ping request */

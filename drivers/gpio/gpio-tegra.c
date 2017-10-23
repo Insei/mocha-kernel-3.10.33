@@ -26,6 +26,7 @@
 #include <linux/io.h>
 #include <linux/gpio.h>
 #include <linux/of_device.h>
+#include <linux/of_gpio.h>
 #include <linux/platform_device.h>
 #include <linux/module.h>
 #include <linux/delay.h>
@@ -36,7 +37,11 @@
 #include <linux/syscore_ops.h>
 #include <linux/tegra-soc.h>
 #include <linux/irqchip/tegra.h>
+<<<<<<< HEAD
 #include <linux/tegra-pm.h>
+=======
+#include <linux/platform_data/gpio-tegra.h>
+>>>>>>> update/master
 
 #define GPIO_BANK(x)		((x) >> 5)
 #define GPIO_PORT(x)		(((x) >> 3) & 0x3)
@@ -53,6 +58,7 @@
 #define GPIO_INT_ENB(x)		(GPIO_REG(x) + 0x50)
 #define GPIO_INT_LVL(x)		(GPIO_REG(x) + 0x60)
 #define GPIO_INT_CLR(x)		(GPIO_REG(x) + 0x70)
+#define GPIO_DBC_CNT(x)		(GPIO_REG(x) + 0xF0)
 
 #define GPIO_MSK_CNF(x)		(GPIO_REG(x) + tegra_gpio_upper_offset + 0x00)
 #define GPIO_MSK_OE(x)		(GPIO_REG(x) + tegra_gpio_upper_offset + 0x10)
@@ -60,6 +66,7 @@
 #define GPIO_MSK_INT_STA(x)	(GPIO_REG(x) + tegra_gpio_upper_offset + 0x40)
 #define GPIO_MSK_INT_ENB(x)	(GPIO_REG(x) + tegra_gpio_upper_offset + 0x50)
 #define GPIO_MSK_INT_LVL(x)	(GPIO_REG(x) + tegra_gpio_upper_offset + 0x60)
+#define GPIO_MSK_DBC_EN(x)	(GPIO_REG(x) + tegra_gpio_upper_offset + 0x30)
 
 #define GPIO_INT_LVL_MASK		0x010101
 #define GPIO_INT_LVL_EDGE_RISING	0x000101
@@ -79,6 +86,8 @@ struct tegra_gpio_bank {
 	u32 int_enb[4];
 	u32 int_lvl[4];
 	u32 wake_enb[4];
+	u32 dbc_enb[4];
+	u32 dbc_cnt[4];
 	int wake_depth;
 	int wake_lp0_cap[4];
 #endif
@@ -87,6 +96,7 @@ struct tegra_gpio_bank {
 static struct irq_domain *irq_domain;
 static void __iomem *regs;
 
+static bool bypass_pinconfig;
 static u32 tegra_gpio_bank_count;
 static u32 tegra_gpio_bank_stride;
 static u32 tegra_gpio_upper_offset;
@@ -125,49 +135,42 @@ int tegra_gpio_get_bank_int_nr(int gpio)
 	irq = tegra_gpio_banks[bank].irq;
 	return irq;
 }
+EXPORT_SYMBOL(tegra_gpio_get_bank_int_nr);
+
+int tegra_gpio_is_enabled(int gpio, int *is_gpio, int *is_input)
+{
+	u32 conf, oe;
+	u32 bit = GPIO_BIT(gpio);
+
+	conf = tegra_gpio_readl(GPIO_CNF(gpio));
+	oe = tegra_gpio_readl(GPIO_OE(gpio));
+	*is_gpio = (conf & BIT(bit)) ? 1 : 0;
+	*is_input = (oe & BIT(bit)) ? 0 : 1;
+	return 0;
+}
+EXPORT_SYMBOL(tegra_gpio_is_enabled);
 
 static void tegra_gpio_enable(int gpio)
 {
 	tegra_gpio_mask_write(GPIO_MSK_CNF(gpio), gpio, 1);
 }
 
-int tegra_is_gpio(int gpio)
-{
-	return (tegra_gpio_readl(GPIO_CNF(gpio)) >> GPIO_BIT(gpio)) & 0x1;
-}
-EXPORT_SYMBOL(tegra_is_gpio);
-
-
 static void tegra_gpio_disable(int gpio)
 {
 	tegra_gpio_mask_write(GPIO_MSK_CNF(gpio), gpio, 0);
 }
 
-void tegra_gpio_init_configure(unsigned gpio, bool is_input, int value)
-{
-	if (is_input) {
-		tegra_gpio_mask_write(GPIO_MSK_OE(gpio), gpio, 0);
-	} else {
-		tegra_gpio_mask_write(GPIO_MSK_OUT(gpio), gpio, value);
-		tegra_gpio_mask_write(GPIO_MSK_OE(gpio), gpio, 1);
-	}
-	tegra_gpio_mask_write(GPIO_MSK_CNF(gpio), gpio, 1);
-}
-
 static int tegra_gpio_request(struct gpio_chip *chip, unsigned offset)
 {
-#if 0
-	return pinctrl_request_gpio(offset);
-#else
+	if (!bypass_pinconfig)
+		return pinctrl_request_gpio(chip->base + offset);
 	return 0;
-#endif
 }
 
 static void tegra_gpio_free(struct gpio_chip *chip, unsigned offset)
 {
-#if 0
-	pinctrl_free_gpio(offset);
-#endif
+	if (!bypass_pinconfig)
+		pinctrl_free_gpio(chip->base + offset);
 	tegra_gpio_disable(offset);
 }
 
@@ -188,23 +191,66 @@ static int tegra_gpio_get(struct gpio_chip *chip, unsigned offset)
 
 static int tegra_gpio_direction_input(struct gpio_chip *chip, unsigned offset)
 {
+	int ret;
+
 	tegra_gpio_mask_write(GPIO_MSK_OE(offset), offset, 0);
 	tegra_gpio_enable(offset);
+
+	if (bypass_pinconfig) {
+		pr_info("%s(): ignoring pinctrl configuration\n", __func__);
+		return 0;
+	}
+
+	ret = pinctrl_gpio_direction_input(chip->base + offset);
+	if (ret < 0)
+		dev_err(chip->dev,
+			"Tegra gpio input: pinctrl input failed: %d\n", ret);
+
 	return 0;
 }
 
 static int tegra_gpio_direction_output(struct gpio_chip *chip, unsigned offset,
 					int value)
 {
+	int ret;
+
 	tegra_gpio_set(chip, offset, value);
 	tegra_gpio_mask_write(GPIO_MSK_OE(offset), offset, 1);
 	tegra_gpio_enable(offset);
+
+	if (bypass_pinconfig) {
+		pr_info("%s(): ignoring pinctrl configuration\n", __func__);
+		return 0;
+	}
+
+	ret = pinctrl_gpio_direction_output(chip->base + offset);
+	if (ret < 0)
+		dev_err(chip->dev,
+			"Tegra gpio output: pinctrl output failed: %d\n", ret);
+
 	return 0;
 }
 
 static int tegra_gpio_set_debounce(struct gpio_chip *chip, unsigned offset,
 				unsigned debounce)
 {
+	unsigned max_dbc;
+	/* Debounce feature implemented only for
+	 * ports(I,J,K,L) in Controller 2 */
+
+	if (GPIO_BANK(offset) == 2) {
+		unsigned debounce_ms = DIV_ROUND_UP(debounce, 1000);
+
+		debounce_ms = max(debounce_ms, 255U);
+
+		max_dbc = tegra_gpio_readl(GPIO_DBC_CNT(offset));
+		max_dbc = (max_dbc < debounce_ms) ? debounce_ms : max_dbc;
+
+		tegra_gpio_mask_write(GPIO_MSK_DBC_EN(offset), offset, 1);
+		tegra_gpio_writel(max_dbc, GPIO_DBC_CNT(offset));
+		return 0;
+	}
+
 	return -ENOSYS;
 }
 
@@ -343,6 +389,7 @@ static void tegra_gpio_resume(void)
 	int b;
 	int p;
 
+	bypass_pinconfig = false;
 	local_irq_save(flags);
 
 	for (b = 0; b < tegra_gpio_bank_count; b++) {
@@ -355,6 +402,12 @@ static void tegra_gpio_resume(void)
 			tegra_gpio_writel(bank->oe[p], GPIO_OE(gpio));
 			tegra_gpio_writel(bank->int_lvl[p], GPIO_INT_LVL(gpio));
 			tegra_gpio_writel(bank->int_enb[p], GPIO_INT_ENB(gpio));
+			if (b == 2 && tegra_gpio_chip.set_debounce) {
+				tegra_gpio_writel(bank->dbc_enb[p],
+							GPIO_MSK_DBC_EN(gpio));
+				tegra_gpio_writel(bank->dbc_cnt[p],
+							GPIO_DBC_CNT(gpio));
+			}
 		}
 	}
 
@@ -379,6 +432,12 @@ static int tegra_gpio_suspend(void)
 			bank->oe[p] = tegra_gpio_readl(GPIO_OE(gpio));
 			bank->int_enb[p] = tegra_gpio_readl(GPIO_INT_ENB(gpio));
 			bank->int_lvl[p] = tegra_gpio_readl(GPIO_INT_LVL(gpio));
+			if (b == 2 && tegra_gpio_chip.set_debounce) {
+				bank->dbc_enb[p] =
+					tegra_gpio_readl(GPIO_MSK_DBC_EN(gpio));
+				bank->dbc_cnt[p] =
+					tegra_gpio_readl(GPIO_DBC_CNT(gpio));
+			}
 
 			/* disable gpio interrupts that are not wake sources */
 			wake_enb = (current_suspend_mode == TEGRA_SUSPEND_LP0) ?
@@ -389,17 +448,18 @@ static int tegra_gpio_suspend(void)
 	}
 	local_irq_restore(flags);
 
+	bypass_pinconfig = true;
+	of_gpiochip_suspend(&tegra_gpio_chip);
 	return 0;
 }
 
 static int tegra_update_lp1_gpio_wake(struct irq_data *d, bool enable, int wake)
 {
-#ifdef CONFIG_PM_SLEEP
 	struct tegra_gpio_bank *bank = irq_data_get_irq_chip_data(d);
-	u8 mask;
-	u8 port_index;
-	u8 pin_index_in_bank;
-	u8 pin_in_port;
+	u32 mask;
+	u32 port_index;
+	u32 pin_index_in_bank;
+	u32 pin_in_port;
 	int gpio = d->hwirq;
 
 	if (gpio < 0)
@@ -412,11 +472,14 @@ static int tegra_update_lp1_gpio_wake(struct irq_data *d, bool enable, int wake)
 		bank->wake_enb[port_index] |= mask;
 	else
 		bank->wake_enb[port_index] &= ~mask;
+<<<<<<< HEAD
 
 	/* Enable GPIO interrupt in Lp0 when GPIO is a Lp0 wake up source */
 	if (wake >= 0)
 		bank->wake_lp0_cap[port_index] |= mask;
 #endif
+=======
+>>>>>>> update/master
 
 	return 0;
 }
@@ -497,6 +560,7 @@ static struct irq_chip tegra_gpio_irq_chip = {
 struct tegra_gpio_soc_config {
 	u32 bank_stride;
 	u32 upper_offset;
+	bool debounce_support;
 };
 
 static struct tegra_gpio_soc_config tegra20_gpio_config = {
@@ -509,7 +573,14 @@ static struct tegra_gpio_soc_config tegra30_gpio_config = {
 	.upper_offset = 0x80,
 };
 
+static struct tegra_gpio_soc_config tegra210_gpio_config = {
+	.bank_stride = 0x100,
+	.upper_offset = 0x80,
+	.debounce_support = true,
+};
+
 static struct of_device_id tegra_gpio_of_match[] = {
+	{ .compatible = "nvidia,tegra210-gpio", .data = &tegra210_gpio_config },
 	{ .compatible = "nvidia,tegra124-gpio", .data = &tegra30_gpio_config },
 	{ .compatible = "nvidia,tegra148-gpio", .data = &tegra30_gpio_config },
 	{ .compatible = "nvidia,tegra114-gpio", .data = &tegra30_gpio_config },
@@ -556,6 +627,8 @@ static int tegra_gpio_probe(struct platform_device *pdev)
 
 	tegra_gpio_chip.dev = &pdev->dev;
 	tegra_gpio_chip.ngpio = tegra_gpio_bank_count * 32;
+	if (!config->debounce_support)
+		tegra_gpio_chip.set_debounce = NULL;
 
 	tegra_gpio_banks = devm_kzalloc(&pdev->dev,
 			tegra_gpio_bank_count * sizeof(*tegra_gpio_banks),

@@ -3,7 +3,7 @@
  *
  * Handle allocation and freeing routines for nvmap
  *
- * Copyright (c) 2009-2014, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2009-2015, NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@
 #define pr_fmt(fmt)	"%s: " fmt, __func__
 
 #include <linux/err.h>
+#include <linux/io.h>
 #include <linux/kernel.h>
 #include <linux/list.h>
 #include <linux/mm.h>
@@ -39,6 +40,7 @@
 #include "nvmap_priv.h"
 #include "nvmap_ioctl.h"
 
+<<<<<<< HEAD
 #ifdef CONFIG_NVMAP_FORCE_ZEROED_USER_PAGES
 bool zero_memory = 1;
 #else
@@ -473,6 +475,8 @@ void nvmap_free_handle_user_id(struct nvmap_client *client,
 	}
 }
 
+=======
+>>>>>>> update/master
 static void add_handle_ref(struct nvmap_client *client,
 			   struct nvmap_handle_ref *ref)
 {
@@ -522,11 +526,10 @@ struct nvmap_handle_ref *nvmap_create_handle(struct nvmap_client *client,
 	atomic_set(&h->ref, 1);
 	atomic_set(&h->pin, 0);
 	h->owner = client;
-	h->owner_ref = ref;
-	h->dev = nvmap_dev;
 	BUG_ON(!h->owner);
 	h->size = h->orig_size = size;
 	h->flags = NVMAP_HANDLE_WRITE_COMBINE;
+	h->peer = NVMAP_IVM_INVALID_PEER;
 	mutex_init(&h->lock);
 	INIT_LIST_HEAD(&h->vmas);
 	INIT_LIST_HEAD(&h->lru);
@@ -545,7 +548,7 @@ struct nvmap_handle_ref *nvmap_create_handle(struct nvmap_client *client,
 	 * Pre-attach nvmap to this new dmabuf. This gets unattached during the
 	 * dma_buf_release() operation.
 	 */
-	h->attachment = dma_buf_attach(h->dmabuf, &nvmap_pdev->dev);
+	h->attachment = dma_buf_attach(h->dmabuf, nvmap_dev->dev_user.parent);
 	if (IS_ERR(h->attachment)) {
 		err = h->attachment;
 		goto dma_buf_attach_fail;
@@ -581,17 +584,17 @@ struct nvmap_handle_ref *nvmap_duplicate_handle(struct nvmap_client *client,
 	BUG_ON(!client);
 	/* on success, the reference count for the handle should be
 	 * incremented, so the success paths will not call nvmap_handle_put */
-	h = nvmap_handle_get(h);
+	h = nvmap_validate_get(h);
 
 	if (!h) {
-		nvmap_debug(client, "%s duplicate handle failed\n",
+		pr_debug("%s duplicate handle failed\n",
 			    current->group_leader->comm);
 		return ERR_PTR(-EPERM);
 	}
 
 	if (!h->alloc) {
-		nvmap_err(client, "%s duplicating unallocated handle\n",
-			  current->group_leader->comm);
+		pr_err("%s duplicating unallocated handle\n",
+			current->group_leader->comm);
 		nvmap_handle_put(h);
 		return ERR_PTR(-EINVAL);
 	}
@@ -643,129 +646,13 @@ struct nvmap_handle_ref *nvmap_create_handle_from_fd(
 
 	BUG_ON(!client);
 
-	handle = nvmap_get_id_from_dmabuf_fd(client, fd);
+	handle = nvmap_handle_get_from_dmabuf_fd(client, fd);
 	if (IS_ERR(handle))
 		return ERR_CAST(handle);
 	ref = nvmap_duplicate_handle(client, handle, 1);
 	nvmap_handle_put(handle);
 	return ref;
 }
-
-struct nvmap_handle *nvmap_duplicate_handle_id_ex(struct nvmap_client *client,
-							struct nvmap_handle *h)
-{
-	struct nvmap_handle_ref *ref = nvmap_duplicate_handle(client, h, 0);
-
-	if (IS_ERR(ref))
-		return 0;
-
-	return __nvmap_ref_to_id(ref);
-}
-EXPORT_SYMBOL(nvmap_duplicate_handle_id_ex);
-
-int nvmap_get_page_list_info(struct nvmap_client *client,
-				struct nvmap_handle *handle, u32 *size,
-				u32 *flags, u32 *nr_page, bool *contig)
-{
-	struct nvmap_handle *h;
-
-	BUG_ON(!size || !flags || !nr_page || !contig);
-	BUG_ON(!client);
-
-	*size = 0;
-	*flags = 0;
-	*nr_page = 0;
-
-	h = nvmap_handle_get(handle);
-
-	if (!h) {
-		nvmap_err(client, "%s query invalid handle %p\n",
-			  current->group_leader->comm, handle);
-		return -EINVAL;
-	}
-
-	if (!h->alloc || !h->heap_pgalloc) {
-		nvmap_err(client, "%s query unallocated handle %p\n",
-			  current->group_leader->comm, handle);
-		nvmap_handle_put(h);
-		return -EINVAL;
-	}
-
-	*flags = h->flags;
-	*size = h->orig_size;
-	*nr_page = PAGE_ALIGN(h->size) >> PAGE_SHIFT;
-	*contig = h->pgalloc.contig;
-
-	nvmap_handle_put(h);
-	return 0;
-}
-EXPORT_SYMBOL(nvmap_get_page_list_info);
-
-int nvmap_acquire_page_list(struct nvmap_client *client,
-			struct nvmap_handle *handle, struct page **pages,
-			u32 nr_page)
-{
-	struct nvmap_handle *h;
-	struct nvmap_handle_ref *ref;
-	int idx;
-	phys_addr_t dummy;
-
-	BUG_ON(!client);
-
-	h = nvmap_handle_get(handle);
-
-	if (!h) {
-		nvmap_err(client, "%s query invalid handle %p\n",
-			  current->group_leader->comm, handle);
-		return -EINVAL;
-	}
-
-	if (!h->alloc || !h->heap_pgalloc) {
-		nvmap_err(client, "%s query unallocated handle %p\n",
-			  current->group_leader->comm, handle);
-		nvmap_handle_put(h);
-		return -EINVAL;
-	}
-
-	BUG_ON(nr_page != PAGE_ALIGN(h->size) >> PAGE_SHIFT);
-
-	for (idx = 0; idx < nr_page; idx++)
-		pages[idx] = h->pgalloc.pages[idx];
-
-	nvmap_ref_lock(client);
-	ref = __nvmap_validate_locked(client, h);
-	if (ref)
-		__nvmap_pin(ref, &dummy);
-	nvmap_ref_unlock(client);
-
-	return 0;
-}
-EXPORT_SYMBOL(nvmap_acquire_page_list);
-
-int nvmap_release_page_list(struct nvmap_client *client,
-				struct nvmap_handle *handle)
-{
-	struct nvmap_handle_ref *ref;
-	struct nvmap_handle *h = NULL;
-
-	BUG_ON(!client);
-
-	nvmap_ref_lock(client);
-
-	ref = __nvmap_validate_locked(client, handle);
-	if (ref)
-		__nvmap_unpin(ref);
-
-	nvmap_ref_unlock(client);
-
-	if (ref)
-		h = ref->handle;
-	if (h)
-		nvmap_handle_put(h);
-
-	return 0;
-}
-EXPORT_SYMBOL(nvmap_release_page_list);
 
 int __nvmap_get_handle_param(struct nvmap_client *client,
 			     struct nvmap_handle *h, u32 param, u64 *result)
@@ -789,9 +676,7 @@ int __nvmap_get_handle_param(struct nvmap_client *client,
 			mutex_lock(&h->lock);
 			*result = h->carveout->base;
 			mutex_unlock(&h->lock);
-		} else if (h->pgalloc.contig)
-			*result = page_to_phys(h->pgalloc.pages[0]);
-		else if (h->attachment->priv)
+		} else if (h->attachment->priv)
 			*result = sg_dma_address(
 				((struct sg_table *)h->attachment->priv)->sgl);
 		else

@@ -3,7 +3,7 @@
  *
  * Tegra Graphics Host Command DMA
  *
- * Copyright (c) 2010-2014, NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2010-2015, NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -21,11 +21,11 @@
 #include "nvhost_cdma.h"
 #include "nvhost_channel.h"
 #include "nvhost_job.h"
-#include "nvhost_hwctx.h"
 #include "dev.h"
 #include "debug.h"
 #include "chip_support.h"
 #include <asm/cacheflush.h>
+#include <nvhost_vm.h>
 
 #include <linux/slab.h>
 #include <linux/kfifo.h>
@@ -39,6 +39,94 @@
  *   resizable push buffer
  *     - some channels hardly need any, some channels (3d) could use more
  */
+
+/*
+ * push_buffer
+ *
+ * The push buffer is a circular array of words to be fetched by command DMA.
+ * Note that it works slightly differently to the sync queue; fence == cur
+ * means that the push buffer is full, not empty.
+ */
+
+/**
+ * Allocate pushbuffer memory
+ */
+int nvhost_push_buffer_alloc(struct push_buffer *pb)
+{
+	struct nvhost_cdma *cdma = pb_to_cdma(pb);
+	pb->mapped = NULL;
+	pb->dma_addr = 0;
+
+	pb->mapped = dma_alloc_writecombine(&cdma_to_dev(cdma)->dev->dev,
+			PUSH_BUFFER_SIZE + 4,
+			&pb->dma_addr,
+			GFP_KERNEL);
+	if (!pb->mapped) {
+		pb->mapped = NULL;
+		return -ENOMEM;
+	}
+
+	/* for now, map pushbuffer to all address spaces */
+	nvhost_vm_map_static(cdma_to_dev(cdma)->dev, pb->mapped,
+			     pb->dma_addr, PUSH_BUFFER_SIZE + 4);
+
+	return 0;
+}
+
+/**
+ * Clean up push buffer resources
+ */
+void nvhost_push_buffer_destroy(struct push_buffer *pb)
+{
+	struct nvhost_cdma *cdma = pb_to_cdma(pb);
+	if (pb->mapped)
+		dma_free_writecombine(&cdma_to_dev(cdma)->dev->dev,
+					PUSH_BUFFER_SIZE + 4,
+					pb->mapped,
+					pb->dma_addr);
+
+	pb->mapped = NULL;
+	pb->dma_addr = 0;
+}
+
+/**
+ * Push two words to the push buffer
+ * Caller must ensure push buffer is not full
+ */
+static void nvhost_push_buffer_push_to(struct push_buffer *pb,
+				u32 op1, u32 op2)
+{
+	u32 cur = pb->cur;
+	u32 *p = (u32 *)((uintptr_t)pb->mapped + cur);
+	WARN_ON(cur == pb->fence);
+	*(p++) = op1;
+	*(p++) = op2;
+	pb->cur = (cur + 8) & (PUSH_BUFFER_SIZE - 1);
+}
+
+/**
+ * Pop a number of two word slots from the push buffer
+ * Caller must ensure push buffer is not empty
+ */
+static void nvhost_push_buffer_pop_from(struct push_buffer *pb,
+		unsigned int slots)
+{
+	/* Advance the next write position */
+	pb->fence = (pb->fence + slots * 8) & (PUSH_BUFFER_SIZE - 1);
+}
+
+/**
+ * Return the number of two word slots free in the push buffer
+ */
+static u32 nvhost_push_buffer_space(struct push_buffer *pb)
+{
+	return ((pb->fence - pb->cur) & (PUSH_BUFFER_SIZE - 1)) / 8;
+}
+
+u32 nvhost_push_buffer_putptr(struct push_buffer *pb)
+{
+	return pb->dma_addr + pb->cur;
+}
 
 /**
  * Add an entry to the sync queue.
@@ -80,7 +168,7 @@ static unsigned int cdma_status_locked(struct nvhost_cdma *cdma,
 		return list_empty(&cdma->sync_queue) ? 1 : 0;
 	case CDMA_EVENT_PUSH_BUFFER_SPACE: {
 		struct push_buffer *pb = &cdma->push_buffer;
-		return cdma_pb_op().space(pb);
+		return nvhost_push_buffer_space(pb);
 	}
 	default:
 		return 0;
@@ -134,7 +222,6 @@ static void cdma_start_timer_locked(struct nvhost_cdma *cdma,
 		return;
 	}
 
-	cdma->timeout.ctx = job->hwctx;
 	cdma->timeout.clientid = job->clientid;
 	cdma->timeout.sp = job->sp;
 	cdma->timeout.num_syncpts = job->num_syncpts;
@@ -143,8 +230,14 @@ static void cdma_start_timer_locked(struct nvhost_cdma *cdma,
 	cdma->timeout.timeout = job->timeout;
 	cdma->timeout.allow_dependency = true;
 
+	/* vhost local timeout handler better run later than RM server
+	 * timeout handler
+	 */
+	if (nvhost_dev_is_virtual(cdma_to_dev(cdma)->dev))
+		cdma->timeout.timeout += 500;
+
 	schedule_delayed_work(&cdma->timeout.wq,
-			msecs_to_jiffies(job->timeout));
+			msecs_to_jiffies(cdma->timeout.timeout));
 }
 
 /**
@@ -154,10 +247,10 @@ static void cdma_start_timer_locked(struct nvhost_cdma *cdma,
 static void stop_cdma_timer_locked(struct nvhost_cdma *cdma)
 {
 	bool ret = true;
+
 	while (ret)
 		ret = cancel_delayed_work_sync(&cdma->timeout.wq);
 
-	cdma->timeout.ctx = NULL;
 	cdma->timeout.clientid = 0;
 }
 
@@ -206,13 +299,17 @@ static void update_cdma_locked(struct nvhost_cdma *cdma)
 		if (cdma->timeout.clientid)
 			stop_cdma_timer_locked(cdma);
 
+		/* Drop syncpoint references from this job */
+		for (i = 0; i < job->num_syncpts; ++i)
+			nvhost_syncpt_put_ref(sp, job->sp[i].id);
+
 		/* Unpin the memory */
 		nvhost_job_unpin(job);
 
 		/* Pop push buffer slots */
 		if (job->num_slots) {
 			struct push_buffer *pb = &cdma->push_buffer;
-			cdma_pb_op().pop_from(pb, job->num_slots);
+			nvhost_push_buffer_pop_from(pb, job->num_slots);
 			if (cdma->event == CDMA_EVENT_PUSH_BUFFER_SPACE)
 				signal = true;
 		}
@@ -246,12 +343,12 @@ static void update_cdma_locked(struct nvhost_cdma *cdma)
 }
 
 
-static void nvhost_cdma_finalize_job_incrs(struct nvhost_syncpt *syncpt,
+void nvhost_cdma_finalize_job_incrs(struct nvhost_syncpt *syncpt,
 					struct nvhost_job_syncpt *sp)
 {
 	u32 id = sp->id;
 	u32 fence = sp->fence;
-	u32 syncpt_val = nvhost_syncpt_read_min(syncpt, id);
+	u32 syncpt_val = nvhost_syncpt_update_min(syncpt, id);
 	u32 syncpt_incrs = fence - syncpt_val;
 
 	/* do CPU increments */
@@ -267,7 +364,7 @@ void nvhost_cdma_update_sync_queue(struct nvhost_cdma *cdma,
 {
 	u32 get_restart;
 	struct nvhost_job *job = NULL;
-	int nb_pts = nvhost_syncpt_nb_pts(syncpt);
+	int nb_pts = nvhost_syncpt_nb_hw_pts(syncpt);
 	DECLARE_BITMAP(syncpt_used, nb_pts);
 
 	bitmap_zero(syncpt_used, nb_pts);
@@ -286,7 +383,7 @@ void nvhost_cdma_update_sync_queue(struct nvhost_cdma *cdma,
 	list_for_each_entry(job, &cdma->sync_queue, list) {
 		int i;
 		for (i = 0; i < job->num_syncpts; ++i) {
-			u32 id = cdma->timeout.sp[i].id;
+			u32 id = job->sp[i].id;
 
 			if (!test_bit(id, syncpt_used))
 				nvhost_syncpt_update_min(syncpt, id);
@@ -337,14 +434,11 @@ out:
 		/* won't need a timeout when replayed */
 		job->timeout = 0;
 
-		for (i = 0; i < job->num_syncpts; ++i) {
-			nvhost_cdma_finalize_job_incrs(syncpt, job->sp + i);
+		/* set notifier to userspace about submit timeout */
+		nvhost_job_set_notifier(job, NVHOST_CHANNEL_SUBMIT_TIMEOUT);
 
-			if (job->sp[i].waitbase != NVSYNCPT_INVALID)
-				nvhost_syncpt_cpu_set_wait_base(dev,
-					job->sp[i].waitbase,
-					job->sp[i].fence);
-		}
+		for (i = 0; i < job->num_syncpts; ++i)
+			nvhost_cdma_finalize_job_incrs(syncpt, job->sp + i);
 
 		/* cleanup push buffer */
 		cdma_op().timeout_pb_cleanup(cdma, job->first_get,
@@ -360,15 +454,13 @@ out:
 
 	/* roll back DMAGET and start up channel again */
 	cdma_op().timeout_teardown_end(cdma, get_restart);
-
-	if (cdma->timeout.ctx)
-		cdma->timeout.ctx->has_timedout = true;
 }
 
 /**
  * Create a cdma
  */
-int nvhost_cdma_init(struct nvhost_cdma *cdma)
+int nvhost_cdma_init(struct platform_device *pdev,
+		     struct nvhost_cdma *cdma)
 {
 	int err;
 	struct push_buffer *pb = &cdma->push_buffer;
@@ -380,6 +472,7 @@ int nvhost_cdma_init(struct nvhost_cdma *cdma)
 	cdma->event = CDMA_EVENT_NONE;
 	cdma->running = false;
 	cdma->torndown = false;
+	cdma->pdev = pdev;
 
 	err = cdma_pb_op().init(pb);
 	if (err)
@@ -395,7 +488,7 @@ void nvhost_cdma_deinit(struct nvhost_cdma *cdma)
 	struct push_buffer *pb = &cdma->push_buffer;
 
 	WARN_ON(cdma->running);
-	cdma_pb_op().destroy(pb);
+	nvhost_push_buffer_destroy(pb);
 	cdma_op().timeout_destroy(cdma);
 }
 
@@ -423,7 +516,7 @@ int nvhost_cdma_begin(struct nvhost_cdma *cdma, struct nvhost_job *job)
 	}
 	cdma->slots_free = 0;
 	cdma->slots_used = 0;
-	cdma->first_get = cdma_pb_op().putptr(&cdma->push_buffer);
+	cdma->first_get = nvhost_push_buffer_putptr(&cdma->push_buffer);
 	return 0;
 }
 
@@ -476,13 +569,12 @@ void nvhost_cdma_push_gather(struct nvhost_cdma *cdma,
 		trace_write_gather(cdma, cpuva, iova, offset, op1 & 0x1fff);
 
 	if (slots_free == 0) {
-		cdma_op().kick(cdma);
 		slots_free = nvhost_cdma_wait_locked(cdma,
 				CDMA_EVENT_PUSH_BUFFER_SPACE);
 	}
 	cdma->slots_free = slots_free - 1;
 	cdma->slots_used++;
-	cdma_pb_op().push_to(pb, op1, op2);
+	nvhost_push_buffer_push_to(pb, op1, op2);
 }
 
 /**
@@ -496,12 +588,12 @@ void nvhost_cdma_end(struct nvhost_cdma *cdma,
 {
 	bool was_idle = list_empty(&cdma->sync_queue);
 
-	cdma_op().kick(cdma);
-
 	add_to_sync_queue(cdma,
 			job,
 			cdma->slots_used,
 			cdma->first_get);
+
+	cdma_op().kick(cdma);
 
 	/* start timer on idle -> active transitions */
 	if (job->timeout && was_idle)

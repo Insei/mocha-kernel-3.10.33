@@ -2,7 +2,7 @@
  * tegra_alt_asoc_utils.h - Definitions for MCLK and DAP Utility driver
  *
  * Author: Stephen Warren <swarren@nvidia.com>
- * Copyright (c) 2011-2013 NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2016 NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -23,6 +23,10 @@
 #ifndef __TEGRA_ASOC_UTILS_ALT_H__
 #define __TEGRA_ASOC_UTILS_ALT_H_
 
+#ifdef CONFIG_SWITCH
+#include <linux/switch.h>
+#endif
+
 struct clk;
 struct device;
 
@@ -32,6 +36,14 @@ enum tegra_asoc_utils_soc {
 	TEGRA_ASOC_UTILS_SOC_TEGRA114,
 	TEGRA_ASOC_UTILS_SOC_TEGRA148,
 	TEGRA_ASOC_UTILS_SOC_TEGRA124,
+	TEGRA_ASOC_UTILS_SOC_TEGRA210,
+};
+
+/* These values are copied from WiredAccessoryObserver */
+enum headset_state {
+	BIT_NO_HEADSET = 0,
+	BIT_HEADSET = (1 << 0),
+	BIT_HEADSET_NO_MIC = (1 << 1),
 };
 
 struct tegra_asoc_audio_clock_info {
@@ -39,18 +51,16 @@ struct tegra_asoc_audio_clock_info {
 	struct snd_soc_card *card;
 	enum tegra_asoc_utils_soc soc;
 	struct clk *clk_pll_a;
-	int clk_pll_a_state;
 	struct clk *clk_pll_a_out0;
-	int clk_pll_a_out0_state;
 	struct clk *clk_cdev1;
 	int clk_cdev1_state;
 	struct clk *clk_out1;
 	struct clk *clk_m;
-	int clk_m_state;
 	struct clk *clk_pll_p_out1;
 	int set_mclk;
 	int lock_count;
 	int set_baseclock;
+	int set_clk_out_rate;
 };
 
 int tegra_alt_asoc_utils_set_rate(struct tegra_asoc_audio_clock_info *data,
@@ -64,6 +74,8 @@ int tegra_alt_asoc_utils_init(struct tegra_asoc_audio_clock_info *data,
 				struct device *dev, struct snd_soc_card *card);
 void tegra_alt_asoc_utils_fini(struct tegra_asoc_audio_clock_info *data);
 
+int tegra_alt_asoc_utils_set_extern_parent(
+	struct tegra_asoc_audio_clock_info *data, const char *parent);
 int tegra_alt_asoc_utils_set_parent(struct tegra_asoc_audio_clock_info *data,
 				int is_i2s_master);
 int tegra_alt_asoc_utils_clk_enable(struct tegra_asoc_audio_clock_info *data);
@@ -71,5 +83,10 @@ int tegra_alt_asoc_utils_clk_disable(struct tegra_asoc_audio_clock_info *data);
 int tegra_alt_asoc_utils_register_ctls(struct tegra_asoc_audio_clock_info *data);
 
 int tegra_alt_asoc_utils_tristate_dap(int id, bool tristate);
+
+#ifdef CONFIG_SWITCH
+int tegra_alt_asoc_switch_register(struct switch_dev *sdev);
+void tegra_alt_asoc_switch_unregister(struct switch_dev *sdev);
+#endif
 
 #endif

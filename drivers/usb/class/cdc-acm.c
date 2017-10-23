@@ -205,6 +205,7 @@ static int acm_start_wb(struct acm *acm, struct acm_wb *wb)
 	wb->urb->transfer_dma = wb->dmah;
 	wb->urb->transfer_buffer_length = wb->len;
 	wb->urb->dev = acm->dev;
+
 	rc = usb_submit_urb(wb->urb, GFP_ATOMIC);
 	if (rc < 0) {
 		dev_err(&acm->data->dev,
@@ -220,9 +221,6 @@ static int acm_write_start(struct acm *acm, int wbn)
 	unsigned long flags;
 	struct acm_wb *wb = &acm->wb[wbn];
 	int rc;
-#ifdef CONFIG_PM
-	struct urb *res;
-#endif
 
 	spin_lock_irqsave(&acm->write_lock, flags);
 	if (!acm->dev) {
@@ -235,6 +233,7 @@ static int acm_write_start(struct acm *acm, int wbn)
 							acm->susp_count);
 	usb_autopm_get_interface_async(acm->control);
 	if (acm->susp_count) {
+<<<<<<< HEAD
 #ifdef CONFIG_PM
 		acm->transmitting++;
 		wb->urb->transfer_buffer = wb->buf;
@@ -248,24 +247,14 @@ static int acm_write_start(struct acm *acm, int wbn)
 		else
 			usb_autopm_put_interface_async(acm->control);
 #endif
+=======
+		usb_anchor_urb(wb->urb, &acm->delayed);
+>>>>>>> update/master
 		spin_unlock_irqrestore(&acm->write_lock, flags);
 		return 0;	/* A white lie */
 	}
 	usb_mark_last_busy(acm->dev);
-#ifdef CONFIG_PM
-	while ((res = usb_get_from_anchor(&acm->deferred))) {
-		/* decrement ref count*/
-		usb_put_urb(res);
-		rc = usb_submit_urb(res, GFP_ATOMIC);
-		if (rc < 0) {
-			dev_dbg(&acm->data->dev,
-				"usb_submit_urb(pending request) failed: %d",
-				rc);
-			usb_unanchor_urb(res);
-			acm_write_done(acm, res->context);
-		}
-	}
-#endif
+
 	rc = acm_start_wb(acm, wb);
 	spin_unlock_irqrestore(&acm->write_lock, flags);
 
@@ -1144,10 +1133,11 @@ next_desc:
 	} else {
 		control_interface = usb_ifnum_to_if(usb_dev, union_header->bMasterInterface0);
 		data_interface = usb_ifnum_to_if(usb_dev, (data_interface_num = union_header->bSlaveInterface0));
-		if (!control_interface || !data_interface) {
-			dev_dbg(&intf->dev, "no interfaces\n");
-			return -ENODEV;
-		}
+	}
+
+	if (!control_interface || !data_interface) {
+		dev_dbg(&intf->dev, "no interfaces\n");
+		return -ENODEV;
 	}
 
 	if (data_interface_num != call_interface_num)
@@ -1264,7 +1254,6 @@ made_compressed_probe:
 	INIT_LIST_HEAD(&acm->rb_head);
 	acm->rx_buflimit = num_rx_buf;
 	INIT_WORK(&acm->work, acm_softint);
-	init_usb_anchor(&acm->deferred);
 	spin_lock_init(&acm->write_lock);
 	spin_lock_init(&acm->read_lock);
 	mutex_init(&acm->mutex);
@@ -1418,6 +1407,9 @@ skip_countries:
 		goto alloc_fail8;
 	}
 
+	if (quirks & DISABLE_AUTOSUSPEND)
+		usb_disable_autosuspend(usb_dev);
+
 	return 0;
 alloc_fail8:
 	if (acm->country_codes) {
@@ -1425,6 +1417,7 @@ alloc_fail8:
 				&dev_attr_wCountryCodes);
 		device_remove_file(&acm->control->dev,
 				&dev_attr_iCountryCodeRelDate);
+		kfree(acm->country_codes);
 	}
 	device_remove_file(&acm->control->dev, &dev_attr_bmCapabilities);
 alloc_fail7:
@@ -1472,7 +1465,6 @@ static void acm_disconnect(struct usb_interface *intf)
 	struct acm *acm = usb_get_intfdata(intf);
 	struct usb_device *usb_dev = interface_to_usbdev(intf);
 	struct tty_struct *tty;
-	struct urb *res;
 	int i;
 
 	dev_dbg(&intf->dev, "%s\n", __func__);
@@ -1504,9 +1496,6 @@ static void acm_disconnect(struct usb_interface *intf)
 
 	tty_unregister_device(acm_tty_driver, acm->minor);
 
-	/* decrement ref count of anchored urbs */
-	while ((res = usb_get_from_anchor(&acm->deferred)))
-		usb_put_urb(res);
 	usb_free_urb(acm->ctrlurb);
 	for (i = 0; i < ACM_NW; i++)
 		usb_free_urb(acm->wb[i].urb);
@@ -1534,6 +1523,11 @@ static int acm_suspend(struct usb_interface *intf, pm_message_t message)
 		return -ENODEV;
 	}
 
+<<<<<<< HEAD
+=======
+	spin_lock_irq(&acm->read_lock);
+	spin_lock(&acm->write_lock);
+>>>>>>> update/master
 	if (PMSG_IS_AUTO(message)) {
 		int b;
 
@@ -1562,13 +1556,11 @@ static int acm_suspend(struct usb_interface *intf, pm_message_t message)
 static int acm_resume(struct usb_interface *intf)
 {
 	struct acm *acm = usb_get_intfdata(intf);
+<<<<<<< HEAD
+=======
+	struct urb *urb;
+>>>>>>> update/master
 	int rv = 0;
-	int cnt;
-#ifdef CONFIG_PM
-	struct urb *res;
-#else
-	struct acm_wb *wb;
-#endif
 
 	if (!acm) {
 		pr_err("%s: !acm\n", __func__);
@@ -1576,6 +1568,7 @@ static int acm_resume(struct usb_interface *intf)
 	}
 
 	spin_lock_irq(&acm->read_lock);
+<<<<<<< HEAD
 	if (acm->susp_count > 0) {
 		acm->susp_count -= 1;
 		cnt = acm->susp_count;
@@ -1584,11 +1577,17 @@ static int acm_resume(struct usb_interface *intf)
 		return 0;
 	}
 	spin_unlock_irq(&acm->read_lock);
+=======
+	spin_lock(&acm->write_lock);
+	if (acm->susp_count <= 0)
+		goto out;
+>>>>>>> update/master
 
 	if (cnt)
 		return 0;
 
 	if (test_bit(ASYNCB_INITIALIZED, &acm->port.flags)) {
+<<<<<<< HEAD
 		rv = usb_submit_urb(acm->ctrlurb, GFP_NOIO);
 		spin_lock_irq(&acm->write_lock);
 #ifdef CONFIG_PM
@@ -1613,8 +1612,17 @@ static int acm_resume(struct usb_interface *intf)
 			acm_start_wb(acm, wb);
 		} else {
 			spin_unlock_irq(&acm->write_lock);
+=======
+		rv = usb_submit_urb(acm->ctrlurb, GFP_ATOMIC);
+
+		for (;;) {
+			urb = usb_get_from_anchor(&acm->delayed);
+			if (!urb)
+				break;
+
+			acm_start_wb(acm, urb->context);
+>>>>>>> update/master
 		}
-#endif
 
 		/*
 		 * delayed error checking because we must
@@ -1745,6 +1753,12 @@ static const struct usb_device_id acm_ids[] = {
 	{ USB_DEVICE(0x1519, 0x0020),
 	.driver_info = NO_UNION_NORMAL | NO_HANGUP_IN_RESET_RESUME, /* has no union descriptor */
 	},
+	{ USB_DEVICE(0x10C4, 0x0003), /* Silicon Labs CDC Serial Port */
+	.driver_info = DISABLE_AUTOSUSPEND, /* does not support autosuspend */
+	},
+	{ USB_DEVICE(0x2EB1, 0x0100), /* SmartThings Link V1 CDC Serial Port */
+	.driver_info = DISABLE_AUTOSUSPEND, /* does not support autosuspend */
+	},
 
 	/* Nokia S60 phones expose two ACM channels. The first is
 	 * a modem and is picked up by the standard AT-command
@@ -1834,7 +1848,7 @@ static const struct usb_device_id acm_ids[] = {
 	},
 #endif
 
-	/* Exclude XMM6260 boot rom (not running modem software yet) */
+	/* Exclude Infineon Flash Loader utility */
 	{ USB_DEVICE(0x058b, 0x0041),
 	.driver_info = IGNORE_DEVICE,
 	},

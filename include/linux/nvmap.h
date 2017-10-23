@@ -3,7 +3,7 @@
  *
  * structure declarations for nvmem and nvmap user-space ioctls
  *
- * Copyright (c) 2009-2014, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2009-2016, NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,9 +21,10 @@
  */
 
 #include <linux/ioctl.h>
-#include <linux/file.h>
-#include <linux/rbtree.h>
+#include <linux/types.h>
 #if defined(__KERNEL__)
+#include <linux/rbtree.h>
+#include <linux/file.h>
 #include <linux/dma-buf.h>
 #include <linux/device.h>
 #endif
@@ -37,6 +38,7 @@
 #define NVMAP_HEAP_CARVEOUT_IRAM    (1ul<<29)
 #define NVMAP_HEAP_CARVEOUT_VPR     (1ul<<28)
 #define NVMAP_HEAP_CARVEOUT_TSEC    (1ul<<27)
+#define NVMAP_HEAP_CARVEOUT_IVM     (1ul<<1)
 #define NVMAP_HEAP_CARVEOUT_GENERIC (1ul<<0)
 
 #define NVMAP_HEAP_CARVEOUT_MASK    (NVMAP_HEAP_IOVMM - 1)
@@ -54,22 +56,12 @@
 #define NVMAP_HANDLE_ZEROED_PAGES    (0x1ul << 5)
 #define NVMAP_HANDLE_PHYS_CONTIG     (0x1ul << 6)
 #define NVMAP_HANDLE_CACHE_SYNC      (0x1ul << 7)
+<<<<<<< HEAD
+=======
+#define NVMAP_HANDLE_CACHE_SYNC_AT_RESERVE      (0x1ul << 8)
+>>>>>>> update/master
 
 #if defined(__KERNEL__)
-
-struct nvmap_handle;
-struct nvmap_handle_ref;
-
-struct nvmap_client;
-struct nvmap_device;
-
-struct dma_buf *nvmap_alloc_dmabuf(size_t size, size_t align,
-				   unsigned int flags,
-				   unsigned int heap_mask);
-
-struct sg_table *nvmap_dmabuf_sg_table(struct dma_buf *dmabuf);
-
-void nvmap_dmabuf_free_sg_table(struct dma_buf *dmabuf, struct sg_table *sgt);
 
 int nvmap_get_dmabuf_param(struct dma_buf *dmabuf, u32 param, u64 *result);
 
@@ -89,19 +81,27 @@ struct nvmap_platform_carveout {
 	unsigned int usage_mask;
 	phys_addr_t base;
 	size_t size;
-	size_t buddy_size;
 	struct device *cma_dev;
-	size_t cma_chunk_size;
 	bool resize;
 	struct device *dma_dev;
+<<<<<<< HEAD
+=======
+	struct device dev;
+	struct dma_declare_info *dma_info;
+	bool is_ivm;
+	int peer;
+	int vmid;
+	int can_alloc;
+	bool enable_static_dma_map;
+	bool disable_dynamic_dma_map;
+	bool init_done;	/* FIXME: remove once all caveouts use reserved-memory */
+>>>>>>> update/master
 };
 
 struct nvmap_platform_data {
 	const struct nvmap_platform_carveout *carveouts;
 	unsigned int nr_carveouts;
 };
-
-extern struct nvmap_device *nvmap_dev;
 
 #endif /* __KERNEL__ */
 
@@ -129,7 +129,13 @@ enum {
 
 enum {
 	NVMAP_PAGES_UNRESERVE = 0,
+<<<<<<< HEAD
 	NVMAP_PAGES_RESERVE
+=======
+	NVMAP_PAGES_RESERVE,
+	NVMAP_INSERT_PAGES_ON_UNRESERVE,
+	NVMAP_PAGES_PROT_AND_CLEAN,
+>>>>>>> update/master
 };
 
 struct nvmap_create_handle {
@@ -148,6 +154,15 @@ struct nvmap_alloc_handle {
 	__u32 align;		/* min alignment necessary */
 };
 
+struct nvmap_alloc_ivm_handle {
+	__u32 handle;		/* nvmap handle */
+	__u32 heap_mask;	/* heaps to allocate from */
+	__u32 flags;		/* wb/wc/uc/iwb etc. */
+	__u32 align;		/* min alignment necessary */
+	__u32 peer;		/* peer with whom handle must be shared. Used
+				 *  only for NVMAP_HEAP_CARVEOUT_IVM
+				 */
+};
 
 struct nvmap_alloc_kind_handle {
 	__u32 handle;		/* nvmap handle */
@@ -250,6 +265,21 @@ struct nvmap_cache_op_list {
 				 * regions within each handle */
 	__u32 nr;		/* Number of handles */
 	__s32 op;		/* wb/wb_inv/inv */
+<<<<<<< HEAD
+=======
+};
+
+struct nvmap_debugfs_handles_header {
+	__u8 version;
+};
+
+struct nvmap_debugfs_handles_entry {
+	__u64 base;
+	__u64 size;
+	__u32 flags;
+	__u32 share_count;
+	__u64 mapped_size;
+>>>>>>> update/master
 };
 
 #define NVMAP_IOC_MAGIC 'N'
@@ -324,10 +354,24 @@ struct nvmap_cache_op_list {
 /* Perform reserve operation on a list of handles. */
 #define NVMAP_IOC_RESERVE _IOW(NVMAP_IOC_MAGIC, 18,	\
 				  struct nvmap_cache_op_list)
+<<<<<<< HEAD
+=======
+
+#define NVMAP_IOC_FROM_IVC_ID _IOWR(NVMAP_IOC_MAGIC, 19, struct nvmap_create_handle)
+#define NVMAP_IOC_GET_IVC_ID _IOWR(NVMAP_IOC_MAGIC, 20, struct nvmap_create_handle)
+#define NVMAP_IOC_GET_IVM_HEAPS _IOR(NVMAP_IOC_MAGIC, 21, unsigned int)
+
+>>>>>>> update/master
 /* START of T124 IOCTLS */
 /* Actually allocates memory for the specified handle, with kind */
 #define NVMAP_IOC_ALLOC_KIND _IOW(NVMAP_IOC_MAGIC, 100, struct nvmap_alloc_kind_handle)
 
-#define NVMAP_IOC_MAXNR (_IOC_NR(NVMAP_IOC_ALLOC_KIND))
+/* Actually allocates memory from IVM heaps */
+#define NVMAP_IOC_ALLOC_IVM _IOW(NVMAP_IOC_MAGIC, 101, struct nvmap_alloc_ivm_handle)
+
+/* Allocate seperate memory for VPR */
+#define NVMAP_IOC_VPR_FLOOR_SIZE _IOW(NVMAP_IOC_MAGIC, 102, __u32)
+
+#define NVMAP_IOC_MAXNR (_IOC_NR(NVMAP_IOC_VPR_FLOOR_SIZE))
 
 #endif /* _LINUX_NVMAP_H */

@@ -99,6 +99,7 @@ config SATA_AHCI_PLATFORM
 
 config SATA_AHCI_TEGRA
 	tristate "TEGRA AHCI SATA support"
+	select ARCH_TEGRA_HAS_SATA
 	help
 	  This option enables support for TEGRA AHCI Serial ATA.
 
@@ -112,6 +113,14 @@ config TEGRA_SATA_IDLE_POWERGATE
 	  This option should not be enabled if sata clocks are in dvfs_table.
 
 	  If unsure, say N.
+
+config TEGRA_AHCI_CONTEXT_RESTORE
+       bool "TEGRA Context save and Restore"
+       depends on TEGRA_SATA_IDLE_POWERGATE
+       default n
+       help
+         This option enables saving context and restoring it back during
+         ELPG Entry and ELPG exit.
 
 config SATA_FSL
 	tristate "Freescale 3.0Gbps SATA support"

@@ -1,7 +1,7 @@
 /*
  * pwm_fan.c fan driver that is controlled by pwm
  *
- * Copyright (c) 2013-2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2017, NVIDIA CORPORATION.  All rights reserved.
  *
  * Author: Anshul Jain <anshulj@nvidia.com>
  *
@@ -23,11 +23,10 @@
 #include <linux/platform_data/pwm_fan.h>
 #include <linux/thermal.h>
 #include <linux/mutex.h>
-#include <linux/debugfs.h>
+#include <linux/spinlock.h>
 #include <linux/platform_device.h>
 #include <linux/delay.h>
 #include <linux/module.h>
-#include <linux/debugfs.h>
 #include <linux/uaccess.h>
 #include <linux/seq_file.h>
 #include <linux/pwm.h>
@@ -35,6 +34,12 @@
 #include <linux/sysfs.h>
 #include <linux/gpio.h>
 #include <linux/interrupt.h>
+#include <linux/kernel.h>
+#include <linux/gfp.h>
+#include <linux/of_device.h>
+#include <linux/of.h>
+#include <linux/regulator/consumer.h>
+#include <linux/time.h>
 
 struct fan_dev_data {
 	int next_state;
@@ -64,11 +69,22 @@ struct fan_dev_data {
 	int fan_state_cap;
 	int pwm_gpio;
 	int pwm_id;
+	const char *name;
+	struct regulator *fan_reg;
+	bool is_fan_reg_enabled;
+	/* for tach feedback */
+	int rpm_measured;
+	struct delayed_work fan_tach_work;
+	struct workqueue_struct *tach_workqueue;
+	int tach_period;
 };
 
-#ifdef CONFIG_DEBUG_FS
-static struct dentry *fan_debugfs_root;
+static spinlock_t irq_lock;
+static int irq_count;
+static struct timeval first_irq;
+static struct timeval last_irq;
 
+<<<<<<< HEAD
 static void fan_update_target_pwm(struct fan_dev_data *fan_data, int val)
 {
 	if (!fan_data)
@@ -83,24 +99,68 @@ static void fan_update_target_pwm(struct fan_dev_data *fan_data, int val)
 }
 
 static int fan_target_pwm_show(void *data, u64 *val)
+=======
+
+
+
+static void fan_update_target_pwm(struct fan_dev_data *fan_data, int val)
 {
-	struct fan_dev_data *fan_data = (struct fan_dev_data *)data;
+	if (fan_data) {
+		fan_data->next_target_pwm = min(val, fan_data->fan_cap_pwm);
+
+		if (fan_data->next_target_pwm != fan_data->fan_cur_pwm) {
+			if (!cancel_delayed_work(&fan_data->fan_ramp_work)) {
+				/* if zero is returned, entry could already
+				 * started on a different processor.
+				 * Therefore, flush workqueue to be
+				 * certain of canceling the work. */
+				mutex_unlock(&fan_data->fan_state_lock);
+				flush_workqueue(fan_data->workqueue);
+				mutex_lock(&fan_data->fan_state_lock);
+			}
+			queue_delayed_work(fan_data->workqueue,
+					&fan_data->fan_ramp_work,
+					msecs_to_jiffies(fan_data->step_time));
+		}
+	}
+}
+
+static ssize_t fan_target_pwm_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
+>>>>>>> update/master
+{
+	struct fan_dev_data *fan_data = dev_get_drvdata(dev);
+	int ret;
 
 	if (!fan_data)
 		return -EINVAL;
 	mutex_lock(&fan_data->fan_state_lock);
+<<<<<<< HEAD
 	*val = ((struct fan_dev_data *)data)->next_target_pwm;
+=======
+	ret = sprintf(buf, "%d\n", fan_data->next_target_pwm);
+>>>>>>> update/master
 	mutex_unlock(&fan_data->fan_state_lock);
-	return 0;
+
+	return ret;
 }
 
-static int fan_target_pwm_set(void *data, u64 val)
+static ssize_t fan_target_pwm_store(struct device *dev,
+			struct device_attribute *attr, const char *buf,
+			size_t count)
 {
+<<<<<<< HEAD
 	struct fan_dev_data *fan_data = (struct fan_dev_data *)data;
 	int target_pwm;
+=======
+	struct fan_dev_data *fan_data = dev_get_drvdata(dev);
+	int ret, target_pwm = -1;
+>>>>>>> update/master
 
-	if (!fan_data)
+	ret = sscanf(buf, "%d", &target_pwm);
+	if ((ret <= 0) || (!fan_data) || (target_pwm < 0))
 		return -EINVAL;
+<<<<<<< HEAD
 
 	if (val >= fan_data->fan_pwm_max)
 		val = fan_data->fan_pwm_max - 1;
@@ -111,233 +171,249 @@ static int fan_target_pwm_set(void *data, u64 val)
 	mutex_unlock(&fan_data->fan_state_lock);
 
 	return 0;
+=======
+	mutex_lock(&fan_data->fan_state_lock);
+	if (target_pwm > fan_data->fan_cap_pwm)
+		target_pwm = fan_data->fan_cap_pwm;
+	fan_update_target_pwm(fan_data, target_pwm);
+	mutex_unlock(&fan_data->fan_state_lock);
+
+	return count;
+>>>>>>> update/master
 }
 
-static int fan_temp_control_show(void *data, u64 *val)
+static ssize_t fan_temp_control_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
 {
-	struct fan_dev_data *fan_data = (struct fan_dev_data *)data;
+	struct fan_dev_data *fan_data = dev_get_drvdata(dev);
+	int ret;
 
 	if (!fan_data)
 		return -EINVAL;
 	mutex_lock(&fan_data->fan_state_lock);
-	*val = fan_data->fan_temp_control_flag;
+	ret = sprintf(buf, "%d\n", fan_data->fan_temp_control_flag);
 	mutex_unlock(&fan_data->fan_state_lock);
-	return 0;
+
+	return ret;
 }
 
-static int fan_temp_control_set(void *data, u64 val)
+static ssize_t fan_temp_control_store(struct device *dev,
+			struct device_attribute *attr, const char *buf,
+			size_t count)
 {
-	struct fan_dev_data *fan_data = (struct fan_dev_data *)data;
+	struct fan_dev_data *fan_data = dev_get_drvdata(dev);
+	int ret, fan_temp_control_flag = 0;
 
-	if (!fan_data)
+	ret = sscanf(buf, "%d", &fan_temp_control_flag);
+	if ((ret <= 0) || (!fan_data))
 		return -EINVAL;
-
 	mutex_lock(&fan_data->fan_state_lock);
-	fan_data->fan_temp_control_flag = val > 0 ? 1 : 0;
+	fan_data->fan_temp_control_flag = (fan_temp_control_flag > 0) ? 1 : 0;
 	mutex_unlock(&fan_data->fan_state_lock);
-	return 0;
+
+	return count;
 }
 
-static int fan_tach_enabled_show(void *data, u64 *val)
+static ssize_t fan_tach_enabled_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
 {
-	struct fan_dev_data *fan_data = (struct fan_dev_data *)data;
+	struct fan_dev_data *fan_data = dev_get_drvdata(dev);
+	int ret;
 
 	if (!fan_data)
 		return -EINVAL;
+	mutex_lock(&fan_data->fan_state_lock);
+	ret = sprintf(buf, "%d\n", fan_data->tach_enabled);
+	mutex_unlock(&fan_data->fan_state_lock);
 
-	*val = fan_data->tach_enabled;
-
-	return 0;
+	return ret;
 }
 
-static int fan_tach_enabled_set(void *data, u64 val)
+static ssize_t fan_tach_enabled_store(struct device *dev,
+			struct device_attribute *attr, const char *buf,
+			size_t count)
 {
-	struct fan_dev_data *fan_data = (struct fan_dev_data *)data;
+	struct fan_dev_data *fan_data = dev_get_drvdata(dev);
+	int ret, tach_enabled = 0;
 
-	if (!fan_data)
+	ret = sscanf(buf, "%d", &tach_enabled);
+	if ((ret <= 0) || (!fan_data))
 		return -EINVAL;
-	if (fan_data->tach_gpio < 0)
+	mutex_lock(&fan_data->fan_state_lock);
+	if (fan_data->tach_gpio < 0) {
+		mutex_unlock(&fan_data->fan_state_lock);
 		return -EPERM;
-
-	if (val == 1 && !fan_data->tach_enabled) {
-		enable_irq(fan_data->tach_irq);
-		fan_data->tach_enabled = val;
-	} else if (val == 0 && fan_data->tach_enabled &&
-				fan_data->tach_gpio != -1) {
-		disable_irq(fan_data->tach_irq);
-		fan_data->tach_enabled = val;
 	}
+	if ((tach_enabled == 1) && (!fan_data->tach_enabled)) {
+		mutex_unlock(&fan_data->fan_state_lock);
+		enable_irq(fan_data->tach_irq);
+		mutex_lock(&fan_data->fan_state_lock);
+		fan_data->tach_enabled = tach_enabled;
+	} else if ((tach_enabled == 0) && (fan_data->tach_enabled) &&
+			(fan_data->tach_gpio != -1)) {
+		mutex_unlock(&fan_data->fan_state_lock);
+		disable_irq(fan_data->tach_irq);
+		mutex_lock(&fan_data->fan_state_lock);
+		fan_data->tach_enabled = tach_enabled;
+	}
+	mutex_unlock(&fan_data->fan_state_lock);
 
-	return 0;
+	return count;
 }
 
-static int fan_cap_pwm_set(void *data, u64 val)
+static ssize_t fan_pwm_cap_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
 {
+<<<<<<< HEAD
 	struct fan_dev_data *fan_data = (struct fan_dev_data *)data;
 	int target_pwm;
+=======
+	struct fan_dev_data *fan_data = dev_get_drvdata(dev);
+	int val, ret, target_pwm;
+>>>>>>> update/master
 
-	if (!fan_data)
+	ret = sscanf(buf, "%d", &val);
+
+	if ((ret <= 0) || (!fan_data))
 		return -EINVAL;
+	if (val < 0)
+		val = 0;
 
+<<<<<<< HEAD
 	if (val >= fan_data->fan_pwm_max)
 		val = fan_data->fan_pwm_max - 1;
 	mutex_lock(&fan_data->fan_state_lock);
 	fan_data->fan_cap_pwm = (int)val;
+=======
+	mutex_lock(&fan_data->fan_state_lock);
+	if (val > fan_data->fan_pwm_max)
+		val = fan_data->fan_pwm_max;
+	fan_data->fan_cap_pwm = val;
+>>>>>>> update/master
 	target_pwm = min(fan_data->fan_cap_pwm, fan_data->next_target_pwm);
 	fan_update_target_pwm(fan_data, target_pwm);
 	mutex_unlock(&fan_data->fan_state_lock);
-	return 0;
+
+	return count;
 }
 
-static int fan_cap_pwm_show(void *data, u64 *val)
+static ssize_t fan_pwm_cap_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
 {
-	struct fan_dev_data *fan_data = (struct fan_dev_data *)data;
+	struct fan_dev_data *fan_data = dev_get_drvdata(dev);
+	int ret;
 
 	if (!fan_data)
 		return -EINVAL;
 	mutex_lock(&fan_data->fan_state_lock);
+<<<<<<< HEAD
 	*val = fan_data->fan_cap_pwm;
+=======
+	ret = sprintf(buf, "%d\n", fan_data->fan_cap_pwm);
+>>>>>>> update/master
 	mutex_unlock(&fan_data->fan_state_lock);
-	return 0;
+
+	return ret;
 }
 
-static int fan_step_time_set(void *data, u64 val)
+static ssize_t fan_step_time_store(struct device *dev,
+			struct device_attribute *attr, const char *buf,
+			size_t count)
 {
-	struct fan_dev_data *fan_data = (struct fan_dev_data *)data;
+	struct fan_dev_data *fan_data = dev_get_drvdata(dev);
+	int ret, step_time = 0;
+
+	ret = sscanf(buf, "%d", &step_time);
+	if ((ret <= 0) || (!fan_data))
+		return -EINVAL;
+	mutex_lock(&fan_data->fan_state_lock);
+	fan_data->step_time = step_time;
+	mutex_unlock(&fan_data->fan_state_lock);
+
+	return count;
+}
+
+static ssize_t fan_cur_pwm_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
+{
+	struct fan_dev_data *fan_data = dev_get_drvdata(dev);
+	int ret;
 
 	if (!fan_data)
 		return -EINVAL;
 	mutex_lock(&fan_data->fan_state_lock);
-	fan_data->step_time = val;
-	mutex_unlock(&fan_data->fan_state_lock);
-	return 0;
-}
-
-static int fan_cur_pwm_show(void *data, u64 *val)
-{
-	struct fan_dev_data *fan_data = (struct fan_dev_data *)data;
-
-	if (!fan_data)
-		return -EINVAL;
-	mutex_lock(&fan_data->fan_state_lock);
+<<<<<<< HEAD
 	*val = fan_data->fan_cur_pwm;
+=======
+	ret = sprintf(buf, "%d\n", fan_data->fan_cur_pwm);
+>>>>>>> update/master
 	mutex_unlock(&fan_data->fan_state_lock);
-	return 0;
+
+	return ret;
 }
 
-static int fan_step_time_show(void *data, u64 *val)
+static ssize_t fan_step_time_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
 {
-	struct fan_dev_data *fan_data = (struct fan_dev_data *)data;
+	struct fan_dev_data *fan_data = dev_get_drvdata(dev);
+	int ret;
 
 	if (!fan_data)
 		return -EINVAL;
 	mutex_lock(&fan_data->fan_state_lock);
-	*val = fan_data->step_time;
+	ret = sprintf(buf, "%d\n", fan_data->step_time);
 	mutex_unlock(&fan_data->fan_state_lock);
-	return 0;
+
+	return ret;
 }
 
-static int fan_debugfs_show(struct seq_file *s, void *data)
+static ssize_t fan_pwm_rpm_table_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
 {
-	int i;
-	struct fan_dev_data *fan_data = s->private;
+	struct fan_dev_data *fan_data = dev_get_drvdata(dev);
+	int i, bytes_written = 0;
 
 	if (!fan_data)
 		return -EINVAL;
+<<<<<<< HEAD
 	seq_printf(s, "(Index, RPM, PWM, RRU, RRD)\n");
 	for (i = 0; i < fan_data->active_steps; i++) {
 		seq_printf(s, "(%d, %d, %d, %d, %d)\n", i, fan_data->fan_rpm[i],
 			fan_data->fan_pwm[i],
 			fan_data->fan_rru[i],
 			fan_data->fan_rrd[i]);
+=======
+	bytes_written = sprintf(buf + bytes_written, "%s\n",
+				"(Index, RPM, PWM, RRU, RRD)");
+	mutex_lock(&fan_data->fan_state_lock);
+	for (i = 0; i < fan_data->active_steps; ++i) {
+		bytes_written += sprintf(buf + bytes_written,
+					"(%d, %d, %d, %d, %d)\n", i,
+					fan_data->fan_rpm[i],
+					fan_data->fan_pwm[i],
+					fan_data->fan_rru[i],
+					fan_data->fan_rrd[i]);
+>>>>>>> update/master
 	}
-	return 0;
+	mutex_unlock(&fan_data->fan_state_lock);
+
+	return bytes_written;
 }
 
-static int fan_debugfs_open(struct inode *inode, struct file *file)
+static ssize_t fan_rpm_measured_show(struct device *dev,
+			struct device_attribute *attr, char *buf)
 {
-	return single_open(file, fan_debugfs_show, inode->i_private);
+	struct fan_dev_data *fan_data = dev_get_drvdata(dev);
+	int ret;
+
+	if (!fan_data)
+		return -EINVAL;
+	mutex_lock(&fan_data->fan_state_lock);
+	ret = sprintf(buf, "%d\n", fan_data->rpm_measured);
+	mutex_unlock(&fan_data->fan_state_lock);
+
+	return ret;
 }
-
-static const struct file_operations fan_rpm_table_fops = {
-	.open		= fan_debugfs_open,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= single_release,
-};
-
-DEFINE_SIMPLE_ATTRIBUTE(fan_cap_pwm_fops,
-			fan_cap_pwm_show,
-			fan_cap_pwm_set, "%llu\n");
-DEFINE_SIMPLE_ATTRIBUTE(fan_temp_control_fops,
-			fan_temp_control_show,
-			fan_temp_control_set, "%llu\n");
-DEFINE_SIMPLE_ATTRIBUTE(fan_target_pwm_fops,
-			fan_target_pwm_show,
-			fan_target_pwm_set, "%llu\n");
-DEFINE_SIMPLE_ATTRIBUTE(fan_cur_pwm_fops,
-			fan_cur_pwm_show,
-			NULL, "%llu\n");
-DEFINE_SIMPLE_ATTRIBUTE(fan_tach_enabled_fops,
-			fan_tach_enabled_show,
-			fan_tach_enabled_set, "%llu\n");
-DEFINE_SIMPLE_ATTRIBUTE(fan_step_time_fops,
-			fan_step_time_show,
-			fan_step_time_set, "%llu\n");
-
-static int pwm_fan_debug_init(struct fan_dev_data *fan_data)
-{
-	fan_debugfs_root = debugfs_create_dir("tegra_fan", 0);
-
-	if (!fan_debugfs_root)
-		return -ENOMEM;
-
-	if (!debugfs_create_file("target_pwm", 0644, fan_debugfs_root,
-		(void *)fan_data,
-		&fan_target_pwm_fops))
-		goto err_out;
-
-	if (!debugfs_create_file("temp_control", 0644, fan_debugfs_root,
-		(void *)fan_data,
-		&fan_temp_control_fops))
-		goto err_out;
-
-	if (!debugfs_create_file("pwm_cap", 0644, fan_debugfs_root,
-		(void *)fan_data,
-		&fan_cap_pwm_fops))
-		goto err_out;
-
-	if (!debugfs_create_file("pwm_rpm_table", 0444, fan_debugfs_root,
-		(void *)fan_data,
-		&fan_rpm_table_fops))
-		goto err_out;
-
-	if (!debugfs_create_file("step_time", 0644, fan_debugfs_root,
-		(void *)fan_data,
-		&fan_step_time_fops))
-		goto err_out;
-
-	if (!debugfs_create_file("cur_pwm", 0444, fan_debugfs_root,
-		(void *)fan_data,
-		&fan_cur_pwm_fops))
-		goto err_out;
-
-	if (!debugfs_create_file("tach_enable", 0644, fan_debugfs_root,
-		(void *)fan_data,
-		&fan_tach_enabled_fops))
-		goto err_out;
-	return 0;
-
-err_out:
-	debugfs_remove_recursive(fan_debugfs_root);
-	return -ENOMEM;
-}
-#else
-static inline int pwm_fan_debug_init(struct fan_dev_data *fan_data)
-{
-	return 0;
-}
-#endif /* DEBUG_FS*/
 
 static int pwm_fan_get_cur_state(struct thermal_cooling_device *cdev,
 						unsigned long *cur_state)
@@ -363,6 +439,16 @@ static int pwm_fan_set_cur_state(struct thermal_cooling_device *cdev,
 		return -EINVAL;
 
 	mutex_lock(&fan_data->fan_state_lock);
+
+	if (!fan_data->fan_temp_control_flag) {
+		mutex_unlock(&fan_data->fan_state_lock);
+		return 0;
+	}
+
+	if (cur_state >= fan_data->active_steps) {
+		mutex_unlock(&fan_data->fan_state_lock);
+		return -EINVAL;
+	}
 
 	fan_data->next_state = cur_state;
 
@@ -459,7 +545,7 @@ static int get_next_lower_pwm(int pwm, struct fan_dev_data *fan_data)
 
 static void fan_ramping_work_func(struct work_struct *work)
 {
-	int rru, rrd;
+	int rru, rrd, err;
 	int cur_pwm, next_pwm;
 	struct delayed_work *dwork = container_of(work, struct delayed_work,
 									work);
@@ -490,6 +576,33 @@ static void fan_ramping_work_func(struct work_struct *work)
 		next_pwm = max(next_pwm, fan_data->next_target_pwm);
 		next_pwm = max(0, next_pwm);
 	}
+<<<<<<< HEAD
+=======
+
+	if ((next_pwm != 0) && !(fan_data->is_fan_reg_enabled)) {
+		err = regulator_enable(fan_data->fan_reg);
+		if (err < 0)
+			dev_err(fan_data->dev,
+				" Coudn't enable vdd-fan\n");
+		else {
+			dev_info(fan_data->dev,
+				" Enabled vdd-fan\n");
+			fan_data->is_fan_reg_enabled = true;
+		}
+	}
+	if ((next_pwm == 0) && (fan_data->is_fan_reg_enabled)) {
+		err = regulator_disable(fan_data->fan_reg);
+		if (err < 0)
+			dev_err(fan_data->dev,
+				" Couldn't disable vdd-fan\n");
+		else {
+			dev_info(fan_data->dev,
+				" Disabled vdd-fan\n");
+			fan_data->is_fan_reg_enabled = false;
+		}
+	}
+
+>>>>>>> update/master
 	set_pwm_duty_cycle(next_pwm, fan_data);
 	fan_data->fan_cur_pwm = next_pwm;
 	if (fan_data->next_target_pwm != next_pwm)
@@ -500,13 +613,24 @@ static void fan_ramping_work_func(struct work_struct *work)
 }
 
 
-static ssize_t show_fan_pwm_cap_sysfs(struct device *dev,
-				struct device_attribute *attr, char *buf)
+static void fan_tach_work_func(struct work_struct *work)
 {
-	struct fan_dev_data *fan_data = dev_get_drvdata(dev);
-	int ret;
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct fan_dev_data *fan_data = container_of(dwork, struct fan_dev_data,
+			fan_tach_work);
+	int tach_pulse_count, diff_sec, avg, one_min;
+	long int diff_usec, diff;
+	unsigned long flags;
+
+	spin_lock_irqsave(&irq_lock, flags);
+	tach_pulse_count = irq_count;
+	irq_count = 0;
+	diff_sec = last_irq.tv_sec - first_irq.tv_sec;
+	diff_usec = last_irq.tv_usec - first_irq.tv_usec;
+	spin_unlock_irqrestore(&irq_lock, flags);
 
 	if (!fan_data)
+<<<<<<< HEAD
 		return -EINVAL;
 	mutex_lock(&fan_data->fan_state_lock);
 	ret = sprintf(buf, "%d\n", fan_data->fan_cap_pwm);
@@ -521,15 +645,38 @@ static ssize_t set_fan_pwm_cap_sysfs(struct device *dev,
 	long val;
 	int ret;
 	int target_pwm;
+=======
+		return;
+>>>>>>> update/master
 
-	ret = kstrtol(buf, 10, &val);
+	/* get time diff */
+	if (tach_pulse_count <= 1) {
+		mutex_lock(&fan_data->fan_state_lock);
+		fan_data->rpm_measured = 0;
+		mutex_unlock(&fan_data->fan_state_lock);
+		goto next_cycle;
+	} else if (diff_sec < 0 || (diff_sec == 0 && diff_usec <= 0)) {
+		dev_err(fan_data->dev,
+				"invalid irq time diff: caught %d, diff_sec %d; diff_usec %ld\n",
+				tach_pulse_count, diff_sec, diff_usec);
+		goto next_cycle;
+	} else {
+		diff = diff_sec * 1000 * 1000 + diff_usec;
+		avg = diff / (tach_pulse_count - 1);
+		one_min = 60 * 1000 * 1000; /* in microseconds */
 
-	if (ret < 0)
-		return -EINVAL;
+		/* 2 tach pulses per revolution */
+		mutex_lock(&fan_data->fan_state_lock);
+		fan_data->rpm_measured = one_min / avg / 2;
+		mutex_unlock(&fan_data->fan_state_lock);
+	}
 
-	if (!fan_data)
-		return -EINVAL;
+next_cycle:
+	queue_delayed_work(fan_data->tach_workqueue,
+			&(fan_data->fan_tach_work),
+			msecs_to_jiffies(fan_data->tach_period));
 
+<<<<<<< HEAD
 	mutex_lock(&fan_data->fan_state_lock);
 
 	if (val < 0)
@@ -542,10 +689,13 @@ static ssize_t set_fan_pwm_cap_sysfs(struct device *dev,
 	fan_update_target_pwm(fan_data, target_pwm);
 	mutex_unlock(&fan_data->fan_state_lock);
 	return count;
+=======
+	return;
+>>>>>>> update/master
 }
 
 /*State cap sysfs fops*/
-static ssize_t show_fan_state_cap_sysfs(struct device *dev,
+static ssize_t fan_state_cap_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
 	struct fan_dev_data *fan_data = dev_get_drvdata(dev);
@@ -556,63 +706,66 @@ static ssize_t show_fan_state_cap_sysfs(struct device *dev,
 	mutex_lock(&fan_data->fan_state_lock);
 	ret = sprintf(buf, "%d\n", fan_data->fan_state_cap);
 	mutex_unlock(&fan_data->fan_state_lock);
+
 	return ret;
 }
 
-static ssize_t set_fan_state_cap_sysfs(struct device *dev,
+static ssize_t fan_state_cap_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct fan_dev_data *fan_data = dev_get_drvdata(dev);
+<<<<<<< HEAD
 	long val;
 	int ret;
 	int target_pwm;
+=======
+	int val, ret, target_pwm;
+>>>>>>> update/master
 
-	ret = kstrtol(buf, 10, &val);
+	ret = sscanf(buf, "%d", &val);
 
-	if (ret < 0 || !fan_data)
-		goto error;
+	if ((ret <= 0) || (!fan_data)) {
+		dev_err(dev, "%s, fan_data is null or wrong input\n",
+			__func__);
+		return -EINVAL;
+	}
 
-	mutex_lock(&fan_data->fan_state_lock);
 	if (val < 0)
 		val = 0;
-	else if (val >= fan_data->active_steps)
-		val = fan_data->active_steps - 1;
 
+	mutex_lock(&fan_data->fan_state_lock);
+	if (val >= fan_data->active_steps)
+		val = fan_data->active_steps - 1;
 	fan_data->fan_state_cap = val;
 	fan_data->fan_cap_pwm =
 		fan_data->fan_pwm[fan_data->fan_state_cap_lookup[val]];
 	target_pwm = min(fan_data->fan_cap_pwm, fan_data->next_target_pwm);
 	fan_update_target_pwm(fan_data, target_pwm);
 	mutex_unlock(&fan_data->fan_state_lock);
-	return count;
 
-error:
-	dev_err(dev, "%s, fan_data is null or wrong input\n", __func__);
-	return -EINVAL;
+	return count;
 }
 
-
-static ssize_t set_fan_pwm_state_map_sysfs(struct device *dev,
+static ssize_t fan_pwm_state_map_store(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
 	struct fan_dev_data *fan_data = dev_get_drvdata(dev);
+<<<<<<< HEAD
 	int ret, index, pwm_val;
 	int target_pwm;
+=======
+	int ret, index, pwm_val, target_pwm;
+>>>>>>> update/master
 
 	ret = sscanf(buf, "%d %d", &index, &pwm_val);
 
-	if (ret < 0)
-		return -EINVAL;
-
-	if (!fan_data)
+	if ((ret <= 0) || (!fan_data) || (index < 0) || (pwm_val < 0))
 		return -EINVAL;
 
 	dev_dbg(dev, "index=%d, pwm_val=%d", index, pwm_val);
 
-	if ((index < 0) || (index > fan_data->active_steps))
-		return -EINVAL;
-
 	mutex_lock(&fan_data->fan_state_lock);
+<<<<<<< HEAD
 
 	if ((pwm_val < 0) || (pwm_val >= fan_data->fan_pwm_max)) {
 		mutex_unlock(&fan_data->fan_state_lock);
@@ -628,24 +781,68 @@ static ssize_t set_fan_pwm_state_map_sysfs(struct device *dev,
 			target_pwm = min(fan_data->fan_cap_pwm,
 						target_pwm);
 
+=======
+	if ((pwm_val > fan_data->fan_cap_pwm) ||
+			(index > fan_data->active_steps)) {
+		mutex_unlock(&fan_data->fan_state_lock);
+		return -EINVAL;
+	}
+	fan_data->fan_pwm[index] = pwm_val;
+	if (index == fan_data->next_state) {
+		if (fan_data->next_target_pwm != fan_data->fan_pwm[index]) {
+			target_pwm = fan_data->fan_pwm[index];
+			target_pwm = min(fan_data->fan_cap_pwm, target_pwm);
+>>>>>>> update/master
 			fan_update_target_pwm(fan_data, target_pwm);
 		}
+	}
 	mutex_unlock(&fan_data->fan_state_lock);
 
 	return count;
 }
 
-static DEVICE_ATTR(pwm_cap, S_IWUSR | S_IRUGO, show_fan_pwm_cap_sysfs,
-							set_fan_pwm_cap_sysfs);
+static DEVICE_ATTR(pwm_cap, S_IWUSR | S_IRUGO,
+			fan_pwm_cap_show,
+			fan_pwm_cap_store);
 static DEVICE_ATTR(state_cap, S_IWUSR | S_IRUGO,
-			show_fan_state_cap_sysfs, set_fan_state_cap_sysfs);
+			fan_state_cap_show,
+			fan_state_cap_store);
 static DEVICE_ATTR(pwm_state_map, S_IWUSR | S_IRUGO,
-					NULL, set_fan_pwm_state_map_sysfs);
+			NULL,
+			fan_pwm_state_map_store);
+static DEVICE_ATTR(cur_pwm, S_IRUGO,
+			fan_cur_pwm_show,
+			NULL);
+static DEVICE_ATTR(target_pwm, S_IWUSR | S_IRUGO,
+			fan_target_pwm_show,
+			fan_target_pwm_store);
+static DEVICE_ATTR(tach_enable, S_IWUSR | S_IRUGO,
+			fan_tach_enabled_show,
+			fan_tach_enabled_store);
+static DEVICE_ATTR(rpm_measured, S_IRUGO,
+			fan_rpm_measured_show,
+			NULL);
+static DEVICE_ATTR(temp_control, S_IWUSR | S_IRUGO,
+			fan_temp_control_show,
+			fan_temp_control_store);
+static DEVICE_ATTR(step_time, S_IWUSR | S_IRUGO,
+			fan_step_time_show,
+			fan_step_time_store);
+static DEVICE_ATTR(pwm_rpm_table, S_IRUGO,
+			fan_pwm_rpm_table_show,
+			NULL);
 
 static struct attribute *pwm_fan_attributes[] = {
 	&dev_attr_pwm_cap.attr,
 	&dev_attr_state_cap.attr,
 	&dev_attr_pwm_state_map.attr,
+	&dev_attr_cur_pwm.attr,
+	&dev_attr_target_pwm.attr,
+	&dev_attr_tach_enable.attr,
+	&dev_attr_rpm_measured.attr,
+	&dev_attr_temp_control.attr,
+	&dev_attr_step_time.attr,
+	&dev_attr_pwm_rpm_table.attr,
 	NULL
 };
 
@@ -665,20 +862,49 @@ static void remove_sysfs_entry(struct device *dev)
 
 irqreturn_t fan_tach_isr(int irq, void *data)
 {
+	unsigned long flags;
+
+	spin_lock_irqsave(&irq_lock, flags);
+	if (irq_count == 0)
+		do_gettimeofday(&first_irq);
+	else
+		do_gettimeofday(&last_irq);
+	irq_count++;
+	spin_unlock_irqrestore(&irq_lock, flags);
+
 	return IRQ_HANDLED;
 }
+
 
 static int pwm_fan_probe(struct platform_device *pdev)
 {
 	int i;
-	struct pwm_fan_platform_data *data;
-	struct fan_dev_data *fan_data;
+	struct fan_dev_data *fan_data = NULL;
 	int *rpm_data;
+	int *rru_data;
+	int *rrd_data;
+	int *lookup_data;
+	int *pwm_data;
 	int err = 0;
+	int of_err = 0;
+	struct device_node *node = NULL;
+	struct device_node *data_node = NULL;
+	u32 value;
+	int pwm_fan_gpio;
+	int gpio_free_flag = 0;
 
-	data = dev_get_platdata(&pdev->dev);
-	if (!data) {
-		dev_err(&pdev->dev, "platform data is null\n");
+	if (!pdev)
+		return -EINVAL;
+
+	node = pdev->dev.of_node;
+	if (!node) {
+		pr_err("FAN: dev of_node NULL\n");
+		return -EINVAL;
+	}
+
+	data_node = of_parse_phandle(node, "shared_data", 0);
+	if (!data_node) {
+		pr_err("PWM shared data node NULL, parse phandle failed\n");
 		return -EINVAL;
 	}
 
@@ -687,26 +913,132 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	if (!fan_data)
 		return -ENOMEM;
 
-	rpm_data = devm_kzalloc(&pdev->dev,
-			5 * sizeof(int) * data->active_steps, GFP_KERNEL);
-	if (!rpm_data)
-		return -ENOMEM;
+	fan_data->dev = &pdev->dev;
 
+	fan_data->fan_reg = regulator_get(fan_data->dev, "vdd-fan");
+	if (IS_ERR_OR_NULL(fan_data->fan_reg)) {
+		pr_err("FAN: coudln't get the regulator\n");
+		devm_kfree(&pdev->dev, (void *)fan_data);
+		return -ENODEV;
+	}
+
+	of_err |= of_property_read_string(node, "name", &fan_data->name);
+	pr_info("FAN dev name: %s\n", fan_data->name);
+
+	of_err |= of_property_read_u32(data_node, "pwm_gpio", &value);
+	pwm_fan_gpio = (int)value;
+
+	err = gpio_request(pwm_fan_gpio, "pwm-fan");
+	if (err < 0) {
+		pr_err("FAN:gpio request failed\n");
+		err = -EINVAL;
+		goto gpio_request_fail;
+	} else {
+		pr_info("FAN:gpio request success.\n");
+	}
+
+	of_err |= of_property_read_u32(data_node, "active_steps", &value);
+	fan_data->active_steps = (int)value;
+
+	of_err |= of_property_read_u32(data_node, "pwm_period", &value);
+	fan_data->pwm_period = (int)value;
+
+	of_err |= of_property_read_u32(data_node, "pwm_id", &value);
+	fan_data->pwm_id = (int)value;
+
+	of_err |= of_property_read_u32(data_node, "step_time", &value);
+	fan_data->step_time = (int)value;
+
+	of_err |= of_property_read_u32(data_node, "active_pwm_max", &value);
+	fan_data->fan_pwm_max = (int)value;
+
+	of_err |= of_property_read_u32(data_node, "state_cap", &value);
+	fan_data->fan_state_cap = (int)value;
+
+	fan_data->pwm_gpio = pwm_fan_gpio;
+
+	if (of_err) {
+		err = -ENXIO;
+		goto rpm_alloc_fail;
+	}
+
+	if (of_property_read_u32(data_node, "tach_gpio", &value)) {
+		fan_data->tach_gpio = -1;
+		pr_info("FAN: can't find tach_gpio\n");
+	} else
+		fan_data->tach_gpio = (int)value;
+
+	/* rpm array */
+	rpm_data = devm_kzalloc(&pdev->dev,
+			sizeof(int) * (fan_data->active_steps), GFP_KERNEL);
+	if (!rpm_data) {
+		err = -ENOMEM;
+		goto rpm_alloc_fail;
+	}
+	of_err |= of_property_read_u32_array(data_node, "active_rpm", rpm_data,
+		(size_t) fan_data->active_steps);
 	fan_data->fan_rpm = rpm_data;
-	fan_data->fan_pwm = rpm_data + data->active_steps;
-	fan_data->fan_rru = fan_data->fan_pwm + data->active_steps;
-	fan_data->fan_rrd = fan_data->fan_rru + data->active_steps;
-	fan_data->fan_state_cap_lookup = fan_data->fan_rrd + data->active_steps;
+
+	/* rru array */
+	rru_data = devm_kzalloc(&pdev->dev,
+			sizeof(int) * (fan_data->active_steps), GFP_KERNEL);
+	if (!rru_data) {
+		err = -ENOMEM;
+		goto rru_alloc_fail;
+	}
+	of_err |= of_property_read_u32_array(data_node, "active_rru", rru_data,
+		(size_t) fan_data->active_steps);
+	fan_data->fan_rru = rru_data;
+
+	/* rrd array */
+	rrd_data = devm_kzalloc(&pdev->dev,
+			sizeof(int) * (fan_data->active_steps), GFP_KERNEL);
+	if (!rrd_data) {
+		err = -ENOMEM;
+		goto rrd_alloc_fail;
+	}
+	of_err |= of_property_read_u32_array(data_node, "active_rrd", rrd_data,
+		(size_t) fan_data->active_steps);
+	fan_data->fan_rrd = rrd_data;
+
+	/* state_cap_lookup array */
+	lookup_data = devm_kzalloc(&pdev->dev,
+			sizeof(int) * (fan_data->active_steps), GFP_KERNEL);
+	if (!lookup_data) {
+		err = -ENOMEM;
+		goto lookup_alloc_fail;
+	}
+	of_err |= of_property_read_u32_array(data_node, "state_cap_lookup",
+		lookup_data, (size_t) fan_data->active_steps);
+	fan_data->fan_state_cap_lookup = lookup_data;
+
+	/* pwm array */
+	pwm_data = devm_kzalloc(&pdev->dev,
+			sizeof(int) * (fan_data->active_steps), GFP_KERNEL);
+	if (!pwm_data) {
+		err = -ENOMEM;
+		goto pwm_alloc_fail;
+	}
+	of_err |= of_property_read_u32_array(node, "active_pwm", pwm_data,
+		(size_t) fan_data->active_steps);
+	fan_data->fan_pwm = pwm_data;
+
+	if (of_err) {
+		err = -ENXIO;
+		goto workqueue_alloc_fail;
+	}
 
 	mutex_init(&fan_data->fan_state_lock);
-
 	fan_data->workqueue = alloc_workqueue(dev_name(&pdev->dev),
 				WQ_HIGHPRI | WQ_UNBOUND, 1);
-	if (!fan_data->workqueue)
-		return -ENOMEM;
+	if (!fan_data->workqueue) {
+		err = -ENOMEM;
+		goto workqueue_alloc_fail;
+	}
 
 	INIT_DELAYED_WORK(&(fan_data->fan_ramp_work), fan_ramping_work_func);
 
+<<<<<<< HEAD
 	fan_data->step_time = data->step_time;
 	fan_data->active_steps = data->active_steps;
 	fan_data->pwm_period = data->pwm_period;
@@ -733,20 +1065,25 @@ static int pwm_fan_probe(struct platform_device *pdev)
 	fan_data->fan_cap_pwm = data->active_pwm[data->state_cap];
 	fan_data->precision_multiplier =
 			data->pwm_period / data->active_pwm_max;
+=======
+	fan_data->fan_cap_pwm = fan_data->fan_pwm[fan_data->fan_state_cap];
+	fan_data->precision_multiplier =
+			fan_data->pwm_period / fan_data->fan_pwm_max;
+>>>>>>> update/master
 	dev_info(&pdev->dev, "cap state:%d, cap pwm:%d\n",
 			fan_data->fan_state_cap, fan_data->fan_cap_pwm);
 
 	fan_data->cdev =
-		thermal_cooling_device_register((char *)dev_name(&pdev->dev),
+		thermal_cooling_device_register("pwm-fan",
 					fan_data, &pwm_fan_cooling_ops);
 
 	if (IS_ERR_OR_NULL(fan_data->cdev)) {
 		dev_err(&pdev->dev, "Failed to register cooling device\n");
-		return -EINVAL;
+		err = -EINVAL;
+		goto cdev_register_fail;
 	}
 
-	gpio_free(fan_data->pwm_gpio);
-	fan_data->pwm_dev = pwm_request(data->pwm_id, dev_name(&pdev->dev));
+	fan_data->pwm_dev = pwm_request(fan_data->pwm_id, dev_name(&pdev->dev));
 	if (IS_ERR_OR_NULL(fan_data->pwm_dev)) {
 		dev_err(&pdev->dev, "unable to request PWM for fan\n");
 		err = -ENODEV;
@@ -755,10 +1092,9 @@ static int pwm_fan_probe(struct platform_device *pdev)
 		dev_info(&pdev->dev, "got pwm for fan\n");
 	}
 
-
-	fan_data->tach_gpio = data->tach_gpio;
 	fan_data->tach_enabled = 0;
-
+	gpio_free(fan_data->pwm_gpio);
+	gpio_free_flag = 1;
 	if (fan_data->tach_gpio != -1) {
 		/* init fan tach */
 		fan_data->tach_irq = gpio_to_irq(fan_data->tach_gpio);
@@ -768,6 +1104,7 @@ static int pwm_fan_probe(struct platform_device *pdev)
 			goto tach_gpio_request_fail;
 		}
 
+		gpio_free_flag = 0;
 		err = gpio_direction_input(fan_data->tach_gpio);
 		if (err < 0) {
 			dev_err(&pdev->dev, "fan tach set gpio direction input failed\n");
@@ -781,17 +1118,47 @@ static int pwm_fan_probe(struct platform_device *pdev)
 		}
 
 		err = request_irq(fan_data->tach_irq, fan_tach_isr,
-			IRQF_TRIGGER_FALLING , "pwm-fan-tach", NULL);
-		if (err < 0)
+			IRQF_TRIGGER_RISING,
+			"pwm-fan-tach", NULL);
+		if (err < 0) {
+			dev_err(&pdev->dev, "fan request irq failed\n");
 			goto tach_request_irq_fail;
+		}
+		dev_info(&pdev->dev, "fan tach request irq: %d. success\n",
+				fan_data->tach_irq);
 		disable_irq_nosync(fan_data->tach_irq);
 	}
 
-	platform_set_drvdata(pdev, fan_data);
+	of_err |= of_property_read_u32(data_node, "tach_period", &value);
+	if (of_err < 0)
+		dev_err(&pdev->dev, "parsing tach_period error: %d\n", of_err);
+	else {
+		fan_data->tach_period = (int) value;
+		dev_info(&pdev->dev, "tach period: %d\n", fan_data->tach_period);
+
+		/* init tach work related */
+		fan_data->tach_workqueue = alloc_workqueue(fan_data->name,
+				WQ_HIGHPRI | WQ_UNBOUND, 1);
+		if (!fan_data->tach_workqueue) {
+			err = -ENOMEM;
+			goto tach_workqueue_alloc_fail;
+		}
+		INIT_DELAYED_WORK(&(fan_data->fan_tach_work),
+				fan_tach_work_func);
+		queue_delayed_work(fan_data->tach_workqueue,
+				&(fan_data->fan_tach_work),
+				msecs_to_jiffies(fan_data->tach_period));
+	}
+	/* init rpm related values */
+	spin_lock_init(&irq_lock);
+	irq_count = 0;
+	fan_data->rpm_measured = 0;
 
 	/*turn temp control on*/
 	fan_data->fan_temp_control_flag = 1;
 	set_pwm_duty_cycle(fan_data->fan_pwm[0], fan_data);
+
+	platform_set_drvdata(pdev, fan_data);
 
 	if (add_sysfs_entry(&pdev->dev) < 0) {
 		dev_err(&pdev->dev, "FAN:Can't create syfs node");
@@ -799,20 +1166,50 @@ static int pwm_fan_probe(struct platform_device *pdev)
 		goto sysfs_fail;
 	}
 
-	if (pwm_fan_debug_init(fan_data) < 0) {
-		dev_err(&pdev->dev, "FAN:Can't create debug fs nodes");
-		/*Just continue without debug fs*/
+	/* print out initialized info */
+	for (i = 0; i < fan_data->active_steps; i++) {
+		dev_info(&pdev->dev,
+			"index %d: pwm=%d, rpm=%d, rru=%d, rrd=%d, state:%d\n",
+			i,
+			fan_data->fan_pwm[i],
+			fan_data->fan_rpm[i],
+			fan_data->fan_rru[i],
+			fan_data->fan_rrd[i],
+			fan_data->fan_state_cap_lookup[i]);
 	}
+
 	return err;
 
 sysfs_fail:
-	pwm_free(fan_data->pwm_dev);
+	destroy_workqueue(fan_data->tach_workqueue);
+tach_workqueue_alloc_fail:
 	free_irq(fan_data->tach_irq, NULL);
 tach_request_irq_fail:
-	gpio_free(fan_data->tach_gpio);
 tach_gpio_request_fail:
+	pwm_free(fan_data->pwm_dev);
 pwm_req_fail:
 	thermal_cooling_device_unregister(fan_data->cdev);
+cdev_register_fail:
+	destroy_workqueue(fan_data->workqueue);
+workqueue_alloc_fail:
+	devm_kfree(&pdev->dev, (void *)pwm_data);
+pwm_alloc_fail:
+	devm_kfree(&pdev->dev, (void *)lookup_data);
+lookup_alloc_fail:
+	devm_kfree(&pdev->dev, (void *)rrd_data);
+rrd_alloc_fail:
+	devm_kfree(&pdev->dev, (void *)rru_data);
+rru_alloc_fail:
+	devm_kfree(&pdev->dev, (void *)rpm_data);
+rpm_alloc_fail:
+	if (!gpio_free_flag)
+		gpio_free(fan_data->pwm_gpio);
+gpio_request_fail:
+	devm_kfree(&pdev->dev, (void *)fan_data);
+	if (err == -ENXIO)
+		pr_err("FAN: of_property_read failed\n");
+	else if (err == -ENOMEM)
+		pr_err("FAN: memery allocation failed\n");
 	return err;
 }
 
@@ -822,14 +1219,26 @@ static int pwm_fan_remove(struct platform_device *pdev)
 
 	if (!fan_data)
 		return -EINVAL;
-	debugfs_remove_recursive(fan_debugfs_root);
 	free_irq(fan_data->tach_irq, NULL);
 	gpio_free(fan_data->tach_gpio);
 	pwm_config(fan_data->pwm_dev, 0, fan_data->pwm_period);
 	pwm_disable(fan_data->pwm_dev);
 	pwm_free(fan_data->pwm_dev);
 	thermal_cooling_device_unregister(fan_data->cdev);
+	cancel_delayed_work(&fan_data->fan_tach_work);
+	destroy_workqueue(fan_data->tach_workqueue);
+	cancel_delayed_work(&fan_data->fan_ramp_work);
+	destroy_workqueue(fan_data->workqueue);
+	devm_kfree(&pdev->dev, (void *)(fan_data->fan_pwm));
+	devm_kfree(&pdev->dev, (void *)(fan_data->fan_state_cap_lookup));
+	devm_kfree(&pdev->dev, (void *)(fan_data->fan_rrd));
+	devm_kfree(&pdev->dev, (void *)(fan_data->fan_rru));
+	devm_kfree(&pdev->dev, (void *)(fan_data->fan_rpm));
+	devm_kfree(&pdev->dev, (void *)fan_data);
 	remove_sysfs_entry(&pdev->dev);
+
+	if (fan_data->fan_reg)
+		regulator_put(fan_data->fan_reg);
 	return 0;
 }
 
@@ -857,6 +1266,16 @@ static int pwm_fan_suspend(struct platform_device *pdev, pm_message_t state)
 
 	gpio_direction_output(fan_data->pwm_gpio, 1);
 
+	if (fan_data->is_fan_reg_enabled) {
+		err = regulator_disable(fan_data->fan_reg);
+		if (err < 0)
+			dev_err(&pdev->dev, "Not able to disable Fan regulator\n");
+		else {
+			dev_info(fan_data->dev,
+				" Disabled vdd-fan\n");
+			fan_data->is_fan_reg_enabled = false;
+		}
+	}
 	/*Stop thermal control*/
 	fan_data->fan_temp_control_flag = 0;
 	mutex_unlock(&fan_data->fan_state_lock);
@@ -890,10 +1309,21 @@ static int pwm_fan_resume(struct platform_device *pdev)
 }
 #endif
 
+
+static const struct of_device_id of_pwm_fan_match[] = {
+	{ .compatible = "loki-pwm-fan", },
+	{ .compatible = "ers-pwm-fan", },
+	{ .compatible = "foster-pwm-fan", },
+	{ .compatible = "pwm-fan", },
+	{},
+};
+MODULE_DEVICE_TABLE(of, of_pwm_fan_match);
+
 static struct platform_driver pwm_fan_driver = {
 	.driver = {
+		.name	= "pwm_fan_driver",
 		.owner = THIS_MODULE,
-		.name = "pwm-fan",
+		.of_match_table = of_pwm_fan_match,
 	},
 	.probe = pwm_fan_probe,
 	.remove = pwm_fan_remove,

@@ -26,11 +26,6 @@ struct dma_map_ops {
 			       enum dma_data_direction dir,
 			       struct dma_attrs *attrs);
 
-	dma_addr_t (*map_pages)(struct device *dev, struct page **pages,
-				  dma_addr_t dma_handle, size_t count,
-				  enum dma_data_direction dir,
-				  struct dma_attrs *attrs);
-
 	dma_addr_t (*map_page_at)(struct device *dev, struct page *page,
 				  dma_addr_t dma_handle,
 				  unsigned long offset, size_t size,
@@ -73,6 +68,8 @@ struct dma_map_ops {
 			  struct dma_attrs *attrs);
 	size_t (*iova_get_free_total)(struct device *dev);
 	size_t (*iova_get_free_max)(struct device *dev);
+
+	phys_addr_t (*iova_to_phys)(struct device *dev, dma_addr_t iova);
 
 	int is_phys;
 };
@@ -117,6 +114,20 @@ static inline int dma_set_coherent_mask(struct device *dev, u64 mask)
 	return 0;
 }
 #endif
+
+/*
+ * Set both the DMA mask and the coherent DMA mask to the same thing.
+ * Note that we don't check the return value from dma_set_coherent_mask()
+ * as the DMA API guarantees that the coherent DMA mask can be set to
+ * the same or smaller than the streaming DMA mask.
+ */
+static inline int dma_set_mask_and_coherent(struct device *dev, u64 mask)
+{
+	int rc = dma_set_mask(dev, mask);
+	if (rc == 0)
+		dma_set_coherent_mask(dev, mask);
+	return rc;
+}
 
 extern u64 dma_get_required_mask(struct device *dev);
 
@@ -191,6 +202,11 @@ struct dma_declare_info {
 	size_t size;
 	struct device *cma_dev;
 	struct dma_resize_notifier notifier;
+};
+
+struct dma_coherent_stats {
+	phys_addr_t base;
+	size_t size;
 };
 
 #ifndef ARCH_HAS_DMA_DECLARE_COHERENT_MEMORY

@@ -1,6 +1,7 @@
 GCOV_PROFILE := y
 ccflags-y += -Idrivers/gpu/nvgpu
 ccflags-y += -Idrivers/video/tegra/host
+ccflags-y += -Idrivers/media/platform/tegra
 ccflags-y += -Idrivers/video/tegra/camera
 ccflags-y += -Wno-multichar
 ccflags-y += -Werror

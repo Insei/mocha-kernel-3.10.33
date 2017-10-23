@@ -1,7 +1,7 @@
 /*
  * xhci-tegra.h - Nvidia xHCI host controller related data
  *
- * Copyright (c) 2013, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2016, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -19,116 +19,30 @@
 #ifndef __XUSB_H
 #define __XUSB_H
 
-/* PADCTL BITS */
-#define USB2_OTG_PAD_PORT_MASK(x) (0x3 << (2 * x))
-#define USB2_OTG_PAD_PORT_OWNER_XUSB(x) (0x1 << (2 * x))
-#define USB2_PORT_CAP_MASK(x) (0x3 << (4 * x))
-#define USB2_PORT_CAP_HOST(x) (0x1 << (4 * x))
-#define USB2_ULPI_PAD	(0x1 << 12)
-#define USB2_ULPI_PAD_OWNER_XUSB	(0x1 << 12)
-#define USB2_HSIC_PAD_P0_OWNER_XUSB	(0x1 << 14)
-#define USB2_HSIC_PAD_P1_OWNER_XUSB	(0x1 << 15)
-#define USB2_ULPI_PORT_CAP	(0x1 << 24)
-#define SS_PORT_MAP_P0	(0x7 << 0)
-#define SS_PORT_MAP_P1	(0x7 << 4)
-#define SS_PORT_MAP_P0_USB2_PORT0	(0x0 << 0)
-#define SS_PORT_MAP_P0_USB2_PORT1	(0x1 << 0)
-#define USB2_OTG_HS_CURR_LVL (0x3F << 0)
-#define USB2_OTG_HS_SLEW (0x3F << 6)
-#define USB2_OTG_FS_SLEW (0x3 << 12)
-#define USB2_OTG_LS_RSLEW (0x3 << 14)
-#define USB2_OTG_LS_FSLEW (0x3 << 16)
-#define USB2_OTG_PD (0x1 << 19)
-#define USB2_OTG_PD2 (0x1 << 20)
-#define USB2_OTG_PD_ZI (0x1 << 21)
-#define USB2_OTG_PD_CHRP_FORCE_POWERUP (0x1 << 0)
-#define USB2_OTG_PD_DISC_FORCE_POWERUP (0x1 << 1)
-#define USB2_OTG_PD_DR (0x1 << 2)
-#define USB2_OTG_TERM_RANGE_AD (0xF << 3)
-#define USB2_OTG_HS_IREF_CAP (0x3 << 9)
-#define USB2_BIAS_HS_SQUELCH_LEVEL (0x3 << 0)
-#define USB2_BIAS_HS_DISCON_LEVEL (0x7 << 2)
-#define HSIC_TX_SLEWP (0xF << 8)
-#define HSIC_TX_SLEWN (0xF << 12)
-#define IOPHY_USB3_RXWANDER (0xF << 4)
-#define IOPHY_USB3_RXEQ (0xFFFF << 8)
-#define IOPHY_USB3_CDRCNTL (0xFF << 24)
-
-#if defined(CONFIG_ARCH_TEGRA_11x_SOC)
-#define tegra_xhci_restore_ctle_context(hcd, port)	\
-	do {} while (0)
-#define tegra_xhci_save_ctle_context(hcd, port)	\
-	do {} while (0)
-#elif defined(CONFIG_ARCH_TEGRA_12x_SOC)
-#define tegra_xhci_restore_ctle_context(hcd, port) \
-	restore_ctle_context(hcd, port)
-#define tegra_xhci_save_ctle_context(hcd, port) \
-	save_ctle_context(hcd, port)
+#include <linux/spinlock.h>
+#include <linux/mutex.h>
+#include <linux/workqueue.h>
+#include <linux/circ_buf.h>
+#include <linux/device.h>
+#include <linux/notifier.h>
+#ifdef CONFIG_TEGRA_EHCI_BOOST_CPU_FREQ
+#include <linux/pm_qos.h>
 #endif
 
-#if defined(CONFIG_ARCH_TEGRA_11x_SOC)
-#define MISC_PAD_CTL_6_0(_p)			(0x88 + _p * 4)
-#elif defined(CONFIG_ARCH_TEGRA_12x_SOC)
-#define MISC_PAD_CTL_6_0(_p)			(0x98 + _p * 4)
-#endif
-#define MISC_OUT_SEL(x) ((x & 0xFF) << 16)
-#define MISC_OUT_TAP_VAL(reg) ((reg & (0x1F << 24)) >> 24)
-#define MISC_OUT_AMP_VAL(reg) ((reg & (0x7F << 24)) >> 24)
-#define MISC_OUT_G_Z_VAL(reg) ((reg & (0x3F << 24)) >> 24)
+#include <mach/xusb.h>
 
-#if defined(CONFIG_ARCH_TEGRA_11x_SOC)
-#define USB3_PAD_CTL_4_0(_p)			(0x58 + _p * 4)
-#elif defined(CONFIG_ARCH_TEGRA_12x_SOC)
-#define USB3_PAD_CTL_4_0(_p)			(0x68 + _p * 4)
-#endif
-#define DFE_CNTL_TAP_VAL(x) ((x & 0x1F) << 24)
-#define DFE_CNTL_AMP_VAL(x) ((x & 0x7F) << 16)
-
-#if defined(CONFIG_ARCH_TEGRA_11x_SOC)
-#define USB3_PAD_CTL_2_0(_p)			(0x48 + _p * 4)
-#elif defined(CONFIG_ARCH_TEGRA_12x_SOC)
-#define USB3_PAD_CTL_2_0(_p)			(0x58 + _p * 4)
-#endif
-#define RX_EQ_G_VAL(x) ((x & 0x3F) << 8)
-#define RX_EQ_Z_VAL(x) ((x & 0x3F) << 16)
-
-#if defined(CONFIG_ARCH_TEGRA_11x_SOC)
-#define MISC_PAD_CTL_2_0(_p)			(0x68 + _p * 4)
-#define MISC_PAD_S0_CTL_2_0				(0xffff)
-#elif defined(CONFIG_ARCH_TEGRA_12x_SOC)
-#define MISC_PAD_CTL_2_0(_p)			(0x78 + _p * 4)
-#define MISC_PAD_S0_CTL_2_0				(0x14c)
-#endif
-#define SPARE_IN(x) ((x & 0x3) << 28)
-
-#if defined(CONFIG_ARCH_TEGRA_11x_SOC)
-#define MISC_PAD_S0_CTL_5_0				(0xffff)
-#elif defined(CONFIG_ARCH_TEGRA_12x_SOC)
-#define MISC_PAD_S0_CTL_5_0				(0x158)
+#ifdef CONFIG_NV_GAMEPAD_RESET
+extern void gamepad_reset_war(void);
 #endif
 
-#define SNPS_OC_MAP_CTRL1 (0x7 << 0)
-#define SNPS_OC_MAP_CTRL2 (0x7 << 3)
-#define SNPS_OC_MAP_CTRL3 (0x7 << 6)
-#define SNPS_CTRL1_OC_DETECTED_VBUS_PAD0 (0x4 << 0)
-#define OC_DET_VBUS_ENABLE0_OC_MAP (0x7 << 10)
-#define OC_DET_VBUS_ENABLE1_OC_MAP (0x7 << 13)
-#define OC_DET_VBUS_ENABLE2_OC_MAP (0x7 << 5)
-#define OC_DET_VBUS_EN0_OC_DETECTED_VBUS_PAD0 (0x4 << 10)
-#define OC_DET_VBUS_EN1_OC_DETECTED_VBUS_PAD1 (0x5 << 13)
-#define OC_DET_VBUS_EN2_OC_DETECTED_VBUS_PAD2 (0x6 << 5)
-#define OC_DET_OC_DETECTED_VBUS_PAD0 (1 << 20)
-#define OC_DET_OC_DETECTED_VBUS_PAD1 (1 << 21)
-#define OC_DET_OC_DETECTED_VBUS_PAD2 (1 << 22)
-#define USB2_OC_MAP_PORT0 (0x7 << 0)
-#define USB2_OC_MAP_PORT1 (0x7 << 3)
-#define USB2_OC_MAP_PORT2 (0x7 << 6)
-#define USB2_OC_MAP_PORT0_OC_DETECTED_VBUS_PAD0 (0x4 << 0)
-#define USB2_OC_MAP_PORT1_OC_DETECTED_VBUS_PAD1 (0x5 << 3)
-
+#ifdef CONFIG_USB_OTG_WAKELOCK
+extern void otgwl_acquire_temp_lock(void);
+#endif
 #define XUSB_CSB_MP_L2IMEMOP_TRIG				0x00101A14
+#define XUSB_CSB_MEMPOOL_L2IMEMOP_RESULT			0x00101A18
 #define XUSB_CSB_MP_APMAP					0x0010181C
 #define XUSB_CSB_ARU_SCRATCH0				0x00100100
+#define XUSB_CSB_RST_SSPI				0x00100408
 
 /* Nvidia Cfg Registers */
 
@@ -152,16 +66,20 @@
 #define XUSB_CFG_ARU_CONTEXT_HSFS_PP			0x00000484
 #define XUSB_CFG_CSB_BASE_ADDR				0x00000800
 
-
+/* DEVICE ID */
 #define XUSB_DEVICE_ID_T114				0x0E16
 #define XUSB_DEVICE_ID_T124				0x0FA3
+#define XUSB_DEVICE_ID_T210				0x0FAC
+#define XUSB_IS_T114(t)	(t->device_id == XUSB_DEVICE_ID_T114)
+#define XUSB_IS_T124(t)	(t->device_id == XUSB_DEVICE_ID_T124)
+#define XUSB_IS_T114_OR_T124(t)			\
+	((t->device_id == XUSB_DEVICE_ID_T114) ||	\
+		(t->device_id == XUSB_DEVICE_ID_T124))
+#define XUSB_IS_T210(t)	(t->device_id == XUSB_DEVICE_ID_T210)
 
 /* TODO: Do not have the definitions of below
  * registers.
  */
-
-/* BAR0 Registers */
-#define BAR0_XHCI_OP_PORTSC(i)                         (0x00000440+(i)*16)
 
 /* IPFS Registers to save and restore  */
 #define	IPFS_XUSB_HOST_MSI_BAR_SZ_0			0xC0
@@ -229,7 +147,8 @@
 #define MBOX_OWNER_SW						2
 #define MBOX_OWNER_ID_MASK					0xFF
 
-#define MBOX_SMI_INTR_EN					(1 << 3)
+#define SMI_INTR_STATUS_MBOX				(1 << 3)
+#define SMI_INTR_STATUS_FW_REINIT			(1 << 1)
 
 /* PMC Register */
 #define PMC_SCRATCH34						0x124
@@ -241,6 +160,7 @@
 /* Nvidia Constants */
 #define IMEM_BLOCK_SIZE						256
 
+#define XUSB_CSB_MEMPOOL_L2IMEMOP_RESULT_VLD			(1 << 31)
 #define MEMAPERT_ENABLE						0x00000010
 #define DMEMAPERT_ENABLE_INIT				0x00000000
 #define CPUCTL_STARTCPU						0x00000002
@@ -281,424 +201,14 @@
 #define ARU_ULPI_REGACCESS_CMD_MASK		0x1
 #define ARU_ULPI_REGACCESS_DATA_MASK	0xff0000
 
-/* XUSB PAD Ctl Registers START
- * Extracted and massaged from arxusb_padctl.h
- */
-#define MBOX_OWNERSHIP_ERR	-1
-#define PWR_GATE_ERR		-1
-#define YES			1
-#define NO			0
-#define	SNPS		0
-#define	XUSB		1
-#define	DISABLED	1
+#define ARU_CONTEXT_HS_PLS_SUSPEND	3
+#define ARU_CONTEXT_HS_PLS_FS_MODE	6
 
-#define BOOT_MEDIA_0			0x0
-#define BOOT_MEDIA_ENABLE		(1 << 0)
-#define BOOT_PORT(x)			(((x) & 0xf) << 1)
+#define GET_SS_PORTMAP(map, p)		(((map) >> 4*(p)) & 0xF)
 
-#define FORCE_PCIE_PAD_IDDQ_DISABLE			(1 << 16)
-#define FORCE_PCIE_PAD_IDDQ_DISABLE_MASK0	(1 << 17)
-#define FORCE_PCIE_PAD_IDDQ_DISABLE_MASK1	(1 << 18)
-
-#define USB2_PORT_CAP_0				0x8
-#define PORT0_CAP(x)				(((x) & 0x3) << 0)
-#define PORT0_INTERNAL				(1 << 2)
-#define PORT0_REVERSE_ID			(1 << 3)
-#define PORT1_CAP(x)				(((x) & 0x3) << 4)
-#define PORT1_INTERNAL				(1 << 6)
-#define PORT1_REVERSE_ID			(1 << 7)
-#define ULPI_PORT_CAP				(1 << 24)
-#define ULPI_MASTER					0
-#define ULPI_PHY					1
-#define ULPI_PORT_INTERNAL			(1 << 25)
-
-#define SNPS_OC_MAP_0				0xc
-#define CONTROLLER1_OC_PIN(x)		(((x) & 0x7) << 0)
-#define CONTROLLER2_OC_PIN(x)		(((x) & 0x7) << 3)
-#define CONTROLLER3_OC_PIN(x)		(((x) & 0x7) << 6)
-
-#define USB2_OC_MAP_0				0x10
-#define PORT0_OC_PIN(x)				(((x) & 0x7) << 0)
-#define PORT1_OC_PIN(x)				(((x) & 0x7) << 3)
-
-#define SS_PORT_MAP_0				0x14
-#define PORT0_MAP(x)				(((x) & 0x7) << 0)
-#define PORT1_MAP(x)				(((x) & 0x7) << 4)
-
-#define OC_DET_0							0x18
-#define SET_OC_DETECTED0					(1 << 0)
-#define SET_OC_DETECTED1					(1 << 1)
-#define SET_OC_DETECTED2					(1 << 2)
-#define SET_OC_DETECTED3					(1 << 3)
-#define VBUS_ENABLE0						(1 << 8)
-#define VBUS_ENABLE1						(1 << 9)
-#define VBUS_ENABLE0_OC_MAP(x)		(((x) & 0x7) << 10)
-#define VBUS_ENABLE1_OC_MAP(x)		(((x) & 0x7) << 13)
-#define OC_DETECTED0						(1 << 16)
-#define OC_DETECTED1						(1 << 17)
-#define OC_DETECTED2						(1 << 18)
-#define OC_DETECTED3						(1 << 19)
-#define OC_DETECTED_VBUS_PAD0				(1 << 20)
-#define OC_DETECTED_VBUS_PAD1				(1 << 21)
-#define OC_DETECTED_INTERRUPT_ENABLE0		(1 << 24)
-#define OC_DETECTED_INTERRUPT_ENABLE1		(1 << 25)
-#define OC_DETECTED_INTERRUPT_ENABLE2		(1 << 26)
-#define OC_DETECTED_INTERRUPT_ENABLE3		(1 << 27)
-#define OC_DETECTED_INTERRUPT_ENABLE_VBUSPAD0	(1 << 28)
-#define OC_DETECTED_INTERRUPT_ENABLE_VBUSPAD1	(1 << 29)
-
-#define USB2_BATTERY_CHRG_OTGPAD0_0		0x20
-#define USB2_BATTERY_CHRG_OTGPAD1_0		0x24
-#define PD_CHG					(1 << 0)
-#define VDCD_DET				(1 << 1)
-#define VDCD_DET_ST_CHNG		(1 << 2)
-#define VDCD_DET_CHNG_INTR_EN	(1 << 3)
-#define VDCD_DET_FILTER_EN		(1 << 4)
-#define VDAT_DET				(1 << 5)
-#define VDAT_DET_ST_CHNG		(1 << 6)
-#define VDAT_DET_CHNG_INTR_EN	(1 << 7)
-#define VDAT_DET_FILTER_EN		(1 << 8)
-#define OP_SINK_EN				(1 << 9)
-#define OP_SRC_EN				(1 << 10)
-#define ON_SINK_EN				(1 << 11)
-#define ON_SRC_EN				(1 << 12)
-#define OP_I_SRC_EN				(1 << 13)
-#define USBOP_RPD				(1 << 14)
-#define USBOP_RPU				(1 << 15)
-#define USBON_RPD				(1 << 16)
-#define USBON_RPU				(1 << 17)
-#define ZIP						(1 << 18)
-#define ZIP_ST_CHNG				(1 << 19)
-#define ZIP_CHNG_INTR_EN		(1 << 20)
-#define ZIP_FILTER_EN			(1 << 21)
-#define ZIN						(1 << 22)
-#define ZIN_ST_CHNG				(1 << 23)
-#define ZIN_CHNG_INTR_EN		(1 << 24)
-#define ZIN_FILTER_EN			(1 << 25)
-#define DCD_DETECTED			(1 << 26)
-#define DCD_INTR_EN				(1 << 27)
-#define SRP_DETECT_EN			(1 << 28)
-#define SRP_DETECTED			(1 << 29)
-#define SRP_INTR_EN				(1 << 30)
-#define GENERATE_SRP			(1 << 31)
-
-#define USB2_BATTERY_CHRG_BIASPAD_0				0x28
-#define PD_OTG							(1 << 0)
-#define OTG_VBUS_SESS_VLD				(1 << 1)
-#define OTG_VBUS_SESS_VLD_ST_CHNG		(1 << 2)
-#define OTG_VBUS_SESS_VLD_CHNG_INTR_EN	(1 << 3)
-#define VBUS_VLD				(1 << 4)
-#define VBUS_VLD_ST_CHNG		(1 << 5)
-#define VBUS_VLD_CHNG_INTR_EN	(1 << 6)
-#define IDDIG					(1 << 8)
-#define IDDIG_A					(1 << 9)
-#define IDDIG_B					(1 << 10)
-#define IDDIG_C					(1 << 11)
-#define ID_CONNECT_STATUS		(1 << 12)
-#define ID_CONNECT_ST_CHNG		(1 << 13)
-#define ID_CONNECT_CHNG_INTR_EN	(1 << 14)
-#define VBUS_SOURCE_SELECT(x)	(((x) & 0x3) << 15)
-#define VBUS_OVERRIDE			(1 << 17)
-#define ID_SOURCE_SELECT(x)		(((x) & 0x3) << 18)
-#define ID_OVERRIDE				(1 << 20)
-
-#define USB2_BATTERY_CHRG_TDCD_DBNC_TIMER_0	0x2c
-#define TDCD_DBNC(x)			(((x) & 0x7ff) << 0)
-
-#define IOPHY_PLL0_CTL1_0		0x30
-#define PLL_IDDQ				(1 << 0)
-#define PLL_RST_				(1 << 1)
-#define PLL_EMULATION_RST_		(1 << 2)
-#define PLL_PWR_OVRD			(1 << 3)
-#define PLL_CKBUFPD_TR			(1 << 4)
-#define PLL_CKBUFPD_TL			(1 << 5)
-#define PLL_CKBUFPD_BR			(1 << 6)
-#define PLL_CKBUFPD_BL			(1 << 7)
-#define PLL_CKBUFPD_M			(1 << 8)
-#define PLL_CKBUFPD_OVR			(1 << 9)
-#define REFCLK_TERM100			(1 << 11)
-#define REFCLK_SEL(x)			(((x) & 0xf) << 12)
-#define PLL0_MODE				(1 << 16)
-#define PLL0_LOCKDET			(1 << 19)
-#define PLL0_REFCLK_NDIV(x)		(((x) & 0x3) << 20)
-#define PLL1_MODE				(1 << 24)
-#define PLL1_LOCKDET			(1 << 27)
-#define PLL1_REFCLK_NDIV(x)		(((x) & 0x3) << 28)
-
-#define IOPHY_PLL0_CTL2_0		0x34
-#define XDIGCLK_SEL(x)			(((x) & 0x7) << 0)
-#define XDIGCLK_EN				(1 << 3)
-#define TXCLKREF_SEL			(1 << 4)
-#define TXCLKREF_EN				(1 << 5)
-#define REFCLKBUF_EN			(1 << 6)
-#define XDIGCLK4P5_EN			(1 << 7)
-#define TCLKOUT_SEL(x)			(((x) & 0xf) << 8)
-#define TCLKOUT_EN				(1 << 12)
-#define PLL_EMULATION_ON		(1 << 13)
-#define PLL_BYPASS_EN			(1 << 15)
-#define PLL0_CP_CNTL(x)			(((x) & 0xf) << 16)
-#define PLL1_CP_CNTL(x)			(((x) & 0xf) << 20)
-#define PLL_MISC_OUT(x)			(((x) & 0xff) << 24)
-
-#define IOPHY_PLL0_CTL3_0		0x38
-#define RCAL_CODE(x)			(((x) & 0x1f) << 0)
-#define RCAL_BYPASS				(1 << 7)
-#define RCAL_VAL(x)				(((x) & 0x1f) << 8)
-#define RCAL_RESET				(1 << 14)
-#define RCAL_DONE				(1 << 15)
-#define PLL_BGAP_CNTL(x)		(((x) & 0x3) << 16)
-#define PLL_BW_CNTL(x)			(((x) & 0x3f) << 20)
-#define PLL_TEMP_CNTL(x)		(((x) & 0xf) << 28)
-
-#define IOPHY_PLL0_CTL4_0		0x3c
-#define PLL_MISC_CNTL(x)		(((x) & 0xfff) << 0)
-
-#define IOPHY_USB3_PAD0_CTL_1_0	0x40
-#define IOPHY_USB3_PAD1_CTL_1_0	0x44
-#define USB3_RATE_MODE			(1 << 0)
-#define USB3_TX_RATE(x)			(((x) & 0x3) << 1)
-#define USB3_RX_RATE(x)			(((x) & 0x3) << 3)
-#define TX_AMP(x)				(((x) & 0x3f) << 5)
-#define TX_CMADJ(x)				(((x) & 0xf) << 11)
-#define TX_DRV_CNTL(x)			(((x) & 0xf) << 15)
-
-#define IOPHY_USB3_PAD0_CTL_2_0	0x48
-#define IOPHY_USB3_PAD1_CTL_2_0	0x4c
-#define TX_TERM_CNTL(x)			(((x) & 0x3) << 0)
-#define RX_TERM_CNTL(x)			(((x) & 0x3) << 2)
-#define RX_WANDER(x)			(((x) & 0xf) << 4)
-#define RX_EQ(x)				(((x) & 0xffff) << 8)
-#define CDR_CNTL(x)				(((x) & 0xff) << 24)
-
-#define IOPHY_USB3_PAD0_CTL_3_0	0x50
-#define EOM_CNTL(x)				(((x) & 0xffff) << 0)
-
-#define IOPHY_USB3_PAD1_CTL_3_0	0x54
-#define EOM_CNTL(x)				(((x) & 0xffff) << 0)
-
-#define IOPHY_USB3_PAD0_CTL_4_0	0x58
-#define DFE_CNTL(x)				(((x) & 0xffffffff) << 0)
-
-#define IOPHY_USB3_PAD1_CTL_4_0	0x5c
-#define DFE_CNTL(x)				(((x) & 0xffffffff) << 0)
-
-#define IOPHY_MISC_PAD0_CTL_1_0	0x60
-#define IOPHY_MISC_PAD1_CTL_1_0	0x64
-#define IDDQ					(1 << 0)
-#define IDDQ_OVRD				(1 << 1)
-#define CKBUFPD					(1 << 2)
-#define CKBUFPD_OVRD			(1 << 3)
-#define TX_SLEEP(x)				(((x) & 0x3) << 4)
-#define TX_DATA_READY			(1 << 6)
-#define TX_DATA_EN				(1 << 7)
-#define RX_SLEEP(x)				(((x) & 0x3) << 8)
-#define RX_DATA_READY			(1 << 10)
-#define RX_DATA_EN				(1 << 11)
-#define RX_STAT_IDLE			(1 << 12)
-#define TX_STAT_PRESENT			(1 << 13)
-#define TX_RDET					(1 << 15)
-#define TX_RATE(x)				(((x) & 0x3) << 16)
-#define RX_RATE(x)				(((x) & 0x3) << 18)
-#define TX_DIV(x)				(((x) & 0x3) << 20)
-#define RX_DIV(x)				(((x) & 0x3) << 22)
-#define RATE_MODE				(1 << 24)
-#define RATE_MODE_OVRD			(1 << 25)
-#define TX_PWR_OVRD				(1 << 26)
-#define RX_PWR_OVRD				(1 << 27)
-
-#define IOPHY_MISC_PAD0_CTL_2_0	0x68
-#define IOPHY_MISC_PAD1_CTL_2_0	0x6c
-#define NED_MODE(x)				(((x) & 0x3) << 0)
-#define NED_LOOP				(1 << 2)
-#define NEA_LOOP				(1 << 3)
-#define FEA_MODE(x)				(((x) & 0x7) << 4)
-#define FEA_LOOP				(1 << 7)
-#define TX_DATA_MODE(x)			(((x) & 0x7) << 8)
-#define FED_LOOP				(1 << 11)
-#define TX_SYNC					(1 << 12)
-#define RX_CDR_RESET			(1 << 13)
-#define PRBS_ERROR				(1 << 24)
-#define PRBS_CHK_EN				(1 << 25)
-#define TEST_EN					(1 << 27)
-#define SPARE_OUT(x)			(((x) & 0x3) << 30)
-
-#define IOPHY_MISC_PAD0_CTL_3_0	0x70
-#define IOPHY_MISC_PAD1_CTL_3_0	0x74
-#define MISC_CNTL(x)			(((x) & 0xf) << 0)
-#define TX_SEL_LOAD(x)			(((x) & 0xf) << 8)
-#define TX_RDET_T(x)			(((x) & 0x3) << 12)
-#define RX_IDLE_T(x)			(((x) & 0x3) << 14)
-#define TX_RDET_BYP				(1 << 16)
-#define RX_IDLE_BYP				(1 << 17)
-#define RX_IDLE_MODE			(1 << 18)
-#define RX_IDLE_MODE_OVRD		(1 << 19)
-#define CDR_TEST(x)				(((x) & 0xfff) << 20)
-
-#define IOPHY_MISC_PAD0_CTL_4_0		0x78
-#define IOPHY_MISC_PAD1_CTL_4_0		0x7c
-#define TX_BYP_OUT				(1 << 4)
-#define TX_BYP_IN				(1 << 5)
-#define TX_BYP_DIR				(1 << 6)
-#define TX_BYP_EN				(1 << 7)
-#define RX_BYP_IN				(1 << 8)
-#define RX_BYP_OUT				(1 << 9)
-#define RX_BYP_DIR				(1 << 10)
-#define RX_BYP_EN				(1 << 11)
-#define RX_BYP_MODE				(1 << 12)
-#define TX_BYP_OVRD				(1 << 13)
-#define AUX_IDDQ				(1 << 20)
-#define AUX_IDDQ_OVRD			(1 << 21)
-#define AUX_HOLD_EN				(1 << 22)
-#define AUX_MODE_OVRD			(1 << 23)
-#define AUX_TX_TERM_EN			(1 << 24)
-#define AUX_TX_RDET_EN			(1 << 25)
-#define AUX_TX_RDET_CLk_EN		(1 << 26)
-#define AUX_TX_STAT_PRESENT		(1 << 27)
-#define AUX_RX_TERM_EN			(1 << 28)
-#define AUX_RX_IDLE_EN			(1 << 29)
-#define AUX_RX_IDLE_MODE		(1 << 30)
-#define AUX_RX_STAT_IDLE		(1 << 31)
-
-#define IOPHY_MISC_PAD0_CTL_5_0		0x80
-#define IOPHY_MISC_PAD1_CTL_5_0		0x84
-#define DFE_TRAIN_EN			(1 << 0)
-#define DFE_TRAIN_DONE			(1 << 1)
-#define DFE_RESET				(1 << 3)
-#define EOM_TRAIN_EN			(1 << 4)
-#define EOM_TRAIN_DONE			(1 << 5)
-#define EOM_EN					(1 << 7)
-#define RX_QEYE_EN				(1 << 8)
-#define RX_QEYE_OUT(x)			(((x) & 0xf) << 12)
-
-#define IOPHY_MISC_PAD0_CTL_6_0		0x88
-#define IOPHY_MISC_PAD1_CTL_6_0		0x8c
-#define MISC_TEST(x)			(((x) & 0xffff) << 0)
-#define MISC_OUT(x)				(((x) & 0xff) << 24)
-
-#define USB2_OTG_PAD0_CTL_0_0	0x90
-#define USB2_OTG_PAD1_CTL_0_0	0x94
-#define HS_CURR_LEVEL(x)		(((x) & 0x3f) << 0)
-#define HS_SLEW(x)				(((x) & 0x3f) << 6)
-#define FS_SLEW(x)				(((x) & 0x3) << 12)
-#define LS_RSLEW(x)				(((x) & 0x3) << 14)
-#define LS_FSLEW(x)				(((x) & 0x3) << 16)
-#define TERM_EN					(1 << 18)
-#define PD						(1 << 19)
-#define PD2						(1 << 20)
-#define PD_ZI					(1 << 21)
-#define DISCON_DETECT_METHOD	(1 << 22)
-#define LSBIAS_SEL				(1 << 23)
-
-#define USB2_OTG_PAD0_CTL_1_0	0x98
-#define USB2_OTG_PAD1_CTL_1_0	0x9c
-#define PD_CHRP_FORCE_POWERUP	(1 << 0)
-#define PD_DISC_FORCE_POWERUP	(1 << 1)
-#define PD_DR				(1 << 2)
-#define TERM_RANGE_ADJ(x)	(((x) & 0xf) << 3)
-#define SPARE(x)			(((x) & 0x3) << 7)
-#define HS_IREF_CAP(x)		(((x) & 0x3) << 9)
-#define RPU_RANGE_ADJ(x)	(((x) & 0x3) << 11)
-
-#define USB2_BIAS_PAD_CTL_0_0	0xa0
-#define HS_SQUELCH_LEVEL(x)	(((x) & 0x3) << 0)
-#define HS_DISCON_LEVEL(x)	(((x) & 0x7) << 2)
-#define HS_CHIRP_LEVEL(x)	(((x) & 0x3) << 5)
-#define VBUS_LEVEL(x)		(((x) & 0x3) << 7)
-#define TERM_OFFSET(x)		(((x) & 0x7) << 9)
-#define BIAS_PD				(1 << 12)
-#define PD_TRK				(1 << 13)
-#define ADJRPU(x)			(((x) & 0x7) << 14)
-
-#define USB2_BIAS_PAD_CTL_1_0	0xa4
-#define RCTRL(x)			(((x) & 0xffff) << 0)
-#define TCTRL(x)			(((x) & 0xffff0000) >> 16)
-
-#define ULPI_LINK_TRIM_CONTROL_0	0xc0
-#define DAT_TRIM_VAL(x)		(((x) & 0xff) << 0)
-#define DAT_SEL_DEL0		(1 << 9)
-#define DAT_SEL_DEL1		(1 << 10)
-#define CTL_TRIM_VAL(x)		(((x) & 0xff) << 16)
-#define CTL_SEL_DEL0		(1 << 24)
-#define CTL_SEL_DEL1		(1 << 25)
-
-#define ULPI_NULL_CLK_TRIM_CONTROL_0	0xc4
-#define NULL_CLKOUT_TRIM_VAL(x)		(((x) & 0x1f) << 0)
-#define NULL_LBKCLK_TRIM_VAL(x)		(((x) & 0x1f) << 8)
-
-#define HSIC_STRB_TRIM_CONTROL_0	0xc8
-#define STRB_TRIM_VAL(x)		(((x) & 0x3f) << 0)
-
-#define WAKE_CTRL_0		0xcc
-#define PORT0_FORCE_TX_RDET_CLK_ENABLE	(1 << 0)
-#define PORT1_FORCE_TX_RDET_CLK_ENABLE	(1 << 1)
-
-#define PM_SPARE_0				0xd0
-#define OTG_PM_SPARE_BIT0		(1 << 0)
-#define OTG_PM_SPARE_BIT1		(1 << 1)
-#define OTG_PM_SPARE_BIT2		(1 << 2)
-#define OTG_PM_SPARE_BIT3		(1 << 3)
-#define ULPI_PM_SPARE_BIT0		(1 << 4)
-#define ULPI_PM_SPARE_BIT1		(1 << 5)
-#define ULPI_PM_SPARE_BIT2		(1 << 6)
-#define ULPI_PM_SPARE_BIT3		(1 << 7)
-#define HSIC_PM_SPARE_BIT0		(1 << 8)
-#define HSIC_PM_SPARE_BIT1		(1 << 9)
-#define HSIC_PM_SPARE_BIT2		(1 << 10)
-#define HSIC_PM_SPARE_BIT3		(1 << 11)
-
-#if defined(CONFIG_ARCH_TEGRA_11x_SOC)
-#define HSIC_PAD_CTL_0(_p)			(0xa8 + _p * 4)
-#elif defined(CONFIG_ARCH_TEGRA_12x_SOC)
-#define HSIC_PAD_CTL_0(_p)			(0xc0 + _p * 4)
-#endif
-#define   TX_RTUNEP(x)				(((x) & 0xf) << 0)
-#define   TX_RTUNEN(x)				(((x) & 0xf) << 4)
-#define   TX_SLEWP(x)				(((x) & 0xf) << 8)
-#define   TX_SLEWN(x)				(((x) & 0xf) << 12)
-#define   HSIC_OPT(x)				(((x) & 0xf) << 16)
-
-#define USB2_PAD_MUX				0x4
-#define   USB2_OTG_PAD_PORT(_p, x)		(((x) & 0x3) << (0 + _p * 2))
-#define   USB_OTG_PAD_SNPS			(0)
-#define   USB_OTG_PAD_XUSB			(1)
-#define   USB_OTG_PAD_UART			(2)
-#define   USB2_ULPI_PAD_PORT			(1 << 12)
-#define   USB2_HSIC_PAD_PORT(_p)		(1 << (14 + _p * 1))
-
-#if defined(CONFIG_ARCH_TEGRA_11x_SOC)
-#define HSIC_PAD_CTL_1(_p)			(0xb0 + _p * 4)
-#elif defined(CONFIG_ARCH_TEGRA_12x_SOC)
-#define HSIC_PAD_CTL_1(_p)			(0xc8 + _p * 4)
-#endif
-#define   AUTO_TERM_EN				(1 << 0)
-#define   HSIC_IDDQ				(1 << 1)
-#define   PD_TX				(1 << 2)
-#define   PD_TRX				(1 << 3)
-#define   PD_RX				(1 << 4)
-#define   HSIC_PD_ZI				(1 << 5)
-#define   LPBK					(1 << 6)
-#define   RPD_DATA				(1 << 7)
-#define   RPD_STROBE				(1 << 8)
-#define   RPU_DATA				(1 << 9)
-#define   RPU_STROBE				(1 << 10)
-
-#if defined(CONFIG_ARCH_TEGRA_11x_SOC)
-#define HSIC_PAD_CTL_2(_p)			(0xb8 + _p * 4)
-#elif defined(CONFIG_ARCH_TEGRA_12x_SOC)
-#define HSIC_PAD_CTL_2(_p)			(0xd0 + _p * 4)
-#endif
-#define   RX_DATA_TRIM(x)			(((x) & 0xf) << 0)
-#define   RX_STROBE_TRIM(x)			(((x) & 0xf) << 4)
-#define   CALIOUT(x)				(((x) & 0xffff) << 16)
-
-#if defined(CONFIG_ARCH_TEGRA_11x_SOC)
-#define HSIC_STRB_TRIM_CONTROL			(0xc8)
-#elif defined(CONFIG_ARCH_TEGRA_12x_SOC)
-#define HSIC_STRB_TRIM_CONTROL			(0xe0)
-#endif
-#define STRB_TRIM_VAL(x)			(((x) & 0x3f) << 0)
-
-/* XUSB PAD Ctl Registers END */
+#define reg_dump(_dev, _base, _reg)					\
+	dev_dbg(_dev, "%s: %s @%x = 0x%x\n", __func__, #_reg,		\
+		_reg, readl(_base + _reg))
 
 /*
  * FIXME: looks like no any .c requires below structure types
@@ -710,6 +220,12 @@ struct usb2_pad_port_map {
 	u32 ulpi_port;
 	u32 otg_port1;
 	u32 otg_port0;
+};
+
+enum hsic_pad_pupd {
+	PUPD_DISABLE = 0,
+	PUPD_IDLE,
+	PUPD_RESET
 };
 
 struct usb2_otg_caps {
@@ -765,6 +281,204 @@ struct vbus_enable_oc_map {
 	u32 vbus_en1;
 };
 
+struct xusb_save_regs {
+	u32 msi_bar_sz;
+	u32 msi_axi_barst;
+	u32 msi_fpci_barst;
+	u32 msi_vec0;
+	u32 msi_en_vec0;
+	u32 fpci_error_masks;
+	u32 intr_mask;
+	u32 ipfs_intr_enable;
+	u32 ufpci_config;
+	u32 clkgate_hysteresis;
+	u32 xusb_host_mccif_fifo_cntrl;
+
+	/* PG does not mention below */
+	u32 hs_pls;
+	u32 fs_pls;
+	u32 hs_fs_speed;
+	u32 hs_fs_pp;
+	u32 cfg_aru;
+	u32 cfg_order;
+	u32 cfg_fladj;
+	u32 cfg_sid;
+	/* DFE and CTLE */
+	u32 tap1_val[XUSB_SS_PORT_COUNT];
+	u32 amp_val[XUSB_SS_PORT_COUNT];
+	u32 ctle_z_val[XUSB_SS_PORT_COUNT];
+	u32 ctle_g_val[XUSB_SS_PORT_COUNT];
+};
+
+struct tegra_xhci_firmware {
+	void *data; /* kernel virtual address */
+	size_t size; /* firmware size */
+	dma_addr_t dma; /* dma address for controller */
+};
+
+struct tegra_xhci_firmware_log {
+	dma_addr_t phys_addr;		/* dma-able address */
+	void *virt_addr;		/* kernel va of the shared log buffer */
+	struct log_entry *dequeue;	/* current dequeue pointer (va) */
+	struct circ_buf circ;		/* big circular buffer */
+	u32 seq;			/* log sequence number */
+
+	struct task_struct *thread;	/* a thread to consume log */
+	struct mutex mutex;
+	wait_queue_head_t read_wait;
+	wait_queue_head_t write_wait;
+	wait_queue_head_t intr_wait;
+	struct dentry *path;
+	struct dentry *log_file;
+	unsigned long flags;
+};
+
+struct tegra_rx_ctrl_ops {
+	void (*receiver_detector)(unsigned port, bool enable);
+	void (*clamp_en_early)(unsigned port, bool enable);
+};
+
+struct tegra_xhci_hcd {
+	struct platform_device *pdev;
+	struct xhci_hcd *xhci;
+	u16 device_id;
+
+	spinlock_t lock;
+	struct mutex sync_lock;
+
+	int smi_irq;
+	int padctl_irq;
+	int usb3_irq;
+	int usb2_irq;
+
+	bool ss_wake_event;
+	bool ss_pwr_gated;
+	bool host_pwr_gated;
+	bool hs_wake_event;
+	bool host_resume_req;
+	bool lp0_exit;
+	u32 dfe_ctx_saved;
+	u32 ctle_ctx_saved;
+	unsigned long last_jiffies;
+	unsigned long host_phy_base;
+	unsigned long host_phy_size;
+	void __iomem *host_phy_virt_base;
+
+	void __iomem *padctl_base;
+	void __iomem *fpci_base;
+	void __iomem *ipfs_base;
+
+	struct tegra_xusb_platform_data *pdata;
+	struct tegra_xusb_board_data *bdata;
+	struct tegra_xusb_chip_calib *cdata;
+	const struct tegra_xusb_padctl_regs *padregs;
+	const struct tegra_xusb_soc_config *soc_config;
+	u64 tegra_xusb_dmamask;
+
+	/* mailbox variables */
+	struct mutex mbox_lock;
+	struct mutex mbox_lock_ack; /* for sending mbox which needs FW ACK */
+	u32 mbox_owner;
+	u32 cmd_type;
+	u32 cmd_data;
+	u32 fw_ack;		    /* storing the mbox cmd_type from FW */
+	wait_queue_head_t fw_ack_wq;/* sleep support for FW to SW mbox ack */
+
+	bool otg_port_owned;
+	bool otg_port_ownership_changed;
+	u32  hs_otg_portnum;
+	u32  ss_otg_portnum;
+
+	struct regulator **xusb_utmi_vbus_regs;
+
+	struct regulator *xusb_s1p05v_reg;
+	struct regulator *xusb_s3p3v_reg;
+	struct regulator *xusb_s1p8v_reg;
+	struct regulator *vddio_hsic_reg;
+	int vddio_hsic_refcnt;
+
+	struct work_struct mbox_work;
+	struct workqueue_struct *mbox_wq;
+	struct work_struct ss_elpg_exit_work;
+	struct work_struct host_elpg_exit_work;
+	struct work_struct xotg_vbus_work;
+	struct work_struct oc_handling_work;
+	struct work_struct reset_otg_sspi_work;
+
+	struct clk *host_clk;
+	struct clk *ss_clk;
+
+	/* XUSB Falcon SuperSpeed Clock */
+	struct clk *falc_clk;
+
+	/* EMC Clock */
+	struct clk *emc_clk;
+	/* XUSB SS PI Clock */
+	struct clk *ss_src_clk;
+	/* PLLE Clock */
+	struct clk *plle_clk;
+	struct clk *pll_u_480M;
+	struct clk *clk_m;
+	/* refPLLE clk */
+	struct clk *pll_re_vco_clk;
+	/*
+	 * XUSB/IPFS specific registers these need to be saved/restored in
+	 * addition to spec defined registers
+	 */
+	struct xusb_save_regs sregs;
+	bool usb2_rh_suspend;
+	bool usb3_rh_suspend;
+	bool hc_in_elpg;
+	bool system_in_lp0;
+
+	/* otg transceiver */
+	struct usb_phy *transceiver;
+	struct notifier_block otgnb;
+
+	unsigned long usb2_rh_remote_wakeup_ports; /* one bit per port */
+	unsigned long usb3_rh_remote_wakeup_ports; /* one bit per port */
+	/* firmware loading related */
+	struct tegra_xhci_firmware firmware;
+
+	struct tegra_xhci_firmware_log log;
+	struct device_attribute hsic_power_attr[XUSB_HSIC_COUNT];
+
+	struct tegra_prod_list *prod_list;
+	void __iomem *base_list[4];
+
+#ifdef CONFIG_TEGRA_EHCI_BOOST_CPU_FREQ
+	struct mutex boost_cpufreq_lock;
+	struct pm_qos_request boost_cpufreq_req;
+	struct pm_qos_request boost_cpuon_req;
+	struct work_struct boost_cpufreq_work;
+	struct delayed_work restore_cpufreq_work;
+	unsigned long cpufreq_last_boosted;
+	bool cpufreq_boosted;
+	bool restore_cpufreq_scheduled;
+	unsigned int boost_cpu_trigger;
+#endif
+	bool init_done;
+	bool clock_enable_done;
+
+	struct tegra_rx_ctrl_ops *rx_ctrl_ops;
+};
+
+#define NOT_SUPPORTED	0xFFFFFFFF
+#define PADCTL_REG_NONE	0xffff
+static inline u32 padctl_readl(struct tegra_xhci_hcd *tegra, u32 reg)
+{
+	if (reg == PADCTL_REG_NONE)
+		return PADCTL_REG_NONE;
+	return readl(tegra->padctl_base + reg);
+}
+
+static inline void padctl_writel(struct tegra_xhci_hcd *tegra, u32 val, u32 reg)
+{
+	if (reg == PADCTL_REG_NONE)
+		return;
+	writel(val, tegra->padctl_base + reg);
+}
+
 /**
  * port_to_hsic_pad - given "port number", return with hsic pad number
  * @_port:	(zero-based) index to portsc registers array.
@@ -803,6 +517,24 @@ struct vbus_enable_oc_map {
 		_port = 6;				\
 	else if (__p == 1)				\
 		_port = 7;				\
+	_port; })
+#elif defined(CONFIG_ARCH_TEGRA_21x_SOC)
+#define port_to_hsic_pad(_port) ({			\
+	int _pad = -1;					\
+	int __p = _port;				\
+	if (__p == 8)					\
+		_pad = 0;				\
+	else if (__p == 9)				\
+		_pad = 1;				\
+	_pad; })
+
+#define hsic_pad_to_port(_pad) ({			\
+	int _port = -1;					\
+	int __p = _pad;					\
+	if (__p == 0)					\
+		_port = 8;				\
+	else if (__p == 1)				\
+		_port = 9;				\
 	_port; })
 #endif
 #endif

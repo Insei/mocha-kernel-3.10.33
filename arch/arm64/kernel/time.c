@@ -1,6 +1,7 @@
 /*
  * Based on arch/arm/kernel/time.c
  *
+ * Copyright (c) 2016, NVIDIA CORPORATION.  All rights reserved.
  * Copyright (C) 1991, 1992, 1995  Linus Torvalds
  * Modifications for ARM (C) 1994-2001 Russell King
  * Copyright (C) 2012 ARM Ltd.
@@ -64,8 +65,6 @@ unsigned long profile_pc(struct pt_regs *regs)
 EXPORT_SYMBOL(profile_pc);
 #endif
 
-static u64 sched_clock_mult __read_mostly;
-
 static void dummy_clock_access(struct timespec *ts)
 {
 	ts->tv_sec = 0;
@@ -80,7 +79,7 @@ void read_persistent_clock(struct timespec *ts)
 	__read_persistent_clock(ts);
 }
 
-int __init register_persistent_clock(clock_access_fn read_boot,
+int register_persistent_clock(clock_access_fn read_boot,
 				     clock_access_fn read_persistent)
 {
 	/* Only allow the clockaccess functions to be registered once */
@@ -95,12 +94,6 @@ int __init register_persistent_clock(clock_access_fn read_boot,
 	}
 
 	return -EINVAL;
-}
-
-int read_current_timer(unsigned long *timer_value)
-{
-	*timer_value = arch_timer_read_counter();
-	return 0;
 }
 
 void __init time_init(void)

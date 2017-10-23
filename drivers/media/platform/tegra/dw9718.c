@@ -1,7 +1,7 @@
 /*
  * dw9718.c - dw9718 focuser driver
  *
- * Copyright (c) 2013-2014, NVIDIA Corporation. All Rights Reserved.
+ * Copyright (c) 2013-2016, NVIDIA Corporation. All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -93,9 +93,12 @@
 #include <linux/gpio.h>
 #include <linux/module.h>
 
-#include "t124/t124.h"
 #include <media/dw9718.h>
 #include <media/camera.h>
+
+#include "t124/t124.h"
+#include "camera_platform.h"
+#include "tegra_camera_dev_mfi.h"
 
 #define ENABLE_DEBUGFS_INTERFACE
 
@@ -118,7 +121,7 @@
 struct dw9718_info {
 	struct i2c_client *i2c_client;
 	struct regmap *regmap;
-	struct camera_sync_dev *csync_dev;
+	struct camera_mfi_dev *cmfi_dev;
 	struct dw9718_platform_data *pdata;
 	struct miscdevice miscdev;
 	struct list_head list;
@@ -134,6 +137,8 @@ struct dw9718_info {
 	u32 cur_pos;
 	u8 s_mode;
 	char devname[16];
+	u32 active_features;
+	u32 supported_features;
 };
 
 /**
@@ -152,7 +157,7 @@ static struct nvc_focus_cap dw9718_default_cap = {
 static struct nvc_focus_nvc dw9718_default_nvc = {
 	.focal_length = dw9718_FOCAL_LENGTH,
 	.fnumber = dw9718_FNUMBER,
-	.max_aperature = dw9718_FNUMBER,
+	.max_aperture = dw9718_FNUMBER,
 };
 
 static struct dw9718_platform_data dw9718_default_pdata = {
@@ -179,7 +184,6 @@ static int dw9718_i2c_wr8(struct dw9718_info *info, u8 reg, u8 val)
 	return 0;
 }
 
-#ifndef TEGRA_12X_OR_HIGHER_CONFIG
 static int dw9718_i2c_wr16(struct dw9718_info *info, u8 reg, u16 val)
 {
 	struct i2c_msg msg;
@@ -195,7 +199,6 @@ static int dw9718_i2c_wr16(struct dw9718_info *info, u8 reg, u16 val)
 		return -EIO;
 	return 0;
 }
-#endif
 
 static int dw9718_i2c_rd8(struct dw9718_info *info, u8 reg, u8 *val)
 {
@@ -226,23 +229,24 @@ static int dw9718_position_wr(struct dw9718_info *info, s32 position)
 
 	dev_dbg(&info->i2c_client->dev, "%s %d\n", __func__, position);
 	position &= dw9718_POS_CLAMP;
-#ifdef TEGRA_12X_OR_HIGHER_CONFIG
-	err = camera_dev_sync_clear(info->csync_dev);
-	err = camera_dev_sync_wr_add(info->csync_dev,
-				DW9718_VCM_CODE_MSB, position);
-	info->cur_pos = position;
-#else
-	err = dw9718_i2c_wr16(info, DW9718_VCM_CODE_MSB, position);
-	if (!err)
+	if (info->active_features|CAMDEV_USE_MFI) {
+		err = tegra_camera_dev_mfi_clear(info->cmfi_dev);
+		err = tegra_camera_dev_mfi_wr_add(info->cmfi_dev,
+					DW9718_VCM_CODE_MSB, position);
 		info->cur_pos = position;
-	else
-		dev_err(&info->i2c_client->dev, "%s: ERROR set position %d",
-			__func__, position);
-#endif
+	} else {
+		err = dw9718_i2c_wr16(info, DW9718_VCM_CODE_MSB, position);
+		if (!err)
+			info->cur_pos = position;
+		else
+			dev_err(&info->i2c_client->dev, "%s: ERROR set position %d",
+				__func__, position);
+	}
+
 	return err;
 }
 
-int dw9718_set_arc_mode(struct dw9718_info *info)
+static int dw9718_set_arc_mode(struct dw9718_info *info)
 {
 	int err;
 	u32 sr = info->nv_config.slew_rate;
@@ -331,8 +335,12 @@ static int dw9718_power_put(struct dw9718_power_rail *pw)
 	if (likely(pw->vdd_i2c))
 		regulator_put(pw->vdd_i2c);
 
+	if (likely(pw->vana))
+		regulator_put(pw->vana);
+
 	pw->vdd = NULL;
 	pw->vdd_i2c = NULL;
+	pw->vana = NULL;
 
 	return 0;
 }
@@ -345,8 +353,8 @@ static int dw9718_regulator_get(struct dw9718_info *info,
 
 	reg = regulator_get(&info->i2c_client->dev, vreg_name);
 	if (unlikely(IS_ERR(reg))) {
-		dev_err(&info->i2c_client->dev, "%s %s ERR: %d\n",
-			__func__, vreg_name, (int)reg);
+		dev_err(&info->i2c_client->dev, "%s %s ERR: %p\n",
+			__func__, vreg_name, reg);
 		err = PTR_ERR(reg);
 		reg = NULL;
 	} else
@@ -363,6 +371,7 @@ static int dw9718_power_get(struct dw9718_info *info)
 
 	dw9718_regulator_get(info, &pw->vdd, "vdd");
 	dw9718_regulator_get(info, &pw->vdd_i2c, "vdd_i2c");
+	dw9718_regulator_get(info, &pw->vana, "vana");
 
 	return 0;
 }
@@ -433,11 +442,11 @@ static int dw9718_set_focuser_capabilities(struct dw9718_info *info,
 {
 	dev_dbg(&info->i2c_client->dev, "%s\n", __func__);
 	if (copy_from_user(&info->nv_config,
-		(const void __user *)params->p_value,
+		(const void __user *)(uintptr_t)params->p_value,
 		sizeof(struct nv_focuser_config))) {
 			dev_err(&info->i2c_client->dev,
-			"%s Error: copy_from_user bytes %d\n",
-			__func__, sizeof(struct nv_focuser_config));
+			"%s Error: copy_from_user bytes %lu\n",	__func__,
+			(unsigned long)sizeof(struct nv_focuser_config));
 			return -EFAULT;
 	}
 
@@ -448,8 +457,8 @@ static int dw9718_set_focuser_capabilities(struct dw9718_info *info,
 		info->cap.settle_time = dw9718_SETTLETIME;
 
 	dev_dbg(&info->i2c_client->dev,
-		"%s: copy_from_user bytes %d info->cap.settle_time %d\n",
-		__func__, sizeof(struct nv_focuser_config),
+		"%s: copy_from_user bytes %lu info->cap.settle_time %d\n",
+		__func__, (unsigned long)sizeof(struct nv_focuser_config),
 		info->cap.settle_time);
 
 	return 0;
@@ -484,10 +493,10 @@ static int dw9718_param_rd(struct dw9718_info *info, unsigned long arg)
 		data_size = sizeof(info->nvc.focal_length);
 		break;
 	case NVC_PARAM_MAX_APERTURE:
-		data_ptr = &info->nvc.max_aperature;
-		data_size = sizeof(info->nvc.max_aperature);
+		data_ptr = &info->nvc.max_aperture;
+		data_size = sizeof(info->nvc.max_aperture);
 		dev_dbg(&info->i2c_client->dev, "%s MAX_APERTURE: %x\n",
-				__func__, info->nvc.max_aperature);
+				__func__, info->nvc.max_aperture);
 		break;
 	case NVC_PARAM_FNUMBER:
 		data_ptr = &info->nvc.fnumber;
@@ -513,6 +522,12 @@ static int dw9718_param_rd(struct dw9718_info *info, unsigned long arg)
 		dev_err(&info->i2c_client->dev, "%s STEREO: %d\n", __func__,
 			info->s_mode);
 		break;
+	case NVC_PARAM_FEATURES:
+		data_ptr = &info->supported_features;
+		data_size = sizeof(info->supported_features);
+		dev_dbg(&info->i2c_client->dev, "%s SUPPORTED FEATURES: %d\n",
+			__func__, info->supported_features);
+		break;
 	default:
 		dev_err(&info->i2c_client->dev,
 			"%s unsupported parameter: %d\n",
@@ -525,7 +540,8 @@ static int dw9718_param_rd(struct dw9718_info *info, unsigned long arg)
 			__func__, params.sizeofvalue, data_size, params.param);
 		return -EINVAL;
 	}
-	if (copy_to_user((void __user *)params.p_value, data_ptr, data_size)) {
+	if (copy_to_user((void __user *)(uintptr_t)params.p_value,
+		data_ptr, data_size)) {
 		dev_err(&info->i2c_client->dev, "%s copy_to_user err line %d\n",
 			__func__, __LINE__);
 		return -EFAULT;
@@ -578,7 +594,8 @@ static int dw9718_param_wr(struct dw9718_info *info, unsigned long arg)
 		return -EFAULT;
 	}
 	if (copy_from_user(&s32val,
-		(const void __user *)params.p_value, sizeof(s32val))) {
+		(const void __user *)(uintptr_t)params.p_value,
+		sizeof(s32val))) {
 		dev_err(&info->i2c_client->dev, "%s %d copy_from_user err\n",
 			__func__, __LINE__);
 		return -EFAULT;
@@ -650,6 +667,10 @@ static int dw9718_param_wr(struct dw9718_info *info, unsigned long arg)
 				__func__, params.sizeofvalue);
 			return -EFAULT;
 		}
+		return 0;
+
+	case NVC_PARAM_FEATURES:
+		info->active_features = (u32)s32val;
 		return 0;
 
 	default:
@@ -731,9 +752,9 @@ static void dw9718_sdata_init(struct dw9718_info *info)
 			info->nvc.fnumber = info->pdata->nvc->fnumber;
 		if (info->pdata->nvc->focal_length)
 			info->nvc.focal_length = info->pdata->nvc->focal_length;
-		if (info->pdata->nvc->max_aperature)
-			info->nvc.max_aperature =
-				info->pdata->nvc->max_aperature;
+		if (info->pdata->nvc->max_aperture)
+			info->nvc.max_aperture =
+				info->pdata->nvc->max_aperture;
 	}
 
 	if (info->pdata->cap) {
@@ -951,7 +972,7 @@ static int dw9718_probe(
 		}
 	}
 
-	if (info->pdata->dev_name != 0)
+	if (info->pdata->dev_name != NULL)
 		strncpy(info->devname, info->pdata->dev_name,
 			sizeof(info->devname) - 1);
 	else
@@ -971,14 +992,20 @@ static int dw9718_probe(
 		return -ENODEV;
 	}
 
-#ifdef TEGRA_12X_OR_HIGHER_CONFIG
-	err = camera_dev_add_regmap(&info->csync_dev, "dw9718", info->regmap);
+	err = tegra_camera_dev_mfi_add_regmap(&info->cmfi_dev,
+						"dw9718", info->regmap);
 	if (err < 0) {
-		dev_err(&client->dev, "%s unable i2c frame sync\n", __func__);
+		dev_err(&client->dev,
+			"%s unable to add to mfi regmap\n",
+			__func__);
 		dw9718_del(info);
 		return -ENODEV;
 	}
-#endif
+
+	info->active_features = 0;
+	info->supported_features = 0;
+	info->supported_features |=
+		(info->pdata->support_mfi) ? CAMDEV_USE_MFI : 0;
 
 	nvc_debugfs_init(
 		info->miscdev.this_device->kobj.name, NULL, NULL, info);
@@ -1029,7 +1056,7 @@ static ssize_t nvc_attr_set(struct file *s,
 	int err;
 	u32 val = 0;
 
-	pr_info("%s (%d)\n", __func__, count);
+	pr_info("%s (%lu)\n", __func__, (unsigned long)count);
 
 	if (!user_buf || count <= 1)
 		return -EFAULT;

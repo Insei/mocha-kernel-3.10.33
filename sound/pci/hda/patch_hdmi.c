@@ -4,7 +4,11 @@
  *
  *  Copyright(c) 2008-2010 Intel Corporation. All rights reserved.
  *  Copyright (c) 2006 ATI Technologies Inc.
+<<<<<<< HEAD
  *  Copyright (c) 2008-2014, NVIDIA Corp.  All rights reserved.
+=======
+ *  Copyright (c) 2008-2016, NVIDIA CORPORATION.  All rights reserved.
+>>>>>>> update/master
  *  Copyright (c) 2008 Wei Ni <wni@nvidia.com>
  *
  *  Authors:
@@ -120,7 +124,9 @@ struct dp_audio_infoframe {
 	u8 type; /* 0x84 */
 	u8 len;  /* 0x1b */
 	u8 ver;  /* 0x11 << 2 */
-
+#ifdef CONFIG_SND_HDA_PLATFORM_NVIDIA_TEGRA
+	u8 checksum;
+#endif
 	u8 CC02_CT47;	/* match with HDMI infoframe from this on */
 	u8 SS01_SF24;
 	u8 CXT04;
@@ -1019,6 +1025,7 @@ static void hdmi_intrinsic_event(struct hda_codec *codec, unsigned int res)
 	if (((codec->preset->id == 0x10de0020) ||
 		(codec->preset->id == 0x10de0022) ||
 		(codec->preset->id == 0x10de0028) ||
+		(codec->preset->id == 0x10de0029) ||
 		(codec->preset->id == 0x10de002a))) {
 		/*
 		 * HDMI sink's ELD info cannot always be retrieved for now, e.g.
@@ -1124,7 +1131,10 @@ static int hdmi_setup_stream(struct hda_codec *codec, hda_nid_t cvt_nid,
 	if (codec->vendor_id == 0x80862807)
 		haswell_verify_pin_D0(codec, pin_nid);
 
-	if (snd_hda_query_pin_caps(codec, pin_nid) & AC_PINCAP_HBR) {
+	/* Assuming the HW supports HBR for Tegra12x, Tegra21x tegra HDMI */
+	if ((snd_hda_query_pin_caps(codec, pin_nid) & AC_PINCAP_HBR) ||
+		(codec->preset->id == 0x10de0028) ||
+		(codec->preset->id == 0x10de0029)) {
 		pinctl = snd_hda_codec_read(codec, pin_nid, 0,
 					    AC_VERB_GET_PIN_WIDGET_CONTROL, 0);
 
@@ -1180,17 +1190,22 @@ static int hdmi_pcm_open(struct hda_pcm_stream *hinfo,
 	if ((((codec->preset->id == 0x10de0020) ||
 		(codec->preset->id == 0x10de0022) ||
 		(codec->preset->id == 0x10de0028) ||
+		(codec->preset->id == 0x10de0029) ||
 		(codec->preset->id == 0x10de002a))) &&
 		(!eld->monitor_present || !eld->info.lpcm_sad_ready)) {
+		hinfo->pcm_open_retry_count++;
 		if (!eld->monitor_present) {
 			if (tegra_hdmi_setup_hda_presence() < 0) {
-				snd_printk(KERN_WARNING
-					   "HDMI: No HDMI device connected\n");
+				/* Throttle log after 5 retries */
+				if (hinfo->pcm_open_retry_count < 5)
+					snd_printk(KERN_WARNING
+					   "HDA: No HDMI device connected\n");
 				return -ENODEV;
 			}
 		}
 		if (!eld->info.lpcm_sad_ready)
 			return -ENODEV;
+		hinfo->pcm_open_retry_count = 0;
 	}
 #endif
 
@@ -1396,6 +1411,7 @@ static void hdmi_repoll_eld(struct work_struct *work)
 	if ((codec->preset->id == 0x10de0020) ||
 		(codec->preset->id == 0x10de0022) ||
 		(codec->preset->id == 0x10de0028) ||
+		(codec->preset->id == 0x10de0029) ||
 		(codec->preset->id == 0x10de002a)) {
 		/*
 		 * HDMI sink's ELD info cannot always be retrieved for now, e.g.
@@ -1528,6 +1544,7 @@ static int hdmi_parse_codec(struct hda_codec *codec)
 		    AC_PWRST_EPSS)) && ((codec->preset->id != 0x10de0020) &&
 					(codec->preset->id != 0x10de0022) &&
 					(codec->preset->id != 0x10de0028) &&
+					(codec->preset->id != 0x10de0029) &&
 					(codec->preset->id != 0x10de002a)))
 		 codec->bus->power_keep_link_on = 1;
 #endif
@@ -1554,6 +1571,9 @@ static bool check_non_pcm_per_cvt(struct hda_codec *codec, hda_nid_t cvt_nid)
  * HDMI callbacks
  */
 
+#define is_pcm_format(format) \
+	((format & (1 << AC_FMT_TYPE_SHIFT)) == (AC_FMT_TYPE_PCM))
+
 static int generic_hdmi_playback_pcm_prepare(struct hda_pcm_stream *hinfo,
 					   struct hda_codec *codec,
 					   unsigned int stream_tag,
@@ -1576,10 +1596,12 @@ static int generic_hdmi_playback_pcm_prepare(struct hda_pcm_stream *hinfo,
 	if ((codec->preset->id == 0x10de0020) ||
 		(codec->preset->id == 0x10de0022) ||
 		(codec->preset->id == 0x10de0028) ||
+		(codec->preset->id == 0x10de0029) ||
 		(codec->preset->id == 0x10de002a)) {
 		int err = 0;
 
-		if (substream->runtime->channels == 2)
+		if ((substream->runtime->channels == 2) &&
+			is_pcm_format(format))
 			tegra_hdmi_audio_null_sample_inject(true);
 		else
 			tegra_hdmi_audio_null_sample_inject(false);
@@ -1630,6 +1652,15 @@ static int hdmi_pcm_close(struct hda_pcm_stream *hinfo,
 	int pinctl;
 
 	if (hinfo->nid) {
+#if defined(CONFIG_SND_HDA_PLATFORM_NVIDIA_TEGRA) && defined(CONFIG_TEGRA_DC)
+		if ((codec->preset->id == 0x10de0020) ||
+			(codec->preset->id == 0x10de0022) ||
+			(codec->preset->id == 0x10de0028) ||
+			(codec->preset->id == 0x10de0029) ||
+			(codec->preset->id == 0x10de002a)) {
+			tegra_hdmi_audio_null_sample_inject(false);
+		}
+#endif
 		cvt_idx = cvt_nid_to_cvt_index(spec, hinfo->nid);
 		if (snd_BUG_ON(cvt_idx < 0))
 			return -EINVAL;
@@ -1658,6 +1689,7 @@ static int hdmi_pcm_close(struct hda_pcm_stream *hinfo,
 
 		per_pin->setup = false;
 		per_pin->channels = 0;
+		hinfo->pcm_open_retry_count = 0;
 	}
 
 	return 0;
@@ -1912,6 +1944,7 @@ static int generic_hdmi_init_per_pins(struct hda_codec *codec)
 	case 0x10de0020:
 	case 0x10de0022:
 	case 0x10de0028:
+	case 0x10de0029:
 	case 0x10de002a:
 		snd_hda_codec_write(codec, 4, 0,
 				    AC_VERB_SET_DIGI_CONVERT_1, 0x11);
@@ -2746,6 +2779,7 @@ static const struct hda_codec_preset snd_hda_preset_hdmi[] = {
 { .id = 0x10de0020, .name = "Tegra30 HDMI",	.patch = patch_generic_hdmi },
 { .id = 0x10de0022, .name = "Tegra35 HDMI",	.patch = patch_generic_hdmi },
 { .id = 0x10de002a, .name = "Tegra14x HDMI",	.patch = patch_generic_hdmi },
+{ .id = 0x10de0029, .name = "Tegra21x HDMI",	.patch = patch_generic_hdmi },
 { .id = 0x10de0028, .name = "Tegra12x HDMI",	.patch = patch_generic_hdmi },
 { .id = 0x10de0040, .name = "GPU 40 HDMI/DP",	.patch = patch_nvhdmi},
 { .id = 0x10de0041, .name = "GPU 41 HDMI/DP",	.patch = patch_nvhdmi},
@@ -2803,6 +2837,7 @@ MODULE_ALIAS("snd-hda-codec-id:10de001c");
 MODULE_ALIAS("snd-hda-codec-id:10de0020");
 MODULE_ALIAS("snd-hda-codec-id:10de0022");
 MODULE_ALIAS("snd-hda-codec-id:10de0028");
+MODULE_ALIAS("snd-hda-codec-id:10de0029");
 MODULE_ALIAS("snd-hda-codec-id:10de002a");
 MODULE_ALIAS("snd-hda-codec-id:10de0040");
 MODULE_ALIAS("snd-hda-codec-id:10de0041");

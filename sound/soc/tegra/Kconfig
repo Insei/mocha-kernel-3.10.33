@@ -111,6 +111,103 @@ config SND_SOC_TEGRA30_AVP
 	  module. You will also need to select the individual machine drivers to
 	  support below.
 
+config SND_SOC_TEGRA210_ADMA
+	tristate
+	depends on SND_SOC_TEGRA
+	help
+	  Say Y or M here if you want support for the Tegra210 ADMA module.
+
+config SND_SOC_TEGRA210_AXBAR
+	tristate
+	depends on SND_SOC_TEGRA
+	help
+	  Say Y or M if you want to add support for the Tegra210 AXBAR module.
+	  You will also need to select the individual machine drivers to
+	  support below.
+
+config SND_SOC_TEGRA210_OPE
+	tristate
+	depends on SND_SOC_TEGRA
+	select SND_SOC_TEGRA210_AXBAR
+	help
+	  Say Y or M if you want to add support for the Tegra210 OPE module.
+	  You will also need to select the individual machine drivers to
+	  support below.
+
+config SND_SOC_TEGRA210_PEQ
+	tristate
+	depends on SND_SOC_TEGRA
+	select SND_SOC_TEGRA210_AXBAR
+	select SND_SOC_TEGRA210_OPE
+	help
+	  Say Y or M if you want to add support for the Tegra210 PEQ module.
+	  You will also need to select the individual machine drivers to
+	  support below.
+
+config SND_SOC_TEGRA210_MBDRC
+	tristate
+	depends on SND_SOC_TEGRA
+	select SND_SOC_TEGRA210_AXBAR
+	select SND_SOC_TEGRA210_OPE
+	help
+	  Say Y or M if you want to add support for the Tegra210 MBDRC module.
+	  You will also need to select the individual machine drivers to
+	  support below.
+
+config SND_SOC_TEGRA210_SFC
+	tristate
+	depends on SND_SOC_TEGRA
+	select SND_SOC_TEGRA210_AXBAR
+	help
+	  Say Y or M if you want to add support for the Tegra210 SFC module.
+	  You will also need to select the individual machine drivers to
+	  support below.
+
+config SND_SOC_TEGRA210_SPKPROT
+	tristate
+	depends on SND_SOC_TEGRA
+	select SND_SOC_TEGRA210_AXBAR
+	help
+	  Say Y or M if you want to add support for the Tegra210 SPKPROT module.
+	  You will also need to select the individual machine drivers to
+	  support below.
+
+config SND_SOC_TEGRA210_DMIC
+	tristate
+	depends on SND_SOC_TEGRA
+	select SND_SOC_TEGRA210_AXBAR
+	help
+	  Say Y or M if you want to add support for the Tegra210 DMIC module.
+	  You will also need to select the individual machine drivers to
+	  support below.
+
+config SND_SOC_TEGRA210_ADMAIF
+        tristate
+        depends on SND_SOC_TEGRA
+        select SND_SOC_TEGRA210_AXBAR
+        help
+          Say Y or M if you want to add support for the Tegra210 ADMAIF module.
+          You will also need to select the individual machine drivers to
+          support below.
+
+config SND_SOC_TEGRA210_AMIXER
+	tristate
+	depends on SND_SOC
+	select SND_SOC_TEGRA210_AXBAR
+	help
+	  Say Y or M if you want to add support for the Tegra210 AMIXER module.
+	  You will also need to select the individual machine drivers to
+	  support below.
+
+config SND_SOC_TEGRA210_MVC
+	tristate
+	depends on SND_SOC
+	select SND_SOC_TEGRA210_AXBAR
+	help
+	  Say Y or M if you want to add support for the Tegra210 MVC module.
+	  You will also need to select the individual machine drivers to
+	  support below.
+
 config SND_SOC_TEGRA_WM8753
 	tristate "SoC Audio support for Tegra boards using a WM8753 codec"
 	depends on SND_SOC_TEGRA && I2C
@@ -279,6 +376,7 @@ config SND_SOC_TEGRA_RT5639
 	select SND_SOC_TEGRA30_SPDIF if !ARCH_TEGRA_2x_SOC
 	select SND_SOC_RT5639
 	select SND_SOC_SPDIF
+	select SND_SOC_TEGRA30_AVP if !ARCH_TEGRA_2x_SOC
 	select SND_SOC_TEGRA30_DAM if !ARCH_TEGRA_2x_SOC
 	help
 	  Say Y or M here if you want to add support for SoC audio on Tegra
@@ -297,7 +395,7 @@ config SND_SOC_TEGRA_RT5640
 	help
 	  Say Y or M here if you want to add support for SoC audio on Tegra
 	  boards using the ALC5640 codec. Currently, the supported boards
-	  are Kai,Cardhu,Dalmore and Macallan.
+	  are Kai,Cardhu and Dalmore.
 
 config MACH_HAS_SND_SOC_TEGRA_RT5645
 	bool
@@ -374,6 +472,7 @@ config SND_SOC_TEGRA_MAX98090
 	select SND_SOC_TEGRA30_DAM if !ARCH_TEGRA_2x_SOC
 	select SND_SOC_MAX97236
 	select SND_SOC_SPDIF
+	select SND_SOC_TEGRA30_AVP if !ARCH_TEGRA_2x_SOC
 	help
 	  Say Y or M here if you want to add support for SoC audio on Tegra
 	  boards using the MAX98090 codec. Currently, only supported board is
@@ -397,3 +496,39 @@ config SND_SOC_TEGRA_DMIC_REV1
 	  Say Y or M here if you want to add support for SoC audio on Tegra
 	  boards using the DMIC_REV1 codec. Currently, only supported board is
 	  E1664 (dolak).
+
+config MACH_HAS_SND_SOC_TEGRA_ES755
+	bool
+	help
+	  Machines that use the SND_SOC_TEGRA_ES755 driver should select this
+	  config options, in order to allow the user to enable
+	  SNS_SOC_TEGRA_ES755.
+
+config SND_SOC_TEGRA_ES755
+	tristate "SoC Audio support for Tegra boards using an ES755 codec"
+	depends on SND_SOC_TEGRA && I2C && TEGRA_DC
+	depends on MACH_HAS_SND_SOC_TEGRA_ES755
+	select SND_SOC_TEGRA30_I2S if !ARCH_TEGRA_2x_SOC
+	select SND_SOC_ES755
+	select SND_SOC_TEGRA30_DAM if !ARCH_TEGRA_2x_SOC
+	select SND_SOC_TAS2552
+	select SND_SOC_SPDIF
+	help
+	  Say Y or M here if you want to add support for SoC audio on Tegra
+	  boards using the combination of Audience ES755 codec and TI tas2552
+	  DAC. The digital control interface may be I2C, UART or SPI for es755.
+	  Define defconfig correctly in order to choose the digital control
+	  interface. The default interface would be I2C. tas2552 should be used
+	  for audio through speaker for its speaker protection functionality.
+	  es755 has its built-in DSP for voice AE and NS functionality.
+	  Currently, only supported board is e1780 (ardbeg).
+
+config SND_SOC_TEGRA_DUMMY
+	tristate "SoC Audio support for Tegra boards that doesn't use codecs"
+	depends on SND_SOC_TEGRA
+	select SND_SOC_TEGRA30_SPDIF if !ARCH_TEGRA_2x_SOC
+	select SND_SOC_SPDIF
+	help
+	  Say Y or M here if you want to add support for SoC audio on Tegra
+	  boards that doesn't use codecs (like SPDIF).
+	  One such board is a customer board called Sandman.

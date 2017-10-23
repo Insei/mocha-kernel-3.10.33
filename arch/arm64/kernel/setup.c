@@ -41,10 +41,14 @@
 #include <linux/memblock.h>
 #include <linux/of_fdt.h>
 #include <linux/of_platform.h>
+#include <linux/personality.h>
 
+#include <asm/cpu.h>
 #include <asm/cputype.h>
 #include <asm/elf.h>
 #include <asm/cputable.h>
+#include <asm/cpufeature.h>
+#include <asm/cpu_ops.h>
 #include <asm/sections.h>
 #include <asm/setup.h>
 #include <asm/smp_plat.h>
@@ -52,19 +56,27 @@
 #include <asm/tlbflush.h>
 #include <asm/traps.h>
 #include <asm/memblock.h>
-#include <asm/mmu_context.h>
 #include <asm/psci.h>
 
 #include <asm/mach/arch.h>
-#include <asm/system_misc.h>
 
 unsigned int processor_id;
 EXPORT_SYMBOL(processor_id);
 
-unsigned int elf_hwcap __read_mostly;
+unsigned long elf_hwcap __read_mostly;
 EXPORT_SYMBOL_GPL(elf_hwcap);
 
-static const char *cpu_name;
+#ifdef CONFIG_COMPAT
+#define COMPAT_ELF_HWCAP_DEFAULT	\
+				(COMPAT_HWCAP_HALF|COMPAT_HWCAP_THUMB|\
+				 COMPAT_HWCAP_FAST_MULT|COMPAT_HWCAP_EDSP|\
+				 COMPAT_HWCAP_TLS|COMPAT_HWCAP_VFP|\
+				 COMPAT_HWCAP_VFPv3|COMPAT_HWCAP_VFPv4|\
+				 COMPAT_HWCAP_NEON|COMPAT_HWCAP_IDIV)
+unsigned int compat_elf_hwcap __read_mostly = COMPAT_ELF_HWCAP_DEFAULT;
+unsigned int compat_elf_hwcap2 __read_mostly;
+#endif
+
 static const char *machine_name;
 
 unsigned int system_rev;
@@ -76,7 +88,11 @@ EXPORT_SYMBOL(system_serial_low);
 unsigned int system_serial_high;
 EXPORT_SYMBOL(system_serial_high);
 
+#ifdef CONFIG_ARM64_MACH_FRAMEWORK
 struct machine_desc *machine_desc __initdata;
+#endif
+DECLARE_BITMAP(cpu_hwcaps, ARM64_NCAPS);
+
 phys_addr_t __fdt_pointer __initdata;
 
 /*
@@ -109,7 +125,7 @@ void __init early_print(const char *str, ...)
 	vsnprintf(buf, sizeof(buf), str, ap);
 	va_end(ap);
 
-	printk("%s", buf);
+	pr_info("%s", buf);
 }
 
 struct mpidr_hash mpidr_hash;
@@ -180,49 +196,109 @@ static void __init smp_build_mpidr_hash(void)
 	__flush_dcache_area(&mpidr_hash, sizeof(struct mpidr_hash));
 }
 #endif
+bool arch_match_cpu_phys_id(int cpu, u64 phys_id)
+{
+	return phys_id == cpu_logical_map(cpu);
+}
 
 static void __init setup_processor(void)
 {
 	struct cpu_info *cpu_info;
-	u64 reg_value;
+	u64 features, block;
 
-	/*
-	 * locate processor in the list of supported processor
-	 * types.  The linker builds this table for us from the
-	 * entries in arch/arm/mm/proc.S
-	 */
 	cpu_info = lookup_processor_type(read_cpuid_id());
 	if (!cpu_info) {
-		printk("CPU configuration botched (ID %08x), unable to continue.\n",
+		pr_info("CPU configuration botched (ID %08x), unable to continue.\n",
 		       read_cpuid_id());
 		while (1);
 	}
 
-	cpu_name = cpu_info->cpu_name;
+	pr_info("CPU: %s [%08x] revision %d\n",
+	       cpu_info->cpu_name, read_cpuid_id(), read_cpuid_id() & 15);
 
-	printk("CPU: %s [%08x] revision %d\n",
-	       cpu_name, read_cpuid_id(), read_cpuid_id() & 15);
-
-	sprintf(init_utsname()->machine, "aarch64");
+	sprintf(init_utsname()->machine, ELF_PLATFORM);
 	elf_hwcap = 0;
 
-	/* Read the number of ASID bits */
-	reg_value = read_cpuid(ID_AA64MMFR0_EL1) & 0xf0;
-	if (reg_value == 0x00)
-		max_asid_bits = 8;
-	else if (reg_value == 0x20)
-		max_asid_bits = 16;
-	else
-		BUG_ON(1);
-	cpu_last_asid = 1 << max_asid_bits;
+	cpuinfo_store_boot_cpu();
+
+	/*
+	 * ID_AA64ISAR0_EL1 contains 4-bit wide signed feature blocks.
+	 * The blocks we test below represent incremental functionality
+	 * for non-negative values. Negative values are reserved.
+	 */
+	features = read_cpuid(ID_AA64ISAR0_EL1);
+	block = (features >> 4) & 0xf;
+	if (!(block & 0x8)) {
+		switch (block) {
+		default:
+		case 2:
+			elf_hwcap |= HWCAP_PMULL;
+		case 1:
+			elf_hwcap |= HWCAP_AES;
+		case 0:
+			break;
+		}
+	}
+
+	block = (features >> 8) & 0xf;
+	if (block && !(block & 0x8))
+		elf_hwcap |= HWCAP_SHA1;
+
+	block = (features >> 12) & 0xf;
+	if (block && !(block & 0x8))
+		elf_hwcap |= HWCAP_SHA2;
+
+	block = (features >> 16) & 0xf;
+	if (block && !(block & 0x8))
+		elf_hwcap |= HWCAP_CRC32;
+
+#ifdef CONFIG_COMPAT
+	/*
+	 * ID_ISAR5_EL1 carries similar information as above, but pertaining to
+	 * the Aarch32 32-bit execution state.
+	 */
+	features = read_cpuid(ID_ISAR5_EL1);
+	block = (features >> 4) & 0xf;
+	if (!(block & 0x8)) {
+		switch (block) {
+		default:
+		case 2:
+			compat_elf_hwcap2 |= COMPAT_HWCAP2_PMULL;
+		case 1:
+			compat_elf_hwcap2 |= COMPAT_HWCAP2_AES;
+		case 0:
+			break;
+		}
+	}
+
+	block = (features >> 8) & 0xf;
+	if (block && !(block & 0x8))
+		compat_elf_hwcap2 |= COMPAT_HWCAP2_SHA1;
+
+	block = (features >> 12) & 0xf;
+	if (block && !(block & 0x8))
+		compat_elf_hwcap2 |= COMPAT_HWCAP2_SHA2;
+
+	block = (features >> 16) & 0xf;
+	if (block && !(block & 0x8))
+		compat_elf_hwcap2 |= COMPAT_HWCAP2_CRC32;
+#endif
 }
 
+#ifdef CONFIG_ARM64_MACH_FRAMEWORK
 static struct machine_desc * __init setup_machine_fdt(phys_addr_t dt_phys)
+#else
+static void __init setup_machine_fdt(phys_addr_t dt_phys)
+#endif
 {
 	struct boot_param_header *devtree;
+	unsigned long dt_root;
+#ifdef CONFIG_ARM64_MACH_FRAMEWORK
 	struct machine_desc *mdesc, *mdesc_best = NULL;
 	unsigned int score, mdesc_score = ~1;
-	unsigned long dt_root;
+#endif
+
+	cpuinfo_store_cpu();
 
 	/* Check we have a non-NULL DT pointer */
 	if (!dt_phys) {
@@ -254,6 +330,7 @@ static struct machine_desc * __init setup_machine_fdt(phys_addr_t dt_phys)
 	initial_boot_params = devtree;
 	dt_root = of_get_flat_dt_root();
 
+#ifdef CONFIG_ARM64_MACH_FRAMEWORK
 	for_each_machine_desc(mdesc) {
 		score = of_flat_dt_match(dt_root, mdesc->dt_compat);
 		if (score > 0 && score < mdesc_score) {
@@ -279,6 +356,7 @@ static struct machine_desc * __init setup_machine_fdt(phys_addr_t dt_phys)
 		while (true)
 			/* can't use cpu_relax() here as it may require MMU setup */;
 	}
+#endif
 
 	machine_name = of_get_flat_dt_prop(dt_root, "model", NULL);
 	if (!machine_name)
@@ -294,30 +372,9 @@ static struct machine_desc * __init setup_machine_fdt(phys_addr_t dt_phys)
 	/* Setup memory, calling early_init_dt_add_memory_arch */
 	of_scan_flat_dt(early_init_dt_scan_memory, NULL);
 
+#ifdef CONFIG_ARM64_MACH_FRAMEWORK
 	return mdesc_best;
-}
-
-void __init early_init_dt_add_memory_arch(u64 base, u64 size)
-{
-	base &= PAGE_MASK;
-	size &= PAGE_MASK;
-	if (base + size < PHYS_OFFSET) {
-		pr_warning("Ignoring memory block 0x%llx - 0x%llx\n",
-			   base, base + size);
-		return;
-	}
-	if (base < PHYS_OFFSET) {
-		pr_warning("Ignoring memory range 0x%llx - 0x%llx\n",
-			   base, PHYS_OFFSET);
-		size -= PHYS_OFFSET - base;
-		base = PHYS_OFFSET;
-	}
-	memblock_add(base, size);
-}
-
-void * __init early_init_dt_alloc_memory_arch(u64 size, u64 align)
-{
-	return __va(memblock_alloc(size, align));
+#endif
 }
 
 /*
@@ -371,11 +428,18 @@ u64 __cpu_logical_map[NR_CPUS] = { [0 ... NR_CPUS-1] = INVALID_HWID };
 
 void __init setup_arch(char **cmdline_p)
 {
+#ifdef CONFIG_ARM64_MACH_FRAMEWORK
 	struct machine_desc *mdesc;
+#endif
 
 	setup_processor();
+
+#ifdef CONFIG_ARM64_MACH_FRAMEWORK
 	mdesc = setup_machine_fdt(__fdt_pointer);
 	machine_desc = mdesc;
+#else
+	setup_machine_fdt(__fdt_pointer);
+#endif
 
 	init_mm.start_code = (unsigned long) _text;
 	init_mm.end_code   = (unsigned long) _etext;
@@ -383,6 +447,8 @@ void __init setup_arch(char **cmdline_p)
 	init_mm.brk	   = (unsigned long) _end;
 
 	*cmdline_p = boot_command_line;
+
+	init_mem_pgprot();
 
 	parse_early_param();
 
@@ -395,12 +461,12 @@ void __init setup_arch(char **cmdline_p)
 
 	psci_init();
 
-	if (mdesc->restart)
-		arm_pm_restart = mdesc->restart;
-
 	cpu_logical_map(0) = read_cpuid_mpidr() & MPIDR_HWID_BITMASK;
+	cpu_read_bootcpu_ops();
 #ifdef CONFIG_SMP
+#ifdef CONFIG_ARM64_MACH_FRAMEWORK
 	smp_set_ops(machine_desc->smp);
+#endif
 	smp_init_cpus();
 	smp_build_mpidr_hash();
 #endif
@@ -413,8 +479,10 @@ void __init setup_arch(char **cmdline_p)
 #endif
 #endif
 
+#ifdef CONFIG_ARM64_MACH_FRAMEWORK
 	if (machine_desc->init_early)
 		machine_desc->init_early();
+#endif
 }
 
 static int __init arm64_device_init(void)
@@ -422,21 +490,26 @@ static int __init arm64_device_init(void)
 #if defined(CONFIG_COMMON_CLK)
 	of_clk_init(NULL);
 #endif
+#ifdef CONFIG_ARM64_MACH_FRAMEWORK
 	if (!machine_desc->init_machine)
+#endif
 		of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
 	return 0;
 }
 arch_initcall(arm64_device_init);
-
-static DEFINE_PER_CPU(struct cpu, cpu_data);
 
 static int __init topology_init(void)
 {
 	int i;
 
 	for_each_possible_cpu(i) {
-		struct cpu *cpu = &per_cpu(cpu_data, i);
+		struct cpu *cpu = &per_cpu(cpu_data.cpu, i);
 		cpu->hotpluggable = 1;
+#if !defined(CONFIG_HOTPLUG_CPU0)
+		if (i == 0)
+			cpu->hotpluggable = 0;
+#endif
+
 		register_cpu(cpu, i);
 	}
 
@@ -447,6 +520,12 @@ subsys_initcall(topology_init);
 static const char *hwcap_str[] = {
 	"fp",
 	"asimd",
+	"evtstrm",
+	"aes",
+	"pmull",
+	"sha1",
+	"sha2",
+	"crc32",
 	NULL
 };
 
@@ -458,14 +537,41 @@ static void denver_show(struct seq_file *m)
 	seq_printf(m, "MTS version\t: %u\n", aidr);
 }
 
+#ifdef CONFIG_COMPAT
+static const char *compat_hwcap_str[] = {
+	"swp",
+	"half",
+	"thumb",
+	"26bit",
+	"fastmult",
+	"fpa",
+	"vfp",
+	"edsp",
+	"java",
+	"iwmmxt",
+	"crunch",
+	"thumbee",
+	"neon",
+	"vfpv3",
+	"vfpv3d16",
+	"tls",
+	"vfpv4",
+	"idiva",
+	"idivt",
+	"vfpd32",
+	"lpae",
+	"evtstrm"
+};
+#endif /* CONFIG_COMPAT */
+
 static int c_show(struct seq_file *m, void *v)
 {
-	int i;
-
-	seq_printf(m, "Processor\t: %s rev %d (%s)\n",
-		   cpu_name, read_cpuid_id() & 15, ELF_PLATFORM);
+	int i, j;
 
 	for_each_online_cpu(i) {
+		struct cpuinfo_arm64 *cpuinfo = &per_cpu(cpu_data, i);
+		u32 midr = cpuinfo->reg_midr;
+
 		/*
 		 * glibc reads /proc/cpuinfo to determine the number of
 		 * online processors, looking for lines beginning with
@@ -474,30 +580,36 @@ static int c_show(struct seq_file *m, void *v)
 #ifdef CONFIG_SMP
 		seq_printf(m, "processor\t: %d\n", i);
 #endif
-		seq_printf(m, "BogoMIPS\t: %lu.%02lu\n\n",
+		seq_printf(m, "BogoMIPS\t: %lu.%02lu\n",
 			   loops_per_jiffy / (500000UL/HZ),
 			   loops_per_jiffy / (5000UL/HZ) % 100);
+
+		/*
+		 * Dump out the common processor features in a single line.
+		 * Userspace should read the hwcaps with getauxval(AT_HWCAP)
+		 * rather than attempting to parse this, but there's a body of
+		 * software which does already (at least for 32-bit).
+		 */
+		seq_puts(m, "Features\t:");
+		if (personality(current->personality) == PER_LINUX32) {
+#ifdef CONFIG_COMPAT
+			for (j = 0; compat_hwcap_str[j]; j++)
+				if (COMPAT_ELF_HWCAP & (1 << j))
+					seq_printf(m, " %s", compat_hwcap_str[j]);
+#endif /* CONFIG_COMPAT */
+		} else {
+			for (j = 0; hwcap_str[j]; j++)
+				if (elf_hwcap & (1 << j))
+					seq_printf(m, " %s", hwcap_str[j]);
+		}
+		seq_puts(m, "\n");
+
+		seq_printf(m, "CPU implementer\t: 0x%02x\n", (midr >> 24));
+		seq_printf(m, "CPU architecture: 8\n");
+		seq_printf(m, "CPU variant\t: 0x%x\n", ((midr >> 20) & 0xf));
+		seq_printf(m, "CPU part\t: 0x%03x\n", ((midr >> 4) & 0xfff));
+		seq_printf(m, "CPU revision\t: %d\n\n", (midr & 0xf));
 	}
-
-	/* dump out the processor features */
-	seq_puts(m, "Features\t: ");
-
-	for (i = 0; hwcap_str[i]; i++)
-		if (elf_hwcap & (1 << i))
-			seq_printf(m, "%s ", hwcap_str[i]);
-#ifdef CONFIG_ARMV7_COMPAT_CPUINFO
-	/* Print out the non-optional ARMv8 HW capabilities */
-	seq_printf(m, "wp half thumb fastmult vfp edsp neon vfpv3 tlsi ");
-	seq_printf(m, "vfpv4 idiva idivt ");
-#endif
-
-	seq_printf(m, "\nCPU implementer\t: 0x%02x\n", read_cpuid_id() >> 24);
-	seq_printf(m, "CPU architecture: 8\n");
-	seq_printf(m, "CPU variant\t: 0x%x\n", (read_cpuid_id() >> 20) & 15);
-	seq_printf(m, "CPU part\t: 0x%03x\n", (read_cpuid_id() >> 4) & 0xfff);
-	seq_printf(m, "CPU revision\t: %d\n", read_cpuid_id() & 15);
-
-	seq_puts(m, "\n");
 
 	seq_printf(m, "Hardware\t: %s\n", machine_name);
 	seq_printf(m, "Revision\t: %04x\n", system_rev);
@@ -531,6 +643,7 @@ const struct seq_operations cpuinfo_op = {
 	.show	= c_show
 };
 
+#ifdef CONFIG_ARM64_MACH_FRAMEWORK
 static int __init customize_machine(void)
 {
 	/* customizes platform devices, or adds new ones */
@@ -547,3 +660,4 @@ static int __init init_machine_late(void)
 	return 0;
 }
 late_initcall(init_machine_late);
+#endif

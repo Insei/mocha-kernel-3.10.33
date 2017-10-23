@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/dc/mipi_cal_regs.h
  *
- * Copyright (c) 2012-2013, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2012-2016, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -17,14 +17,17 @@
 #ifndef __DRIVERS_VIDEO_TEGRA_DC_MIPI_CAL_REG_H__
 #define __DRIVERS_VIDEO_TEGRA_DC_MIPI_CAL_REG_H__
 
+#ifndef COMMON_MIPICAL_SUPPORTED
 #define MIPI_DSI_AUTOCAL_TIMEOUT_USEC 2000
 
 #if defined(CONFIG_ARCH_TEGRA_14x_SOC)
 	#define MIPI_VALID_REG_LIMIT  MIPI_CAL_DSIB_MIPI_CAL_CONFIG_2_0
-#elif defined(CONFIG_ARCH_TEGRA_12x_SOC)
-	#define MIPI_VALID_REG_LIMIT  MIPI_CAL_CSIE_MIPI_CAL_CONFIG_2_0
-#else
+#elif defined(CONFIG_ARCH_TEGRA_2x_SOC) || \
+	defined(CONFIG_ARCH_TEGRA_3x_SOC) || \
+	defined(CONFIG_ARCH_TEGRA_11x_SOC)
 	#define MIPI_VALID_REG_LIMIT  MIPI_CAL_MIPI_BIAS_PAD_CFG2_0
+#else
+	#define MIPI_VALID_REG_LIMIT  MIPI_CAL_CSIE_MIPI_CAL_CONFIG_2_0
 #endif
 
 #define MIPI_CAL_MIPI_CAL_CTRL_0	0x0
@@ -68,6 +71,13 @@
 #define MIPI_CAL_HSPDOSE(x)		(((x) & 0x1f) << 16)
 #define MIPI_CAL_HSPUOSE(x)		(((x) & 0x1f) << 8)
 #define MIPI_CAL_TERMOSE(x)		(((x) & 0x1f) << 0)
+
+#define MIPI_CAL_CILF_MIPI_CAL_CONFIG_0	0x28
+#define MIPI_CAL_OVERIDEF(x)		(((x) & 0x1) << 30)
+#define MIPI_CAL_SELF(x)		(((x) & 0x1) << 21)
+#define MIPI_CAL_HSPDOSF(x)		(((x) & 0x1f) << 16)
+#define MIPI_CAL_HSPUOSF(x)		(((x) & 0x1f) << 8)
+#define MIPI_CAL_TERMOSF(x)		(((x) & 0x1f) << 0)
 
 #define MIPI_CAL_MIPI_BIAS_PAD_CFG0_0	0x58
 #define MIPI_BIAS_PAD_PDVCLAMP(x)	(((x) & 0x1) << 1)
@@ -136,7 +146,10 @@
 #define MIPI_CAL_HSCLKPUOSDSIB(x)		(((x) & 0x1f) << 0)
 #endif
 
-#ifdef CONFIG_ARCH_TEGRA_12x_SOC
+#if !defined(CONFIG_ARCH_TEGRA_2x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_3x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_11x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_14x_SOC)
 #define MIPI_CAL_DSIA_MIPI_CAL_CONFIG_2_0	0x64
 #define MIPI_CAL_CLKOVERIDEDSIA(x)		(((x) & 0x1) << 30)
 #define MIPI_CAL_CLKSELDSIA(x)		(((x) & 0x1) << 21)
@@ -149,17 +162,33 @@
 #define MIPI_CAL_HSCLKPDOSDSIB(x)		(((x) & 0x1f) << 8)
 #define MIPI_CAL_HSCLKPUOSDSIB(x)		(((x) & 0x1f) << 0)
 
+#if defined(CONFIG_ARCH_TEGRA_12x_SOC)
 #define MIPI_CAL_CILC_MIPI_CAL_CONFIG_2_0	0x6c
 #define MIPI_CAL_CLKOVERIDEC(x)		(((x) & 0x1) << 30)
 #define MIPI_CAL_CLKSELC(x)		(((x) & 0x1) << 21)
 #define MIPI_CAL_HSCLKPDOSC(x)		(((x) & 0x1f) << 8)
 #define MIPI_CAL_HSCLKPUOSC(x)		(((x) & 0x1f) << 0)
+#else
+#define MIPI_CAL_DSIC_MIPI_CAL_CONFIG_2_0	0x70
+#define MIPI_CAL_CLKOVERIDEDSIC(x)		(((x) & 0x1) << 30)
+#define MIPI_CAL_CLKSELDSIC(x)		(((x) & 0x1) << 21)
+#define MIPI_CAL_HSCLKPDOSDSIC(x)		(((x) & 0x1f) << 8)
+#define MIPI_CAL_HSCLKPUOSDSIC(x)		(((x) & 0x1f) << 0)
+#endif
 
+#if defined(CONFIG_ARCH_TEGRA_12x_SOC)
 #define MIPI_CAL_CILD_MIPI_CAL_CONFIG_2_0	0x70
 #define MIPI_CAL_CLKOVERIDED(x)		(((x) & 0x1) << 30)
 #define MIPI_CAL_CLKSELD(x)		(((x) & 0x1) << 21)
 #define MIPI_CAL_HSCLKPDOSD(x)		(((x) & 0x1f) << 8)
 #define MIPI_CAL_HSCLKPUOSD(x)		(((x) & 0x1f) << 0)
+#else
+#define MIPI_CAL_DSID_MIPI_CAL_CONFIG_2_0	0x74
+#define MIPI_CAL_CLKOVERIDEDSID(x)		(((x) & 0x1) << 30)
+#define MIPI_CAL_CLKSELDSID(x)		(((x) & 0x1) << 21)
+#define MIPI_CAL_HSCLKPDOSDSID(x)		(((x) & 0x1f) << 8)
+#define MIPI_CAL_HSCLKPUOSDSID(x)		(((x) & 0x1f) << 0)
+#endif
 
 #define MIPI_CAL_CSIE_MIPI_CAL_CONFIG_2_0	0x74
 #define MIPI_CAL_CLKOVERIDEE(x)		(((x) & 0x1) << 30)
@@ -187,4 +216,5 @@
 #define MIPI_CAL_TERMADJ(x)		(((x) & 0xf) << 4)
 #define MIPI_CAL_ACTIVE(x)		(((x) & 0x1) << 0)
 
+#endif
 #endif

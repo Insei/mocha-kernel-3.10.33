@@ -1,7 +1,7 @@
 /*
  * tegra30_xbar_alt.h - TEGRA XBAR registers
  *
- * Copyright (c) 2011-2013 NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2014 NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -133,6 +133,9 @@
 #define TEGRA30_AUDIOCIF_CTRL_MONO_CONV_ZERO		(TEGRA30_AUDIOCIF_MONO_CONV_ZERO << TEGRA30_AUDIOCIF_CTRL_MONO_CONV_SHIFT)
 #define TEGRA30_AUDIOCIF_CTRL_MONO_CONV_COPY		(TEGRA30_AUDIOCIF_MONO_CONV_COPY << TEGRA30_AUDIOCIF_CTRL_MONO_CONV_SHIFT)
 
+/* maximum mux count in T124 */
+#define TEGRA_AHUB_AUDIO_UPDATE_MAX_REG		2
+
 struct tegra30_xbar_cif_conf {
 	unsigned int threshold;
 	unsigned int audio_channels;
@@ -151,6 +154,7 @@ void tegra30_xbar_set_cif(struct regmap *regmap, unsigned int reg,
 			  struct tegra30_xbar_cif_conf *conf);
 void tegra124_xbar_set_cif(struct regmap *regmap, unsigned int reg,
 			   struct tegra30_xbar_cif_conf *conf);
+int tegra30_xbar_read_reg(unsigned int reg, unsigned int *val);
 
 struct tegra30_xbar_soc_data {
 	const struct regmap_config *regmap_config;
@@ -159,11 +163,12 @@ struct tegra30_xbar_soc_data {
 	unsigned int num_mux0_input;
 	unsigned int num_mux1_input;
 	unsigned int mask[2];
+	unsigned int reg_count;
+	unsigned int reg_offset;
 };
 
 struct tegra30_xbar {
 	struct clk *clk;
-	struct clk *clk_parent;
 	struct regmap *regmap;
 	const struct tegra30_xbar_soc_data *soc_data;
 };

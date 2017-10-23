@@ -85,7 +85,8 @@ static int nrpacks = 8;		/* max. number of packets per urb */
 static int device_setup[SNDRV_CARDS]; /* device parameter for this card */
 static bool ignore_ctl_error;
 static bool autoclock = true;
-static int usb_nonswitch_match(struct usb_device* udev);
+
+static int usb_nonswitch_match(struct usb_device *udev);
 
 module_param_array(index, int, NULL, 0444);
 MODULE_PARM_DESC(index, "Index value for the USB audio adapter.");
@@ -774,16 +775,19 @@ static struct usb_device_id usb_audio_ids [] = {
 MODULE_DEVICE_TABLE(usb, usb_audio_ids);
 
 #ifdef CONFIG_SWITCH
-static struct usb_device_id usb_nonswitch_ids [] = {
+
+static struct usb_device_id usb_nonswitch_ids[] = {
 #include "nonswitch-table.h"
-    { }
+	{ }
 };
 
-static int usb_nonswitch_match(struct usb_device* udev) {
+static int usb_nonswitch_match(struct usb_device *udev)
+{
 	int i;
-	for(i = 0; i < sizeof(usb_nonswitch_ids); i++) {
-		if ((usb_nonswitch_ids[i].idVendor == udev->descriptor.idVendor) &&
-				(usb_nonswitch_ids[i].idProduct == udev->descriptor.idProduct))
+	for (i = 0; i < ARRAY_SIZE(usb_nonswitch_ids); i++) {
+		if (
+		(usb_nonswitch_ids[i].idVendor == udev->descriptor.idVendor) &&
+		(usb_nonswitch_ids[i].idProduct == udev->descriptor.idProduct))
 			return 1;
 	}
 	return 0;

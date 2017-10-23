@@ -1,7 +1,11 @@
 /*
  * palmas-poweroff.c : Power off and reset for Palma device.
  *
+<<<<<<< HEAD
  * Copyright (c) 2013-2014, NVIDIA CORPORATION.  All rights reserved.
+=======
+ * Copyright (c) 2013-2014, NVIDIA CORPORATION. All rights reserved.
+>>>>>>> update/master
  *
  * Author: Laxman Dewangan <ldewangan@nvidia.com>
  *
@@ -145,6 +149,7 @@ static void palmas_power_off(void *drv_data)
 			PALMAS_LONG_PRESS_KEY_LPK_LOCK,
 			PALMAS_LONG_PRESS_KEY_LPK_LOCK);
 
+<<<<<<< HEAD
 	
 	/* Lock LONG PRESS KEY bits */
 	palmas_update_bits(palmas, PALMAS_PMU_CONTROL_BASE,
@@ -152,6 +157,8 @@ static void palmas_power_off(void *drv_data)
 			PALMAS_LONG_PRESS_KEY_LPK_LOCK,
 			PALMAS_LONG_PRESS_KEY_LPK_LOCK);
 
+=======
+>>>>>>> update/master
 	/* Power off the device */
 	palmas_update_bits(palmas, PALMAS_PMU_CONTROL_BASE,
 				PALMAS_DEV_CTRL, 1, 0);
@@ -257,10 +264,13 @@ reset_direct:
 	palmas_update_bits(palmas, PALMAS_PMU_CONTROL_BASE,
 			PALMAS_SWOFF_COLDRST, PALMAS_SWOFF_COLDRST_SW_RST,
 			PALMAS_SWOFF_COLDRST_SW_RST);
+<<<<<<< HEAD
 	while (num_of_retries--) {
 		ret = palmas_update_bits(palmas, PALMAS_PMU_CONTROL_BASE,
 		PALMAS_SWOFF_COLDRST, PALMAS_SWOFF_COLDRST_SW_RST,
 			PALMAS_SWOFF_COLDRST_SW_RST);
+=======
+>>>>>>> update/master
 	palmas_update_bits(palmas, PALMAS_PMU_CONTROL_BASE,
 				PALMAS_DEV_CTRL, 0x2, 0x2);
 		if (ret < 0)

@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/camera/camera_priv_defs.h
  *
- * Copyright (c) 2013, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -32,9 +32,8 @@
 #include <linux/clk/tegra.h>
 #include <linux/tegra-powergate.h>
 
-#include <mach/mc.h>
 #if defined(CONFIG_TEGRA_ISOMGR)
-#include <mach/isomgr.h>
+#include <linux/platform/tegra/isomgr.h>
 #endif
 
 #include <video/tegra_camera.h>

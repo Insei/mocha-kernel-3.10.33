@@ -50,6 +50,7 @@
 /* reserved_sw[7:4] */
 #define SW_RESERVED_START_OFFSET	0x2E
 #define SW_RESERVED_START_BIT		27
+#define SW_RESERVED_SIZE_BITS       4
 
 /* reserved_sw[3] */
 #define IGNORE_DEVSEL_START_OFFSET	0x2E
@@ -90,8 +91,6 @@
 #define FUSE_GPU_INFO		0x390
 #define FUSE_GPU_INFO_MASK	(1<<2)
 #define FUSE_SPARE_BIT		0x280
-/* fuse registers used in public fuse data read API */
-#define FUSE_TEST_PROGRAM_REVISION_0	0x128
 /* fuse spare bits are used to get Tj-ADT values */
 #define NUM_TSENSOR_SPARE_BITS	28
 /* tsensor calibration register */
@@ -117,13 +116,6 @@ DEVICE_ATTR(public_key, 0440, tegra_fuse_show, tegra_fuse_store);
 DEVICE_ATTR(pkc_disable, 0440, tegra_fuse_show, tegra_fuse_store);
 DEVICE_ATTR(vp8_enable, 0440, tegra_fuse_show, tegra_fuse_store);
 DEVICE_ATTR(odm_lock, 0440, tegra_fuse_show, tegra_fuse_store);
-
-int tegra_fuse_get_revision(u32 *rev)
-{
-	/* fuse revision */
-	*rev = tegra_fuse_readl(FUSE_TEST_PROGRAM_REVISION_0);
-	return 0;
-}
 
 int tegra_fuse_get_tsensor_calibration_data(u32 *calib)
 {
@@ -229,19 +221,21 @@ int tegra_fuse_calib_base_get_cp(u32 *base_cp, s32 *shifted_cp)
 	s32 cp;
 	u32 val = tegra_fuse_readl(FUSE_VSENSOR_CALIB_0);
 
-	*base_cp = (((val) &
-		(FUSE_BASE_CP_MASK << FUSE_BASE_CP_SHIFT))
-		>> FUSE_BASE_CP_SHIFT);
-	if (!(*base_cp)) {
-		pr_err("soctherm: ERROR: Improper FUSE. SOC_THERM disabled.\n");
+	if (!val)
 		return -EINVAL;
-	}
-	cp = (((val) &
-		(FUSE_SHIFT_CP_MASK << FUSE_SHIFT_CP_SHIFT))
-		>> FUSE_SHIFT_CP_SHIFT);
-	*shifted_cp = ((s32)(cp) <<
-		(32 - FUSE_SHIFT_CP_BITS) >>
-		(32 - FUSE_SHIFT_CP_BITS));
+
+	if (base_cp)
+		*base_cp = (((val) & (FUSE_BASE_CP_MASK
+					<< FUSE_BASE_CP_SHIFT))
+					>> FUSE_BASE_CP_SHIFT);
+
+	cp = (((val) & (FUSE_SHIFT_CP_MASK
+				<< FUSE_SHIFT_CP_SHIFT))
+				>> FUSE_SHIFT_CP_SHIFT);
+	if (shifted_cp)
+		*shifted_cp = ((s32)(cp)
+				<< (32 - FUSE_SHIFT_CP_BITS)
+				>> (32 - FUSE_SHIFT_CP_BITS));
 	return 0;
 }
 
@@ -250,19 +244,21 @@ int tegra_fuse_calib_base_get_ft(u32 *base_ft, s32 *shifted_ft)
 	s32 ft;
 	u32 val = tegra_fuse_readl(FUSE_VSENSOR_CALIB_0);
 
-	*base_ft = (((val) &
-		(FUSE_BASE_FT_MASK << FUSE_BASE_FT_SHIFT))
-		>> FUSE_BASE_FT_SHIFT);
-	if (!(*base_ft)) {
-		pr_err("soctherm: ERROR: Improper FUSE. SOC_THERM disabled.\n");
+	if (!val)
 		return -EINVAL;
-	}
-	ft = (((val) &
-		(FUSE_SHIFT_FT_MASK << FUSE_SHIFT_FT_SHIFT))
-		>> FUSE_SHIFT_FT_SHIFT);
-	*shifted_ft = ((s32)(ft) <<
-		(32 - FUSE_SHIFT_FT_BITS) >>
-		(32 - FUSE_SHIFT_FT_BITS));
+
+	if (base_ft)
+		*base_ft = (((val) & (FUSE_BASE_FT_MASK
+					<< FUSE_BASE_FT_SHIFT))
+					>> FUSE_BASE_FT_SHIFT);
+
+	ft = (((val) & (FUSE_SHIFT_FT_MASK
+				<< FUSE_SHIFT_FT_SHIFT))
+				>> FUSE_SHIFT_FT_SHIFT);
+	if (shifted_ft)
+		*shifted_ft = ((s32)(ft) <<
+			(32 - FUSE_SHIFT_FT_BITS) >>
+			(32 - FUSE_SHIFT_FT_BITS));
 	return 0;
 }
 

@@ -4,6 +4,7 @@
 
 GCOV_PROFILE := y
 
+ccflags-y += -Werror
 88pm860x-objs			:= 88pm860x-core.o 88pm860x-i2c.o
 obj-$(CONFIG_MFD_88PM860X)	+= 88pm860x.o
 obj-$(CONFIG_MFD_88PM800)	+= 88pm800.o 88pm80x.o
@@ -116,6 +117,7 @@ obj-$(CONFIG_MFD_LP8788)	+= lp8788.o lp8788-irq.o
 da9055-objs			:= da9055-core.o da9055-i2c.o
 obj-$(CONFIG_MFD_DA9055)	+= da9055.o
 
+obj-$(CONFIG_MFD_MAX77620)	+= max77620-core.o
 obj-$(CONFIG_MFD_MAX77665)	+= max77665.o
 obj-$(CONFIG_MFD_MAX77686)	+= max77686.o max77686-irq.o
 obj-$(CONFIG_MFD_MAX77693)	+= max77693.o max77693-irq.o

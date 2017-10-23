@@ -2,6 +2,8 @@
  * f_fs.c -- user mode file system API for USB composite function controllers
  *
  * Copyright (C) 2010 Samsung Electronics
+ * Copyright (c) 2014-2016, NVIDIA CORPORATION.  All rights reserved.
+ *
  * Author: Michal Nazarewicz <mina86@mina86.com>
  *
  * Based on inode.c (GadgetFS) which was:
@@ -741,6 +743,9 @@ static const struct file_operations ffs_ep0_operations = {
 	.read =		ffs_ep0_read,
 	.release =	ffs_ep0_release,
 	.unlocked_ioctl =	ffs_ep0_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl =	ffs_ep0_ioctl,
+#endif
 };
 
 
@@ -960,6 +965,9 @@ static const struct file_operations ffs_epfile_operations = {
 	.read =		ffs_epfile_read,
 	.release =	ffs_epfile_release,
 	.unlocked_ioctl =	ffs_epfile_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl =	ffs_epfile_ioctl,
+#endif
 };
 
 
@@ -1590,6 +1598,7 @@ static int ffs_func_eps_enable(struct ffs_function *func)
 
 		ep->ep->driver_data = ep;
 		ep->ep->desc = ds;
+		config_ep_by_speed(ffs->gadget, &func->function, ep->ep);
 		ret = usb_ep_enable(ep->ep);
 		if (likely(!ret)) {
 			epfile->ep = ep;
@@ -1838,25 +1847,63 @@ static int __ffs_data_got_descs(struct ffs_data *ffs,
 				char *const _data, size_t len)
 {
 	unsigned fs_count, hs_count, ss_count = 0;
+<<<<<<< HEAD
 	int fs_len, hs_len, ss_len, ret = -EINVAL;
+=======
+	int fs_len, hs_len, ss_len, ver, ret = -EINVAL;
+>>>>>>> update/master
 	char *data = _data;
 
 	ENTER();
 
-	if (unlikely(get_unaligned_le32(data) != FUNCTIONFS_DESCRIPTORS_MAGIC ||
-		     get_unaligned_le32(data + 4) != len))
+	if (get_unaligned_le32(data + 4) != len)
 		goto error;
-	fs_count = get_unaligned_le32(data +  8);
-	hs_count = get_unaligned_le32(data + 12);
 
-	if (!fs_count && !hs_count)
-		goto einval;
+	ver = get_unaligned_le32(data);
 
+<<<<<<< HEAD
 	ffs->raw_descs_length = len;
 	ffs->raw_descs = _data;
 
 	data += 16;
 	len  -= 16;
+=======
+	switch (ver) {
+	case FUNCTIONFS_DESCRIPTORS_MAGIC:
+
+		fs_count = get_unaligned_le32(data +  8);
+		hs_count = get_unaligned_le32(data + 12);
+
+		if (!fs_count && !hs_count)
+			goto einval;
+
+		ffs->raw_descs_length = len;
+		ffs->raw_descs = _data;
+
+		data += 16;
+		len  -= 16;
+
+		break;
+	case FUNCTIONFS_DESCRIPTORS_MAGIC_V2:
+
+		fs_count = get_unaligned_le32(data + 12);
+		hs_count = get_unaligned_le32(data + 16);
+		ss_count = get_unaligned_le32(data + 20);
+
+		if (!fs_count && !hs_count && !ss_count)
+			goto einval;
+
+		ffs->raw_descs_length = len;
+		ffs->raw_descs = _data;
+
+		data += 28;
+		len  -= 28;
+
+		break;
+	default:
+		goto error;
+	}
+>>>>>>> update/master
 
 	if (likely(fs_count)) {
 		fs_len = ffs_do_descs(fs_count, data, len,
@@ -1880,6 +1927,7 @@ static int __ffs_data_got_descs(struct ffs_data *ffs,
 				   __ffs_data_do_entity, ffs);
 		if (unlikely(hs_len < 0)) {
 			ret = hs_len;
+<<<<<<< HEAD
 			goto error;
 		}
 
@@ -1922,6 +1970,46 @@ static int __ffs_data_got_descs(struct ffs_data *ffs,
 	if (unlikely(len != ret))
 		goto einval;
 
+=======
+			goto error;
+		}
+
+		ffs->hs_descs_count = hs_count;
+		ffs->raw_hs_descs_length = hs_len;
+		ffs->hs_descs = data;
+		data += hs_len;
+		len -= hs_len;
+	} else {
+		hs_len = 0;
+	}
+
+	if (ver == FUNCTIONFS_DESCRIPTORS_MAGIC && len >= 8) {
+		if (get_unaligned_le32(data) !=
+				FUNCTIONFS_SS_DESC_MAGIC)
+			goto einval;
+
+		ss_count = get_unaligned_le32(data + 4);
+		data += 8;
+		len -= 8;
+	}
+
+	if (likely(ss_count)) {
+		ss_len = ffs_do_descs(ss_count, data, len,
+				   __ffs_data_do_entity, ffs);
+		if (unlikely(ss_len < 0)) {
+			ret = ss_len;
+			goto error;
+		}
+
+		ffs->ss_descs_count = ss_count;
+		ffs->raw_ss_descs_length = ss_len;
+		ffs->ss_descs = data;
+		ret = ss_len;
+	} else {
+		ss_len = 0;
+		ret = 0;
+	}
+>>>>>>> update/master
 	return 0;
 
 einval:
@@ -2284,9 +2372,17 @@ static int ffs_func_bind(struct usb_configuration *c,
 	const int super = gadget_is_superspeed(func->gadget) &&
 		func->ffs->ss_descs_count;
 	int ret;
+<<<<<<< HEAD
 	unsigned char *p;
 	unsigned raw_descs_length = ffs->raw_fs_descs_length +
 		ffs->raw_hs_descs_length + ffs->raw_ss_descs_length;
+=======
+	char *p;
+	int n;
+	unsigned raw_descs_length = (full ? ffs->raw_fs_descs_length : 0) +
+		(high ? ffs->raw_hs_descs_length : 0) +
+		(super ? ffs->raw_ss_descs_length : 0);
+>>>>>>> update/master
 
 	/* Make it a single chunk, less management later on */
 	struct {
@@ -2298,6 +2394,10 @@ static int ffs_func_bind(struct usb_configuration *c,
 		struct usb_descriptor_header
 			*ss_descs[super ? ffs->ss_descs_count + 1 : 0];
 		short inums[ffs->interfaces_count];
+<<<<<<< HEAD
+=======
+		char raw_descs[raw_descs_length];
+>>>>>>> update/master
 	} *data;
 
 	ENTER();
@@ -2321,24 +2421,52 @@ static int ffs_func_bind(struct usb_configuration *c,
 	func->eps             = data->eps;
 	func->interfaces_nums = data->inums;
 
+	/* make a copy of descriptors */
+	p = data->raw_descs;
+	if (likely(full)) {
+		memcpy(p, ffs->fs_descs, ffs->raw_fs_descs_length);
+		p += ffs->raw_fs_descs_length;
+	}
+	if (likely(high)) {
+		memcpy(p, ffs->hs_descs, ffs->raw_hs_descs_length);
+		p += ffs->raw_hs_descs_length;
+	}
+	if (likely(super)) {
+		memcpy(p, ffs->ss_descs, ffs->raw_ss_descs_length);
+		p += ffs->raw_ss_descs_length;
+	}
+
 	/*
 	 * Go through all the endpoint descriptors and allocate
 	 * endpoints first, so that later we can rewrite the endpoint
 	 * numbers without worrying that it may be described later on.
 	 */
+	p = data->raw_descs;
+	n = raw_descs_length;
 	if (likely(full)) {
 		func->function.fs_descriptors = data->fs_descs;
 		ret = ffs_do_descs(ffs->fs_descs_count,
+<<<<<<< HEAD
 				   ffs->fs_descs,
 				   ffs->raw_fs_descs_length,
 				   __ffs_func_bind_do_descs, func);
 		if (unlikely(ret < 0))
 			goto error;
+=======
+				   p,
+				   n,
+				   __ffs_func_bind_do_descs, func);
+		if (unlikely(ret < 0))
+			goto error;
+		n -= ret;
+		p += ret;
+>>>>>>> update/master
 	}
 
 	if (likely(high)) {
 		func->function.hs_descriptors = data->hs_descs;
 		ret = ffs_do_descs(ffs->hs_descs_count,
+<<<<<<< HEAD
 				   ffs->hs_descs,
 				   ffs->raw_hs_descs_length,
 				   __ffs_func_bind_do_descs, func);
@@ -2354,6 +2482,27 @@ static int ffs_func_bind(struct usb_configuration *c,
 				   __ffs_func_bind_do_descs, func);
 		if (unlikely(ret < 0))
 			goto error;
+=======
+				   p,
+				   n,
+				   __ffs_func_bind_do_descs, func);
+		if (unlikely(ret < 0))
+			goto error;
+		n -= ret;
+		p += ret;
+	}
+
+	if (likely(super)) {
+		func->function.ss_descriptors = data->ss_descs;
+		ret = ffs_do_descs(ffs->ss_descs_count,
+				   p,
+				   n,
+				   __ffs_func_bind_do_descs, func);
+		if (unlikely(ret < 0))
+			goto error;
+		n -= ret;
+		p += ret;
+>>>>>>> update/master
 	}
 
 	/*
@@ -2361,6 +2510,7 @@ static int ffs_func_bind(struct usb_configuration *c,
 	 * endpoint numbers rewriting.  We can do that in one go
 	 * now.
 	 */
+<<<<<<< HEAD
 	if (likely(ffs->fs_descs_count)) {
 		ret = ffs_do_descs(ffs->fs_descs_count,
 				ffs->fs_descs, ffs->raw_fs_descs_length,
@@ -2384,6 +2534,16 @@ static int ffs_func_bind(struct usb_configuration *c,
 		if (unlikely(ret < 0))
 			goto error;
 	}
+=======
+
+	ret = ffs_do_descs((full ? ffs->fs_descs_count : 0) +
+			   (high ? ffs->hs_descs_count : 0) +
+			   (super ? ffs->ss_descs_count : 0),
+			   data->raw_descs, raw_descs_length,
+			   __ffs_func_bind_do_nums, func);
+	if (unlikely(ret < 0))
+		goto error;
+>>>>>>> update/master
 
 	/* And we're done */
 	ffs_event_add(ffs, FUNCTIONFS_BIND);

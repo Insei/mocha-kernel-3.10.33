@@ -48,6 +48,11 @@ static void of_get_regulator_consumer_list(struct device *dev,
 
 	ncount = 0;
 	for_each_child_of_node(np_consumer, child) {
+		/* Ignore the consumer if it is disabled. */
+		ret = of_device_is_available(child);
+		if (!ret)
+			continue;
+
 		ret = of_property_read_string(child,
 				"regulator-consumer-supply",
 				&consumer[ncount].supply);
@@ -111,21 +116,59 @@ static void of_get_regulation_constraints(struct device_node *np,
 	if (constraints->min_uA != constraints->max_uA)
 		constraints->valid_ops_mask |= REGULATOR_CHANGE_CURRENT;
 
+	constraints->enable_active_discharge = of_property_read_bool(np,
+					"regulator-enable-active-discharge");
+	constraints->disable_active_discharge = of_property_read_bool(np,
+					"regulator-disable-active-discharge");
+
 	if (of_find_property(np, "regulator-boot-on", NULL))
 		constraints->boot_on = true;
+
+	if (of_find_property(np, "regulator-boot-off", NULL))
+		constraints->boot_off = true;
 
 	if (of_find_property(np, "regulator-always-on", NULL))
 		constraints->always_on = true;
 	else /* status change should be possible if not always on. */
 		constraints->valid_ops_mask |= REGULATOR_CHANGE_STATUS;
 
+	if (constraints->always_on)
+		constraints->disable_on_suspend = of_property_read_bool(np,
+					"regulator-disable-on-suspend");
+
+	constraints->disable_on_shutdown = of_property_read_bool(np,
+					"regulator-disable-on-shutdown");
+
+	if (of_find_property(np, "regulator-bypass-on", NULL))
+		constraints->bypass_on = true;
+
 	ramp_delay = of_get_property(np, "regulator-ramp-delay", NULL);
 	if (ramp_delay)
 		constraints->ramp_delay = be32_to_cpu(*ramp_delay);
 
+	ret = of_property_read_u32(np, "regulator-ramp-delay-scale", &pval);
+	if (!ret)
+		constraints->ramp_delay_scale = pval;
+
 	ret = of_property_read_u32(np, "regulator-enable-ramp-delay", &pval);
 	if (!ret)
 		constraints->enable_time = pval;
+<<<<<<< HEAD
+=======
+
+	ret = of_property_read_u32(np, "regulator-disable-ramp-delay", &pval);
+	if (!ret)
+		constraints->disable_time = pval;
+
+	ret = of_property_read_u32(np, "regulator-init-mode", &pval);
+	if (!ret)
+		constraints->initial_mode = pval;
+
+	ret = of_property_read_u32(np, "regulator-sleep-mode", &pval);
+	if (!ret)
+		constraints->sleep_mode = pval;
+
+>>>>>>> update/master
 	if (of_find_property(np, "regulator-disable-parent-after-enable", NULL))
 		constraints->disable_parent_after_enable = true;
 }
@@ -195,6 +238,8 @@ int of_regulator_match(struct device *dev, struct device_node *node,
 	}
 
 	for_each_child_of_node(node, child) {
+		if (!of_device_is_available(child))
+			continue;
 		name = of_get_property(child,
 					"regulator-compatible", NULL);
 		if (!name)

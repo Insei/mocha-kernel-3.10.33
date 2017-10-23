@@ -1,7 +1,7 @@
 /*
  * arch/arm/mach-tegra/panel-s-edp-wqxgap-15-6.c
  *
- * Copyright (c) 2012-2013, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2012-2014, NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -21,6 +21,7 @@
 #include <linux/gpio.h>
 #include <linux/tegra_pwm_bl.h>
 #include <linux/regulator/consumer.h>
+#include <linux/backlight.h>
 #include <linux/pwm_backlight.h>
 #include <linux/leds.h>
 #include <linux/ioport.h>
@@ -205,7 +206,7 @@ fail:
 	return err;
 }
 
-static int edp_s_wqxgap_15_6_disable(void)
+static int edp_s_wqxgap_15_6_disable(struct device *dev)
 {
 	if (vdd_lcd_bl_en)
 		regulator_disable(vdd_lcd_bl_en);
@@ -264,9 +265,13 @@ static struct tegra_dc_mode edp_s_wqxgap_15_6_modes[] = {
 	},
 };
 
-static int edp_s_wqxgap_15_6_bl_notify(struct device *unused, int brightness)
+static int edp_s_wqxgap_15_6_bl_notify(struct device *dev, int brightness)
 {
+	struct backlight_device *bl = NULL;
+	struct pwm_bl_data *pb = NULL;
 	int cur_sd_brightness = atomic_read(&sd_brightness);
+	bl = (struct backlight_device *)dev_get_drvdata(dev);
+	pb = (struct pwm_bl_data *)dev_get_drvdata(&bl->dev);
 
 	/* SD brightness is a percentage */
 	brightness = (brightness * cur_sd_brightness) / 255;
@@ -274,6 +279,8 @@ static int edp_s_wqxgap_15_6_bl_notify(struct device *unused, int brightness)
 	/* Apply any backlight response curve */
 	if (brightness > 255)
 		pr_info("Error: Brightness > 255!\n");
+	else if (pb->bl_measured)
+		brightness = pb->bl_measured[brightness];
 
 	return brightness;
 }

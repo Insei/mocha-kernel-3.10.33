@@ -30,4 +30,18 @@
    descriptor */
 #define USB_QUIRK_DELAY_INIT		0x00000040
 
+<<<<<<< HEAD
+=======
+/* device generates spurious wakeup, ignore remote wakeup capability */
+#define USB_QUIRK_IGNORE_REMOTE_WAKEUP	0x00000200
+
+#define USB_QUIRK_OTG_COMPLIANCE	0x00000080
+
+/* device can handle u1/u2 power states well */
+#define USB_QUIRK_ENABLE_U1U2		0x00000400
+
+/* device can't handle Link Power Management */
+#define USB_QUIRK_NO_LPM			BIT(10)
+
+>>>>>>> update/master
 #endif /* __LINUX_USB_QUIRKS_H */

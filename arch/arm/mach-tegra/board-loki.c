@@ -59,31 +59,31 @@
 #include <linux/clocksource.h>
 #include <linux/platform_data/tegra_usb_modem_power.h>
 #include <linux/irqchip.h>
-#include <linux/tegra_fiq_debugger.h>
 #include <linux/irqchip/tegra.h>
+#include <linux/pinctrl/pinctrl.h>
+#include <linux/pinctrl/consumer.h>
+#include <linux/pinctrl/pinconf-tegra.h>
+
 
 #include <mach/irqs.h>
-#include <mach/pinmux.h>
-#include <mach/pinmux-t12.h>
 #include <mach/io_dpd.h>
 #include <mach/i2s.h>
-#include <mach/isomgr.h>
+#include <linux/platform/tegra/isomgr.h>
 #include <mach/tegra_asoc_pdata.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/system_info.h>
-#include <mach/gpio-tegra.h>
 #include <mach/xusb.h>
 
 #include "board-touch-raydium.h"
 #include "board.h"
 #include "board-common.h"
-#include "clock.h"
+#include <linux/platform/tegra/clock.h>
 #include "board-loki.h"
 #include "devices.h"
 #include "gpio-names.h"
 #include "pm.h"
-#include "common.h"
+#include <linux/platform/tegra/common.h>
 #include "tegra-board-id.h"
 #include "iomap.h"
 #include "tegra-of-dev-auxdata.h"
@@ -184,34 +184,6 @@ static void loki_i2c_init(void)
 	i2c_register_board_info(0, &rt5639_board_info, 1);
 }
 
-#ifndef CONFIG_USE_OF
-static struct platform_device *loki_uart_devices[] __initdata = {
-	&tegra_uarta_device,
-	&tegra_uartb_device,
-	&tegra_uartc_device,
-};
-
-static struct tegra_serial_platform_data loki_uarta_pdata = {
-	.dma_req_selector = 8,
-	.modem_interrupt = false,
-};
-
-static struct tegra_serial_platform_data loki_uartb_pdata = {
-	.dma_req_selector = 9,
-	.modem_interrupt = false,
-};
-
-static struct tegra_serial_platform_data loki_uartc_pdata = {
-	.dma_req_selector = 10,
-	.modem_interrupt = false,
-};
-#endif
-
-static struct tegra_serial_platform_data loki_uartd_pdata = {
-	.dma_req_selector = 19,
-	.modem_interrupt = false,
-};
-
 static struct tegra_asoc_platform_data loki_audio_pdata_rt5639 = {
 	.gpio_hp_det = TEGRA_GPIO_HP_DET,
 	.gpio_ldo1_en = TEGRA_GPIO_LDO_EN,
@@ -259,58 +231,15 @@ static struct platform_device loki_audio_device_rt5639 = {
 	},
 };
 
-static void __init loki_uart_init(void)
-{
-	int debug_port_id;
-
-#ifndef CONFIG_USE_OF
-	tegra_uarta_device.dev.platform_data = &loki_uarta_pdata;
-	tegra_uartb_device.dev.platform_data = &loki_uartb_pdata;
-	tegra_uartc_device.dev.platform_data = &loki_uartc_pdata;
-	platform_add_devices(loki_uart_devices,
-			ARRAY_SIZE(loki_uart_devices));
-#endif
-	tegra_uartd_device.dev.platform_data = &loki_uartd_pdata;
-	if (!is_tegra_debug_uartport_hs()) {
-		debug_port_id = uart_console_debug_init(3);
-		if (debug_port_id < 0)
-			return;
-
-		platform_device_register(uart_console_debug_device);
-	} else {
-		tegra_uartd_device.dev.platform_data = &loki_uartd_pdata;
-		platform_device_register(&tegra_uartd_device);
-	}
-
-}
-
-static struct resource tegra_rtc_resources[] = {
-	[0] = {
-		.start = TEGRA_RTC_BASE,
-		.end = TEGRA_RTC_BASE + TEGRA_RTC_SIZE - 1,
-		.flags = IORESOURCE_MEM,
-	},
-	[1] = {
-		.start = INT_RTC,
-		.end = INT_RTC,
-		.flags = IORESOURCE_IRQ,
-	},
-};
-
-static struct platform_device tegra_rtc_device = {
-	.name = "tegra_rtc",
-	.id   = -1,
-	.resource = tegra_rtc_resources,
-	.num_resources = ARRAY_SIZE(tegra_rtc_resources),
-};
-
 static struct platform_device *loki_devices[] __initdata = {
-	&tegra_pmu_device,
 	&tegra_rtc_device,
 	&tegra_udc_device,
+<<<<<<< HEAD
 #if defined(CONFIG_TEGRA_AVP)
 	&tegra_avp_device,
 #endif
+=======
+>>>>>>> update/master
 #if defined(CONFIG_CRYPTO_DEV_TEGRA_SE) && !defined(CONFIG_USE_OF)
 	&tegra12_se_device,
 #endif
@@ -326,13 +255,8 @@ static struct platform_device *loki_devices[] __initdata = {
 	&spdif_dit_device,
 	&bluetooth_dit_device,
 	&baseband_dit_device,
-	&tegra_hda_device,
-#if defined(CONFIG_TEGRA_CEC_SUPPORT)
-	&tegra_cec_device,
-#endif
-#if defined(CONFIG_CRYPTO_DEV_TEGRA_AES)
-	&tegra_aes_device,
-#endif
+	&tegra_offload_device,
+	&tegra30_avp_audio_device,
 };
 
 static struct tegra_usb_platform_data tegra_udc_pdata = {
@@ -342,7 +266,6 @@ static struct tegra_usb_platform_data tegra_udc_pdata = {
 	.op_mode = TEGRA_USB_OPMODE_DEVICE,
 	.u_data.dev = {
 		.vbus_pmu_irq = 0,
-		.vbus_gpio = -1,
 		.dcp_current_limit_ma = 2000,
 		.charging_supported = true,
 		.remote_wakeup_supported = false,
@@ -363,11 +286,10 @@ static struct tegra_usb_platform_data tegra_udc_pdata = {
 static struct tegra_usb_platform_data tegra_ehci1_utmi_pdata = {
 	.port_otg = true,
 	.has_hostpc = true,
-	.unaligned_dma_buf_supported = true,
+	.unaligned_dma_buf_supported = false,
 	.phy_intf = TEGRA_USB_PHY_INTF_UTMI,
 	.op_mode = TEGRA_USB_OPMODE_HOST,
 	.u_data.host = {
-		.vbus_gpio = -1,
 		.hot_plug = false,
 		.remote_wakeup_supported = true,
 		.power_off_on_suspend = true,
@@ -391,11 +313,10 @@ static struct tegra_usb_platform_data tegra_ehci1_utmi_pdata = {
 static struct tegra_usb_platform_data tegra_ehci2_utmi_pdata = {
 	.port_otg = false,
 	.has_hostpc = true,
-	.unaligned_dma_buf_supported = true,
+	.unaligned_dma_buf_supported = false,
 	.phy_intf = TEGRA_USB_PHY_INTF_UTMI,
 	.op_mode = TEGRA_USB_OPMODE_HOST,
 	.u_data.host = {
-		.vbus_gpio = -1,
 		.hot_plug = false,
 		.remote_wakeup_supported = true,
 		.power_off_on_suspend = true,
@@ -417,11 +338,10 @@ static struct tegra_usb_platform_data tegra_ehci2_utmi_pdata = {
 static struct tegra_usb_platform_data tegra_ehci3_utmi_pdata = {
 	.port_otg = false,
 	.has_hostpc = true,
-	.unaligned_dma_buf_supported = true,
+	.unaligned_dma_buf_supported = false,
 	.phy_intf = TEGRA_USB_PHY_INTF_UTMI,
 	.op_mode = TEGRA_USB_OPMODE_HOST,
 	.u_data.host = {
-		.vbus_gpio = -1,
 		.hot_plug = false,
 		.remote_wakeup_supported = true,
 		.power_off_on_suspend = true,
@@ -447,11 +367,10 @@ static struct gpio modem_gpios[] = { /* Bruce modem */
 static struct tegra_usb_platform_data tegra_ehci2_hsic_baseband_pdata = {
 	.port_otg = false,
 	.has_hostpc = true,
-	.unaligned_dma_buf_supported = true,
+	.unaligned_dma_buf_supported = false,
 	.phy_intf = TEGRA_USB_PHY_INTF_HSIC,
 	.op_mode = TEGRA_USB_OPMODE_HOST,
 	.u_data.host = {
-		.vbus_gpio = -1,
 		.hot_plug = false,
 		.remote_wakeup_supported = true,
 		.power_off_on_suspend = true,
@@ -461,11 +380,10 @@ static struct tegra_usb_platform_data tegra_ehci2_hsic_baseband_pdata = {
 static struct tegra_usb_platform_data tegra_ehci2_hsic_smsc_hub_pdata = {
 	.port_otg = false,
 	.has_hostpc = true,
-	.unaligned_dma_buf_supported = true,
+	.unaligned_dma_buf_supported = false,
 	.phy_intf = TEGRA_USB_PHY_INTF_HSIC,
 	.op_mode	= TEGRA_USB_OPMODE_HOST,
 	.u_data.host = {
-		.vbus_gpio = -1,
 		.hot_plug = false,
 		.remote_wakeup_supported = true,
 		.power_off_on_suspend = true,
@@ -592,6 +510,7 @@ static void loki_xusb_init(void)
 
 static int baseband_init(void)
 {
+	struct pinctrl_dev *pctl_dev;
 	int ret;
 
 	ret = gpio_request_array(modem_gpios, ARRAY_SIZE(modem_gpios));
@@ -601,8 +520,23 @@ static int baseband_init(void)
 	}
 
 	/* enable pull-down for MDM_COLD_BOOT */
-	tegra_pinmux_set_pullupdown(TEGRA_PINGROUP_ULPI_DATA4,
-				    TEGRA_PUPD_PULL_DOWN);
+	pctl_dev = tegra_get_pinctrl_device_handle();
+	if (pctl_dev) {
+		unsigned long config;
+
+		config = TEGRA_PINCONF_PACK(TEGRA_PINCONF_PARAM_PULL,
+						TEGRA_PIN_PULL_DOWN);
+		ret = pinctrl_set_config_for_group_name(pctl_dev,
+				"ulpi_data4_po5", config);
+		if (ret < 0) {
+			pr_err("ERROR: %s(): ulpi_data4 config failed: %d\n",
+				__func__, ret);
+			return ret;
+		}
+	} else {
+		pr_err("ERROR: %s(): No Tegra pincontrol driver\n", __func__);
+		return -EINVAL;
+	}
 
 	/* export GPIO for user space access through sysfs */
 	gpio_export(MDM_RST, false);
@@ -665,8 +599,6 @@ static void loki_modem_init(void)
 #ifdef CONFIG_USE_OF
 struct of_dev_auxdata loki_auxdata_lookup[] __initdata = {
 	T124_SPI_OF_DEV_AUXDATA,
-	OF_DEV_AUXDATA("nvidia,tegra124-apbdma", 0x60020000, "tegra-apbdma",
-				NULL),
 	OF_DEV_AUXDATA("nvidia,tegra124-se", 0x70012000, "tegra12-se", NULL),
 	OF_DEV_AUXDATA("nvidia,tegra124-host1x", TEGRA_HOST1X_BASE, "host1x",
 		NULL),
@@ -681,20 +613,25 @@ struct of_dev_auxdata loki_auxdata_lookup[] __initdata = {
 	OF_DEV_AUXDATA("nvidia,tegra124-isp", TEGRA_ISP_BASE, "isp.0", NULL),
 	OF_DEV_AUXDATA("nvidia,tegra124-isp", TEGRA_ISPB_BASE, "isp.1", NULL),
 	OF_DEV_AUXDATA("nvidia,tegra124-tsec", TEGRA_TSEC_BASE, "tsec", NULL),
-	OF_DEV_AUXDATA("nvidia,tegra114-hsuart", 0x70006000, "serial-tegra.0",
-				NULL),
-	OF_DEV_AUXDATA("nvidia,tegra114-hsuart", 0x70006040, "serial-tegra.1",
-				NULL),
-	OF_DEV_AUXDATA("nvidia,tegra114-hsuart", 0x70006200, "serial-tegra.2",
-				NULL),
-	T124_I2C_OF_DEV_AUXDATA,
 	OF_DEV_AUXDATA("nvidia,tegra124-xhci", 0x70090000, "tegra-xhci",
 				&xusb_pdata),
+	OF_DEV_AUXDATA("nvidia,tegra124-dc", TEGRA_DISPLAY_BASE, "tegradc.0",
+		NULL),
+	OF_DEV_AUXDATA("nvidia,tegra124-dc", TEGRA_DISPLAY2_BASE, "tegradc.1",
+		NULL),
 	OF_DEV_AUXDATA("nvidia,tegra124-nvavp", 0x60001000, "nvavp",
 				NULL),
-	OF_DEV_AUXDATA("nvidia,tegra124-pwm", 0x7000a000, "tegra-pwm", NULL),
 	OF_DEV_AUXDATA("nvidia,tegra124-efuse", TEGRA_FUSE_BASE, "tegra-fuse",
 				NULL),
+	OF_DEV_AUXDATA("nvidia,tegra124-camera", 0, "pcl-generic",
+				NULL),
+	OF_DEV_AUXDATA("nvidia,tegra124-ahci-sata", 0x70027000, "tegra-sata.0",
+		NULL),
+#ifdef CONFIG_TEGRA_CEC_SUPPORT
+	OF_DEV_AUXDATA("nvidia,tegra124-cec", 0x70015000, "tegra_cec", NULL),
+#endif
+	OF_DEV_AUXDATA("nvidia,tegra30-hda", 0x70030000, "tegra30-hda", NULL),
+	OF_DEV_AUXDATA("pwm-backlight", 0, "pwm-backlight", NULL),
 	{}
 };
 #endif
@@ -843,12 +780,10 @@ static void __init tegra_loki_late_init(void)
 		board_info.fab, board_info.major_revision,
 		board_info.minor_revision);
 	loki_revision_init(&board_info);
-	loki_pinmux_init();
 	loki_usb_init();
 	loki_modem_init();
 	loki_xusb_init();
 	loki_i2c_init();
-	loki_uart_init();
 	loki_audio_init();
 	platform_add_devices(loki_devices, ARRAY_SIZE(loki_devices));
 	tegra_io_dpd_init();
@@ -856,17 +791,18 @@ static void __init tegra_loki_late_init(void)
 	loki_regulator_init();
 	loki_suspend_init();
 	loki_emc_init();
-	loki_edp_init();
 	isomgr_init();
 	loki_touch_init();
 	loki_panel_init();
+<<<<<<< HEAD
 	tegra_serial_debug_init(TEGRA_UARTD_BASE, INT_WDT_CPU, NULL, -1, -1);
+=======
+	loki_kbc_init();
+>>>>>>> update/master
 	loki_sensors_init();
 
-	loki_fan_init();
 	loki_soctherm_init();
 	loki_setup_bluedroid_pm();
-	tegra_serial_debug_init(TEGRA_UARTD_BASE, INT_WDT_CPU, NULL, -1, -1);
 #ifdef CONFIG_C2PORT_LOKI
 	tegra_loki_mcu_debugger_init();
 #endif
@@ -883,6 +819,7 @@ static void __init tegra_loki_dt_init(void)
 	carveout_linear_set(&tegra_vpr_cma_dev);
 #endif
 #ifdef CONFIG_USE_OF
+	loki_camera_auxdata(loki_auxdata_lookup);
 	of_platform_populate(NULL,
 		of_default_bus_match_table, loki_auxdata_lookup,
 		&platform_bus);
@@ -896,9 +833,15 @@ static void __init tegra_loki_reserve(void)
 #if defined(CONFIG_NVMAP_CONVERT_CARVEOUT_TO_IOVMM) || \
 		defined(CONFIG_TEGRA_NO_CARVEOUT)
 	/* 1920*1200*4*2 = 18432000 bytes */
+<<<<<<< HEAD
 	tegra_reserve4(0, SZ_16M + SZ_2M, SZ_16M, 186 * SZ_1M);
 #else
 	tegra_reserve4(SZ_1G, SZ_16M + SZ_2M, SZ_4M, 186 * SZ_1M);
+=======
+	tegra_reserve4(0, 0, 0, 186 * SZ_1M);
+#else
+	tegra_reserve4(SZ_1G, 0, 0, 186 * SZ_1M);
+>>>>>>> update/master
 #endif
 }
 
@@ -912,6 +855,14 @@ static const char * const foster_dt_board_compat[] = {
 	NULL
 };
 
+<<<<<<< HEAD
+=======
+static const char * const foster_hdd_dt_board_compat[] = {
+	"nvidia,foster_hdd",
+	NULL
+};
+
+>>>>>>> update/master
 static void __init tegra_loki_init_early(void)
 {
 	loki_rail_alignment_init();
@@ -927,7 +878,6 @@ DT_MACHINE_START(LOKI, "loki")
 	.init_irq	= irqchip_init,
 	.init_time	= clocksource_of_init,
 	.init_machine	= tegra_loki_dt_init,
-	.restart	= tegra_assert_system_reset,
 	.dt_compat	= loki_dt_board_compat,
 	.init_late	= tegra_init_late
 MACHINE_END
@@ -941,7 +891,26 @@ DT_MACHINE_START(FOSTER, "foster")
 	.init_irq	= irqchip_init,
 	.init_time	= clocksource_of_init,
 	.init_machine	= tegra_loki_dt_init,
+<<<<<<< HEAD
 	.restart	= tegra_assert_system_reset,
 	.dt_compat	= foster_dt_board_compat,
 	.init_late	= tegra_init_late
 MACHINE_END
+=======
+	.dt_compat	= foster_dt_board_compat,
+	.init_late	= tegra_init_late
+MACHINE_END
+
+DT_MACHINE_START(FOSTER_HDD, "foster_hdd")
+	.atag_offset	= 0x100,
+	.smp		= smp_ops(tegra_smp_ops),
+	.map_io		= tegra_map_common_io,
+	.reserve	= tegra_loki_reserve,
+	.init_early	= tegra_loki_init_early,
+	.init_irq	= irqchip_init,
+	.init_time	= clocksource_of_init,
+	.init_machine	= tegra_loki_dt_init,
+	.dt_compat	= foster_hdd_dt_board_compat,
+	.init_late	= tegra_init_late
+MACHINE_END
+>>>>>>> update/master

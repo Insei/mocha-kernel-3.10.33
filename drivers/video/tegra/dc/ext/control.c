@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/dc/ext/control.c
  *
- * Copyright (c) 2011-2014, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2011-2015, NVIDIA CORPORATION, All rights reserved.
  *
  * Author: Robert Morell <rmorell@nvidia.com>
  *
@@ -28,7 +28,7 @@
 #endif
 
 #include "tegra_dc_ext_priv.h"
-
+#include "tegra_dc_ext.h"
 #ifdef CONFIG_COMPAT
 struct tegra_dc_ext_control_output_edid32 {
 	__u32 handle;
@@ -42,9 +42,14 @@ struct tegra_dc_ext_control_output_edid32 {
 
 static struct tegra_dc_ext_control g_control;
 
-int tegra_dc_ext_process_hotplug(int output)
+int tegra_dc_ext_process_hotplug(int output, bool connected)
 {
-	return tegra_dc_ext_queue_hotplug(&g_control, output);
+	return tegra_dc_ext_queue_hotplug(&g_control, output, connected);
+}
+
+int tegra_dc_ext_process_vblank(int output, ktime_t timestamp)
+{
+	return tegra_dc_ext_queue_vblank(&g_control, output, timestamp);
 }
 
 int tegra_dc_ext_process_vblank(int output, ktime_t timestamp)
@@ -61,11 +66,17 @@ get_output_properties(struct tegra_dc_ext_control_output_properties *properties)
 	if (properties->handle > 2)
 		return -EINVAL;
 
-	properties->associated_head = properties->handle;
+	dc = tegra_dc_get_dc(properties->handle);
+	if (dc == NULL)
+		return -EINVAL;
+
+	properties->associated_head = tegra_dc_get_head(dc);
 	properties->head_mask = (1 << properties->associated_head);
 
-	dc = tegra_dc_get_dc(properties->associated_head);
 	switch (tegra_dc_get_out(dc)) {
+	case TEGRA_DC_OUT_FAKE_DSIA:
+	case TEGRA_DC_OUT_FAKE_DSIB:
+	case TEGRA_DC_OUT_FAKE_DSI_GANGED:
 	case TEGRA_DC_OUT_DSI:
 		properties->type = TEGRA_DC_EXT_DSI;
 		break;
@@ -80,7 +91,12 @@ get_output_properties(struct tegra_dc_ext_control_output_properties *properties)
 		break;
 	case TEGRA_DC_OUT_DP:
 	case TEGRA_DC_OUT_NVSR_DP:
-		properties->type = TEGRA_DC_EXT_DP;
+	case TEGRA_DC_OUT_FAKE_DP:
+		properties->type = tegra_dc_is_ext_dp_panel(dc) ?
+					TEGRA_DC_EXT_DP : TEGRA_DC_EXT_EDP;
+		break;
+	case TEGRA_DC_OUT_NULL:
+		properties->type = TEGRA_DC_EXT_NULL;
 		break;
 	default:
 		return -EINVAL;

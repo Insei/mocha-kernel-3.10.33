@@ -2,15 +2,24 @@
  * Dongle BUS interface Abstraction layer
  *   target serial buses like USB, SDIO, SPI, etc.
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
  *
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+ * 
+>>>>>>> update/master
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
  * under the terms of the GNU General Public License version 2 (the "GPL"),
  * available at http://www.broadcom.com/licenses/GPLv2.php, with the
  * following added to such license:
+<<<<<<< HEAD
  *
+=======
+ * 
+>>>>>>> update/master
  *      As a special exception, the copyright holders of this software give you
  * permission to link this software with independent modules, and to copy and
  * distribute the resulting executable under terms of your choice, provided that
@@ -18,12 +27,20 @@
  * the license of that module.  An independent module is a module which is not
  * derived from this software.  The special exception does not apply to any
  * modifications of the software.
+<<<<<<< HEAD
  *
+=======
+ * 
+>>>>>>> update/master
  *      Notwithstanding the above, under no circumstances may you combine this
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
+<<<<<<< HEAD
  * $Id: dbus.h 423346 2013-09-11 22:38:40Z $
+=======
+ * $Id: dbus.h 526376 2015-01-14 03:34:07Z $
+>>>>>>> update/master
  */
 
 #ifndef __DBUS_H__
@@ -108,8 +125,13 @@ enum dbus_pnp_state {
 };
 
 enum dbus_file {
+<<<<<<< HEAD
 	DBUS_FIRMWARE,
 	DBUS_NVFILE
+=======
+    DBUS_FIRMWARE,
+    DBUS_NVFILE
+>>>>>>> update/master
 };
 
 typedef enum _DEVICE_SPEED {
@@ -146,18 +168,30 @@ typedef struct {
  */
 enum {
 	DBUS_CONFIG_ID_RXCTL_DEFERRES = 1,
+<<<<<<< HEAD
 	DBUS_CONFIG_ID_TXRXQUEUE
+=======
+	DBUS_CONFIG_ID_AGGR_LIMIT
+>>>>>>> update/master
 };
 typedef struct {
 	uint32 config_id;
 	union {
 		bool rxctl_deferrespok;
 		struct {
+<<<<<<< HEAD
 			int maxrxq;
 			int rxbufsize;
 			int maxtxq;
 			int txbufsize;
 		} txrxqueue;
+=======
+			int maxrxsf;
+			int maxrxsize;
+			int maxtxsf;
+			int maxtxsize;
+		} aggr_param;
+>>>>>>> update/master
 	};
 } dbus_config_t;
 
@@ -268,7 +302,11 @@ typedef struct dbus_pub {
 	int ntxq, nrxq, rxsize;
 	void *bus;
 	struct shared_info *sh;
+<<<<<<< HEAD
 	void *dev_info;
+=======
+    void *dev_info;
+>>>>>>> update/master
 } dbus_pub_t;
 
 #define BUS_INFO(bus, type) (((type *) bus)->pub->bus)
@@ -314,10 +352,17 @@ extern int dbus_get_attrib(dbus_pub_t *pub, dbus_attrib_t *attrib);
 extern int dbus_get_device_speed(dbus_pub_t *pub);
 extern int dbus_set_config(dbus_pub_t *pub, dbus_config_t *config);
 extern int dbus_get_config(dbus_pub_t *pub, dbus_config_t *config);
+<<<<<<< HEAD
 extern void *dbus_get_devinfo(dbus_pub_t *pub);
 
 extern void *dbus_pktget(dbus_pub_t *pub, int len);
 extern void dbus_pktfree(dbus_pub_t *pub, void *pkt);
+=======
+extern void * dbus_get_devinfo(dbus_pub_t *pub);
+
+extern void *dbus_pktget(dbus_pub_t *pub, int len);
+extern void dbus_pktfree(dbus_pub_t *pub, void* pkt);
+>>>>>>> update/master
 
 extern int dbus_set_errmask(dbus_pub_t *pub, uint32 mask);
 extern int dbus_pnp_sleep(dbus_pub_t *pub);
@@ -410,7 +455,11 @@ extern int dbus_bus_osl_hw_deregister(void);
 
 extern uint usbdev_bulkin_eps(void);
 #if defined(BCM_REQUEST_FW)
+<<<<<<< HEAD
 extern void *dbus_get_fw_nvfile(int devid, uint8 **fw, int *fwlen, int type,
+=======
+extern void *dbus_get_fw_nvfile(int devid, int chiprev, uint8 **fw, int *fwlen, int type,
+>>>>>>> update/master
   uint16 boardtype, uint16 boardrev);
 extern void dbus_release_fw_nvfile(void *firmware);
 #endif  /* #if defined(BCM_REQUEST_FW) */
@@ -511,8 +560,13 @@ struct ehci_qh {
 	volatile uint32_t	ow_next;
 	volatile uint32_t	ow_altnext;
 	volatile uint32_t	ow_status;
+<<<<<<< HEAD
 	volatile uint32_t	ow_buffer[EHCI_QTD_NBUFFERS];
 	volatile uint32_t	ow_buffer_hi[EHCI_QTD_NBUFFERS];
+=======
+	volatile uint32_t	ow_buffer [EHCI_QTD_NBUFFERS];
+	volatile uint32_t	ow_buffer_hi [EHCI_QTD_NBUFFERS];
+>>>>>>> update/master
 
 	/* Extension (should match the kernel layout) */
 	dma_addr_t		unused0;

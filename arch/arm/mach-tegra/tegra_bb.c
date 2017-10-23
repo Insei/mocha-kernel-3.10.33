@@ -33,13 +33,14 @@
 #include <linux/suspend.h>
 #include <linux/pm_runtime.h>
 #include <linux/platform_data/nvshm.h>
+#include <linux/tegra_pm_domains.h>
 
 #include <mach/tegra_bb.h>
 #include <mach/tegra_bbc_proxy.h>
-#include <mach/pm_domains.h>
-#include <mach/tegra_emc.h>
 
-#include "clock.h"
+#include <linux/platform/tegra/tegra_emc.h>
+#include <linux/platform/tegra/clock.h>
+
 #include "iomap.h"
 #include "sleep.h"
 #include "pm.h"

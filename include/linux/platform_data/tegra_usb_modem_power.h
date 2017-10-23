@@ -50,8 +50,17 @@ struct tegra_usb_modem_power_platform_data {
 	int autosuspend_delay;		/* autosuspend delay in milliseconds */
 	const struct platform_device *tegra_ehci_device; /* USB host device */
 	struct tegra_usb_platform_data *tegra_ehci_pdata;
+<<<<<<< HEAD
 	int mdm_power_report_gpio;	/* modem power increase report gpio */
 	unsigned long mdm_power_irq_flags; /* modem boot irq flags */
+=======
+#if defined(CONFIG_ARCH_TEGRA_21x_SOC)
+	struct device_node *ehci_node;  /* EHCI device tree node */
+#endif
+	int mdm_power_report_gpio;	/* modem power increase report gpio */
+	unsigned long mdm_power_irq_flags; /* modem boot irq flags */
+	unsigned int num_temp_sensors; /* num of temps modem reports */
+>>>>>>> update/master
 };
 
 #endif /* __MACH_TEGRA_USB_MODEM_POWER_H */

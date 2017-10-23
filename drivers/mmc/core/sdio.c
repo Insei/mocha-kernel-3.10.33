@@ -643,7 +643,8 @@ try_again:
 	}
 
 	if ((ocr & R4_MEMORY_PRESENT) &&
-	    mmc_sd_get_cid(host, host->ocr & ocr, card->raw_cid, NULL) == 0) {
+		mmc_sd_get_cid(host, host->ocr & ocr,
+			card->raw_cid, NULL, 1) == 0) {
 		card->type = MMC_TYPE_SD_COMBO;
 
 		if (oldcard && (oldcard->type != MMC_TYPE_SD_COMBO ||
@@ -1000,12 +1001,19 @@ static int mmc_sdio_suspend(struct mmc_host *host)
 static int mmc_sdio_resume(struct mmc_host *host)
 {
 	int i, err = 0;
+	int claimed_host = 0;
 
 	BUG_ON(!host);
 	BUG_ON(!host->card);
 
 	/* Basic card reinitialization. */
-	mmc_claim_host(host);
+	/* FIXME: replacing mmc_claim_host with try claim version
+	 * so that mmc_sdio_resume does not block when host is already claimed
+	*/
+	claimed_host = mmc_try_claim_host(host);
+	if (!claimed_host)
+		pr_err("%s %s line=%d - fall through - although some one claimed host already\n",
+			mmc_hostname(host), __func__, __LINE__);
 
 	/* No need to reinitialize powered-resumed nonremovable cards */
 	if (mmc_card_is_removable(host) || !mmc_card_keep_power(host)) {
@@ -1024,7 +1032,11 @@ static int mmc_sdio_resume(struct mmc_host *host)
 
 	if (!err && host->sdio_irqs)
 		wake_up_process(host->sdio_irq_thread);
-	mmc_release_host(host);
+	if (!claimed_host)
+		pr_err("%s host was already claimed ... hence no mmc_release_host step %s line=%d\n",
+			mmc_hostname(host), __func__, __LINE__);
+	else
+		mmc_release_host(host);
 
 	/*
 	 * If the card looked to be the same as before suspending, then

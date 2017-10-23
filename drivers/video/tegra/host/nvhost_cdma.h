@@ -3,7 +3,7 @@
  *
  * Tegra Graphics Host Command DMA
  *
- * Copyright (c) 2010-2014, NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2010-2015, NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -33,6 +33,17 @@ struct nvhost_job;
 struct mem_mgr;
 struct mem_handle;
 
+/* Number of gathers we allow to be queued up per channel. Must be a
+ * power of two. Currently sized such that pushbuffer is 4KB (512*8B). */
+#define NVHOST_GATHER_QUEUE_SIZE 512
+
+  /* 8 bytes per slot. (This number does not include the final RESTART.) */
+#define PUSH_BUFFER_SIZE (NVHOST_GATHER_QUEUE_SIZE * 8)
+
+   /* 4K page containing GATHERed methods to increment channel syncpts
+     * and replaces the original timed out contexts GATHER slots */
+#define SYNCPT_INCR_BUFFER_SIZE_WORDS   (4096 / sizeof(u32))
+
 /*
  * cdma
  *
@@ -60,7 +71,6 @@ struct buffer_timeout {
 	struct nvhost_job_syncpt *sp;	/* buffer syncpoint information */
 	ktime_t start_ktime;		/* starting time */
 	/* context timeout information */
-	struct nvhost_hwctx *ctx;
 	int clientid;
 	bool timeout_debug_dump;
 	int num_syncpts;
@@ -85,6 +95,7 @@ struct nvhost_cdma {
 	struct push_buffer push_buffer;	/* channel's push buffer */
 	struct list_head sync_queue;	/* job queue */
 	struct buffer_timeout timeout;	/* channel's timeout state/wq */
+	struct platform_device *pdev;	/* pointer to host1x device */
 	bool running;
 	bool torndown;
 	int high_prio_count;
@@ -93,10 +104,15 @@ struct nvhost_cdma {
 };
 
 #define cdma_to_channel(cdma) container_of(cdma, struct nvhost_channel, cdma)
-#define cdma_to_dev(cdma) nvhost_get_host(cdma_to_channel(cdma)->dev)
+#define cdma_to_dev(cdma) nvhost_get_host(cdma->pdev)
 #define pb_to_cdma(pb) container_of(pb, struct nvhost_cdma, push_buffer)
 
-int	nvhost_cdma_init(struct nvhost_cdma *cdma);
+void nvhost_push_buffer_destroy(struct push_buffer *pb);
+int nvhost_push_buffer_alloc(struct push_buffer *pb);
+u32 nvhost_push_buffer_putptr(struct push_buffer *pb);
+
+int	nvhost_cdma_init(struct platform_device *pdev,
+			 struct nvhost_cdma *cdma);
 void	nvhost_cdma_deinit(struct nvhost_cdma *cdma);
 void	nvhost_cdma_stop(struct nvhost_cdma *cdma);
 int	nvhost_cdma_begin(struct nvhost_cdma *cdma, struct nvhost_job *job);
@@ -112,6 +128,8 @@ void	nvhost_cdma_peek(struct nvhost_cdma *cdma,
 		u32 dmaget, int slot, u32 *out);
 unsigned int nvhost_cdma_wait_locked(struct nvhost_cdma *cdma,
 		enum cdma_event event);
+void nvhost_cdma_finalize_job_incrs(struct nvhost_syncpt *syncpt,
+					struct nvhost_job_syncpt *sp);
 void nvhost_cdma_update_sync_queue(struct nvhost_cdma *cdma,
 		struct nvhost_syncpt *syncpt, struct platform_device *dev);
 #endif

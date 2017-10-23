@@ -21,11 +21,12 @@
 #include <linux/power_supply.h>
 #include <mach/edp.h>
 #include <linux/interrupt.h>
+#include <linux/tegra_soctherm.h>
+
 #include "board-ardbeg.h"
 #include "board.h"
 #include "board-panel.h"
-#include "common.h"
-#include "tegra11_soctherm.h"
+#include <linux/platform/tegra/common.h>
 
 /* --- EDP consumers data --- */
 static unsigned int ov5693_states[] = { 0, 300 };
@@ -68,7 +69,15 @@ static struct sysedp_platform_data tn8_sysedp_platform_data = {
 	.consumer_data = tn8_sysedp_consumer_data,
 	.consumer_data_size = ARRAY_SIZE(tn8_sysedp_consumer_data),
 	.margin = 0,
+<<<<<<< HEAD
 	.min_budget = 4400,
+=======
+#if defined(CONFIG_ARCH_TEGRA_13x_SOC)
+	.min_budget = 0,
+#else
+	.min_budget = 4400,
+#endif
+>>>>>>> update/master
 };
 
 static struct platform_device tn8_sysedp_device = {
@@ -108,12 +117,21 @@ void __init tn8_new_sysedp_init(void)
 	WARN_ON(r);
 }
 
+#if defined(CONFIG_ARCH_TEGRA_13x_SOC)
 static struct tegra_sysedp_platform_data tn8_sysedp_dynamic_capping_platdata = {
 	.core_gain = 115,
 	.init_req_watts = 20000,
 	.pthrot_ratio = 75,
 	.cap_method = TEGRA_SYSEDP_CAP_METHOD_SIGNAL,
 };
+#else
+static struct tegra_sysedp_platform_data tn8_sysedp_dynamic_capping_platdata = {
+	.core_gain = 115,
+	.init_req_watts = 20000,
+	.pthrot_ratio = 75,
+	.cap_method = TEGRA_SYSEDP_CAP_METHOD_SIGNAL,
+};
+#endif
 
 static struct platform_device tn8_sysedp_dynamic_capping = {
 	.name = "sysedp_dynamic_capping",
@@ -135,8 +153,26 @@ struct sysedp_reactive_capping_platform_data tn8_voltmon_oc1_platdata = {
 
 static struct platform_device tn8_sysedp_reactive_capping_oc1 = {
 	.name = "sysedp_reactive_capping",
-	.id = -1,
+	.id = 0,
 	.dev = { .platform_data = &tn8_voltmon_oc1_platdata }
+};
+
+struct sysedp_reactive_capping_platform_data tn8_battery_oc4_platdata = {
+	.max_capping_mw = 15000,
+	.step_alarm_mw = 1000,
+	.step_relax_mw = 500,
+	.relax_ms = 250,
+	.sysedpc = {
+		.name = "battery_oc4"
+	},
+	.irq = TEGRA_SOC_OC_IRQ_BASE + TEGRA_SOC_OC_IRQ_4,
+	.irq_flags = IRQF_ONESHOT | IRQF_TRIGGER_FALLING,
+};
+
+static struct platform_device tn8_sysedp_reactive_capping_oc4 = {
+	.name = "sysedp_reactive_capping",
+	.id = 1,
+	.dev = { .platform_data = &tn8_battery_oc4_platdata }
 };
 
 
@@ -156,17 +192,10 @@ void __init tn8_sysedp_dynamic_capping_init(void)
 	tn8_sysedp_dynamic_capping_platdata.corecap = corecap;
 	tn8_sysedp_dynamic_capping_platdata.corecap_size = corecap_size;
 
-	tn8_sysedp_dynamic_capping_platdata.cpufreq_lim = tegra_get_system_edp_entries(
-		&tn8_sysedp_dynamic_capping_platdata.cpufreq_lim_size);
-	if (!tn8_sysedp_dynamic_capping_platdata.cpufreq_lim) {
-		WARN_ON(1);
-		return;
-	}
-
 	tegra_get_board_info(&board);
 
-	if ((board.board_id == BOARD_P1761) &&
-		(board.fab >= BOARD_FAB_A02)) {
+	if ((board.board_id == BOARD_P1761 && board.fab >= BOARD_FAB_A02) ||
+	    board.board_id == BOARD_P1765) {
 		tn8_sysedp_dynamic_capping_platdata.cap_method =
 			TEGRA_SYSEDP_CAP_METHOD_RELAX;
 	}
@@ -175,5 +204,8 @@ void __init tn8_sysedp_dynamic_capping_init(void)
 	WARN_ON(r);
 
 	r = platform_device_register(&tn8_sysedp_reactive_capping_oc1);
+	WARN_ON(r);
+
+	r = platform_device_register(&tn8_sysedp_reactive_capping_oc4);
 	WARN_ON(r);
 }

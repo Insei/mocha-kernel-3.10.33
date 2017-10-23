@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/dc/bandwidth.c
  *
- * Copyright (c) 2010-2014, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2010-2015, NVIDIA CORPORATION, All rights reserved.
  *
  * Author: Jon Mayo <jmayo@nvidia.com>
  *
@@ -24,21 +24,33 @@
 
 #include <mach/dc.h>
 #include <mach/fb.h>
-#include <mach/mc.h>
 #include <linux/nvhost.h>
+<<<<<<< HEAD
 #include <mach/latency_allowance.h>
 #include <mach/tegra_emc.h>
+=======
+>>>>>>> update/master
 #include <trace/events/display.h>
+
+#include <linux/platform/tegra/latency_allowance.h>
+#include <linux/platform/tegra/tegra_emc.h>
+#include <linux/platform/tegra/mc.h>
 
 #include "dc_reg.h"
 #include "dc_config.h"
 #include "dc_priv.h"
+#ifdef CONFIG_ADF_TEGRA
+#include "tegra_adf.h"
+#endif
 
 static int use_dynamic_emc = 1;
 
 module_param_named(use_dynamic_emc, use_dynamic_emc, int, S_IRUGO | S_IWUSR);
 
-#ifdef CONFIG_ARCH_TEGRA_12x_SOC
+#if !defined(CONFIG_ARCH_TEGRA_2x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_3x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_11x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_14x_SOC)
 static unsigned int tegra_dcs_total_bw[TEGRA_MAX_DC] = {0};
 DEFINE_MUTEX(tegra_dcs_total_bw_lock);
 #endif
@@ -50,13 +62,18 @@ static const enum tegra_la_id la_id_tab[2][DC_N_WINDOWS] = {
 		TEGRA_LA_DISPLAY_0A,
 		TEGRA_LA_DISPLAY_0B,
 		TEGRA_LA_DISPLAY_0C,
-#if defined(CONFIG_ARCH_TEGRA_14x_SOC) || defined(CONFIG_ARCH_TEGRA_12x_SOC)
+#if !defined(CONFIG_ARCH_TEGRA_2x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_3x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_11x_SOC)
 		TEGRA_LA_DISPLAYD,
 #endif
 #if defined(CONFIG_ARCH_TEGRA_14x_SOC)
 		TEGRA_LA_DISPLAY_HC,
 #endif
-#if defined(CONFIG_ARCH_TEGRA_12x_SOC)
+#if !defined(CONFIG_ARCH_TEGRA_2x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_3x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_11x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_14x_SOC)
 		TEGRA_LA_DISPLAY_T,
 #endif
 	},
@@ -72,7 +89,10 @@ static const enum tegra_la_id la_id_tab[2][DC_N_WINDOWS] = {
 	},
 };
 
-#ifdef CONFIG_ARCH_TEGRA_12x_SOC
+#if !defined(CONFIG_ARCH_TEGRA_2x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_3x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_11x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_14x_SOC)
 static bool is_internal_win(enum tegra_la_id id)
 {
 	return ((id == TEGRA_LA_DISPLAY_0A) || (id == TEGRA_LA_DISPLAY_0B) ||
@@ -86,9 +106,9 @@ static unsigned int num_active_internal_wins(struct tegra_dc *dc)
 	int i = 0;
 
 	for_each_set_bit(i, &dc->valid_windows, DC_N_WINDOWS) {
-		struct tegra_dc_win *curr_win = &dc->windows[i];
+		struct tegra_dc_win *curr_win = tegra_dc_get_window(dc, i);
 		enum tegra_la_id curr_win_la_id =
-				la_id_tab[dc->ndev->id][curr_win->idx];
+				la_id_tab[dc->ctrl_num][curr_win->idx];
 
 		if (!is_internal_win(curr_win_la_id))
 			continue;
@@ -106,9 +126,9 @@ static unsigned int num_active_external_wins(struct tegra_dc *dc)
 	int i = 0;
 
 	for_each_set_bit(i, &dc->valid_windows, DC_N_WINDOWS) {
-		struct tegra_dc_win *curr_win = &dc->windows[i];
+		struct tegra_dc_win *curr_win = tegra_dc_get_window(dc, i);
 		enum tegra_la_id curr_win_la_id =
-				la_id_tab[dc->ndev->id][curr_win->idx];
+				la_id_tab[dc->ctrl_num][curr_win->idx];
 
 		if (is_internal_win(curr_win_la_id))
 			continue;
@@ -199,14 +219,14 @@ static void calc_disp_params(struct tegra_dc *dc,
 					(unsigned long)T12X_LA_ROW_SRT_SZ_BYTES,
 					16 * min(emc_freq_mhz + 50,
 						400ul))),
-			((T12X_LA_MAX_DRAIN_TIME_USEC *
+			(T12X_LA_MAX_DRAIN_TIME_USEC *
 			emc_freq_mhz -
 			la_params.la_fp_to_real(
-			T12X_LA_STATIC_LA_SNAP_ARB_TO_ROW_SRT_EMCCLKS_FP) *
+			T12X_LA_STATIC_LA_SNAP_ARB_TO_ROW_SRT_EMCCLKS_FP)) *
 			2 *
 			la_params.dram_width_bits /
 			8 *
-			T12X_LA_CONS_MEM_EFFICIENCY_FP)));
+			T12X_LA_CONS_MEM_EFFICIENCY_FP);
 	unsigned int drain_time_usec_fp =
 			effective_row_srt_sz_bytes_fp *
 			la_params.fp_factor /
@@ -378,10 +398,13 @@ static void calc_disp_params(struct tegra_dc *dc,
 						reqd_lines *
 						bpp_for_line_buffer_storage_fp;
 	thresh_lwm_bytes =
+		la_params.la_fp_to_real(reqd_buffering_thresh_disp_bytes_fp);
+	thresh_lwm_bytes +=
 		la_params.la_fp_to_real(
-			reqd_buffering_thresh_disp_bytes_fp +
-			bw_disruption_buffering_bytes_fp -
-			latency_buffering_available_in_reqd_buffering_fp);
+			(bw_disruption_buffering_bytes_fp >=
+			latency_buffering_available_in_reqd_buffering_fp) ?
+			(bw_disruption_buffering_bytes_fp -
+			latency_buffering_available_in_reqd_buffering_fp) : 0);
 	disp_params->thresh_lwm_bytes = thresh_lwm_bytes;
 
 
@@ -389,9 +412,10 @@ static void calc_disp_params(struct tegra_dc *dc,
 		int i = 0;
 
 		for_each_set_bit(i, &dc->valid_windows, DC_N_WINDOWS) {
-			struct tegra_dc_win *curr_win = &dc->windows[i];
+			struct tegra_dc_win *curr_win =
+				tegra_dc_get_window(dc, i);
 			enum tegra_la_id curr_win_la_id =
-					la_id_tab[dc->ndev->id][curr_win->idx];
+					la_id_tab[dc->ctrl_num][curr_win->idx];
 			unsigned int curr_win_bw = 0;
 
 			if (!is_internal_win(curr_win_la_id))
@@ -410,9 +434,10 @@ static void calc_disp_params(struct tegra_dc *dc,
 		int i = 0;
 
 		for_each_set_bit(i, &dc->valid_windows, DC_N_WINDOWS) {
-			struct tegra_dc_win *curr_win = &dc->windows[i];
+			struct tegra_dc_win *curr_win =
+				tegra_dc_get_window(dc, i);
 			enum tegra_la_id curr_win_la_id =
-					la_id_tab[dc->ndev->id][curr_win->idx];
+					la_id_tab[dc->ctrl_num][curr_win->idx];
 			unsigned int curr_win_bw = 0;
 
 			if (is_internal_win(curr_win_la_id))
@@ -489,18 +514,36 @@ static void calc_disp_params(struct tegra_dc *dc,
 	 * round up bandwidth to next 1MBps */
 	if (curr_dc_head_bw != ULONG_MAX)
 		curr_dc_head_bw = curr_dc_head_bw / 1000 + 1;
-	tegra_dcs_total_bw[dc->ndev->id] = curr_dc_head_bw;
+	tegra_dcs_total_bw[dc->ctrl_num] = curr_dc_head_bw;
 	disp_params->total_dc0_bw = tegra_dcs_total_bw[0];
 	disp_params->total_dc1_bw = tegra_dcs_total_bw[1];
 	mutex_unlock(&tegra_dcs_total_bw_lock);
 }
 #endif
 
+/*
+ * tegra_dc_process_bandwidth_renegotiate() is only called in code
+ * sections wrapped by CONFIG_TEGRA_ISOMGR.  Thus it is also wrapped
+ * to avoid "defined but not used" compiler error.
+ */
+#ifdef CONFIG_TEGRA_ISOMGR
+static void tegra_dc_process_bandwidth_renegotiate(struct tegra_dc *dc,
+						struct tegra_dc_bw_data *bw)
+{
+#ifdef CONFIG_ADF_TEGRA
+	tegra_adf_process_bandwidth_renegotiate(dc->adf, bw);
+#endif
+#ifdef CONFIG_TEGRA_DC_EXTENSIONS
+	tegra_dc_ext_process_bandwidth_renegotiate(dc->ctrl_num, bw);
+#endif
+}
+#endif
 
 /* uses the larger of w->bandwidth or w->new_bandwidth */
-static void tegra_dc_set_latency_allowance(struct tegra_dc *dc,
-	struct tegra_dc_win *w)
+static int tegra_dc_handle_latency_allowance(struct tegra_dc *dc,
+	struct tegra_dc_win *w, int set_la)
 {
+	int ret = 0;
 	unsigned long bw;
 	struct dc_to_la_params disp_params;
 #if defined(CONFIG_ARCH_TEGRA_2x_SOC) || defined(CONFIG_ARCH_TEGRA_3x_SOC)
@@ -509,17 +552,25 @@ static void tegra_dc_set_latency_allowance(struct tegra_dc *dc,
 		TEGRA_LA_DISPLAY_1B, TEGRA_LA_DISPLAY_1BB,
 	};
 #endif
+<<<<<<< HEAD
 #ifdef CONFIG_ARCH_TEGRA_12x_SOC
+=======
+#if !defined(CONFIG_ARCH_TEGRA_2x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_3x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_11x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_14x_SOC)
+>>>>>>> update/master
 	struct clk *emc_clk = NULL;
 	unsigned long emc_freq_hz = 0;
 #endif
 
 
-	BUG_ON(dc->ndev->id >= ARRAY_SIZE(la_id_tab));
+	BUG_ON(dc->ctrl_num >= ARRAY_SIZE(la_id_tab));
 #if defined(CONFIG_ARCH_TEGRA_2x_SOC) || defined(CONFIG_ARCH_TEGRA_3x_SOC)
-	BUG_ON(dc->ndev->id >= ARRAY_SIZE(vfilter_tab));
+	BUG_ON(dc->ctrl_num >= ARRAY_SIZE(vfilter_tab));
 #endif
 	BUG_ON(w->idx >= ARRAY_SIZE(*la_id_tab));
+	BUG_ON(w->dc->ndev->id >= ARRAY_SIZE(la_id_tab));
 
 	bw = max(w->bandwidth, w->new_bandwidth);
 
@@ -535,15 +586,27 @@ static void tegra_dc_set_latency_allowance(struct tegra_dc *dc,
 	if (bw != ULONG_MAX)
 		bw = bw / 1000 + 1;
 
+<<<<<<< HEAD
 #ifdef CONFIG_ARCH_TEGRA_12x_SOC
 	/* use clk_round_rate on root emc clock instead to get correct rate */
 	emc_clk = clk_get(NULL, "emc");
 	emc_freq_hz = tegra_emc_bw_to_freq_req(bw);
+=======
+#if !defined(CONFIG_ARCH_TEGRA_2x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_3x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_11x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_14x_SOC)
+	/* use clk_round_rate on root emc clock instead to get correct rate */
+	emc_clk = clk_get_sys("tegra_emc", "emc");
+	emc_freq_hz = set_la ?
+		tegra_emc_bw_to_freq_req(bw * 1000000) : UINT_MAX;
+>>>>>>> update/master
 	emc_freq_hz = clk_round_rate(emc_clk, emc_freq_hz);
 
 	while (1) {
 		int err;
 		unsigned long next_freq = 0;
+<<<<<<< HEAD
 
 		calc_disp_params(dc,
 				w,
@@ -557,6 +620,23 @@ static void tegra_dc_set_latency_allowance(struct tegra_dc *dc,
 				emc_freq_hz,
 				bw,
 				disp_params);
+=======
+		calc_disp_params(dc, w,
+				la_id_tab[dc->ctrl_num][w->idx],
+				emc_freq_hz, bw, &disp_params);
+
+		if (!set_la) {
+			err = tegra_check_disp_latency_allowance(
+				la_id_tab[dc->ndev->id][w->idx],
+				emc_freq_hz, bw, disp_params);
+			return err;
+		}
+
+		err = tegra_set_disp_latency_allowance(
+			la_id_tab[dc->ndev->id][w->idx],
+			emc_freq_hz, bw, disp_params);
+
+>>>>>>> update/master
 		if (!err) {
 			clk_set_rate(dc->emc_la_clk, emc_freq_hz);
 			break;
@@ -564,6 +644,7 @@ static void tegra_dc_set_latency_allowance(struct tegra_dc *dc,
 
 		next_freq = clk_round_rate(emc_clk, emc_freq_hz + 1000000);
 
+<<<<<<< HEAD
 		if (emc_freq_hz != next_freq)
 			emc_freq_hz = next_freq;
 		else
@@ -571,6 +652,17 @@ static void tegra_dc_set_latency_allowance(struct tegra_dc *dc,
 	}
 #else
 	tegra_set_disp_latency_allowance(la_id_tab[dc->ndev->id][w->idx],
+=======
+		if (emc_freq_hz == next_freq) {
+			ret = err;
+			break;
+		}
+
+		emc_freq_hz = next_freq;
+	}
+#else
+	tegra_set_disp_latency_allowance(la_id_tab[dc->ctrl_num][w->idx],
+>>>>>>> update/master
 						emc_freq_hz,
 						bw,
 						disp_params);
@@ -578,9 +670,25 @@ static void tegra_dc_set_latency_allowance(struct tegra_dc *dc,
 #if defined(CONFIG_ARCH_TEGRA_2x_SOC) || defined(CONFIG_ARCH_TEGRA_3x_SOC)
 	/* if window B, also set the 1B client for the 2-tap V filter. */
 	if (w->idx == 1)
-		tegra_set_latency_allowance(vfilter_tab[dc->ndev->id], bw);
+		tegra_set_latency_allowance(vfilter_tab[dc->ctrl_num], bw);
 #endif
+
+	return ret;
 }
+
+static int tegra_dc_set_latency_allowance(struct tegra_dc *dc,
+	struct tegra_dc_win *w)
+{
+	return tegra_dc_handle_latency_allowance(dc, w, 1);
+}
+
+#ifdef CONFIG_TEGRA_ISOMGR
+static int tegra_dc_check_latency_allowance(struct tegra_dc *dc,
+	struct tegra_dc_win *w)
+{
+	return tegra_dc_handle_latency_allowance(dc, w, 0);
+}
+#endif
 
 /* determine if a row is within a window */
 static int tegra_dc_line_in_window(int line, struct tegra_dc_win *win)
@@ -654,6 +762,9 @@ static unsigned long tegra_dc_calc_win_bandwidth(struct tegra_dc *dc,
 	int tiled_windows_bw_multiplier;
 	unsigned long bpp;
 	unsigned in_w;
+	unsigned out_w;
+	unsigned in_h;
+	unsigned out_h;
 
 	if (!WIN_IS_ENABLED(w))
 		return 0;
@@ -661,11 +772,18 @@ static unsigned long tegra_dc_calc_win_bandwidth(struct tegra_dc *dc,
 	if (dfixed_trunc(w->w) == 0 || dfixed_trunc(w->h) == 0 ||
 	    w->out_w == 0 || w->out_h == 0)
 		return 0;
-	if (w->flags & TEGRA_WIN_FLAG_SCAN_COLUMN)
+	if (w->flags & TEGRA_WIN_FLAG_SCAN_COLUMN) {
 		/* rotated: PRESCALE_SIZE swapped, but WIN_SIZE is unchanged */
 		in_w = dfixed_trunc(w->h);
-	else
+		out_w = w->out_h;
+		in_h = dfixed_trunc(w->w);
+		out_h = w->out_w;
+	} else {
 		in_w = dfixed_trunc(w->w); /* normal output, not rotated */
+		out_w = w->out_w;
+		in_h = dfixed_trunc(w->h);
+		out_h = w->out_h;
+	}
 
 	tiled_windows_bw_multiplier =
 		tegra_mc_get_tiled_memory_bandwidth_multiplier();
@@ -675,18 +793,40 @@ static unsigned long tegra_dc_calc_win_bandwidth(struct tegra_dc *dc,
 	 * is of the luma plane's size only. */
 	bpp = tegra_dc_is_yuv_planar(w->fmt) ?
 		2 * tegra_dc_fmt_bpp(w->fmt) : tegra_dc_fmt_bpp(w->fmt);
-#if defined(CONFIG_ARCH_TEGRA_12x_SOC)
+#if !defined(CONFIG_ARCH_TEGRA_2x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_3x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_11x_SOC) && \
+	!defined(CONFIG_ARCH_TEGRA_14x_SOC)
 	if (tegra_dc_is_yuv420(w->fmt))
 		bpp = 16;
 #endif
+	ret = (dc->mode.pclk / 1000UL) * (bpp / 8);
+	ret *= in_w;
+	ret = div_u64(ret, out_w * (WIN_IS_TILED(w) ?
+		      tiled_windows_bw_multiplier : 1));
 
+<<<<<<< HEAD
 	ret = (dc->mode.pclk / 1000UL) * (bpp / 8);
 #if defined(CONFIG_ARCH_TEGRA_2x_SOC) || defined(CONFIG_ARCH_TEGRA_3x_SOC)
+=======
+#if defined(CONFIG_ARCH_TEGRA_2x_SOC) || \
+	defined(CONFIG_ARCH_TEGRA_3x_SOC)
+>>>>>>> update/master
 	ret *= (win_use_v_filter(dc, w) ? 2 : 1);
+#else
+	if (in_h > out_h) {
+		/* vertical downscaling enabled  */
+		ret *= in_h;
+		ret = div_u64(ret, out_h);
+	}
 #endif
+<<<<<<< HEAD
 	ret *= in_w;
 	ret = div_u64(ret, w->out_w * (WIN_IS_TILED(w) ?
 		      tiled_windows_bw_multiplier : 1));
+=======
+
+>>>>>>> update/master
 #ifdef CONFIG_ARCH_TEGRA_2x_SOC
 	/*
 	 * Assuming 60% efficiency: i.e. if we calculate we need 70MBps, we
@@ -697,7 +837,7 @@ static unsigned long tegra_dc_calc_win_bandwidth(struct tegra_dc *dc,
 	return ret;
 }
 
-static unsigned long tegra_dc_get_bandwidth(
+unsigned long tegra_dc_get_bandwidth(
 	struct tegra_dc_win *windows[], int n)
 {
 	int i;
@@ -716,6 +856,7 @@ static unsigned long tegra_dc_get_bandwidth(
 
 	return tegra_dc_find_max_bandwidth(windows, n);
 }
+EXPORT_SYMBOL(tegra_dc_get_bandwidth);
 
 #ifdef CONFIG_TEGRA_ISOMGR
 /* to save power, call when display memory clients would be idle */
@@ -731,8 +872,7 @@ void tegra_dc_clear_bandwidth(struct tegra_dc *dc)
 		WARN_ONCE(!latency, "tegra_isomgr_realize failed\n");
 	} else {
 		dev_dbg(&dc->ndev->dev, "Failed to clear bw.\n");
-		tegra_dc_ext_process_bandwidth_renegotiate(
-				dc->ndev->id, NULL);
+		tegra_dc_process_bandwidth_renegotiate(dc, NULL);
 	}
 	dc->bw_kbps = 0;
 }
@@ -742,7 +882,7 @@ void tegra_dc_clear_bandwidth(struct tegra_dc *dc)
 {
 	trace_clear_bandwidth(dc);
 	if (tegra_is_clk_enabled(dc->emc_clk))
-		clk_disable_unprepare(dc->emc_clk);
+		tegra_disp_clk_disable_unprepare(dc->emc_clk);
 	dc->bw_kbps = 0;
 }
 
@@ -799,8 +939,7 @@ void tegra_dc_program_bandwidth(struct tegra_dc *dc, bool use_new)
 		} else {
 			dev_dbg(&dc->ndev->dev, "Failed to reserve bw %ld.\n",
 									bw);
-			tegra_dc_ext_process_bandwidth_renegotiate(
-				dc->ndev->id, NULL);
+			tegra_dc_process_bandwidth_renegotiate(dc, NULL);
 		}
 #else /* EMC version */
 		int emc_freq;
@@ -808,7 +947,7 @@ void tegra_dc_program_bandwidth(struct tegra_dc *dc, bool use_new)
 		/* going from 0 to non-zero */
 		if (!dc->bw_kbps && dc->new_bw_kbps &&
 			!tegra_is_clk_enabled(dc->emc_clk))
-			clk_prepare_enable(dc->emc_clk);
+			tegra_disp_clk_prepare_enable(dc->emc_clk);
 
 		emc_freq = tegra_dc_kbps_to_emc(bw);
 		clk_set_rate(dc->emc_clk, emc_freq);
@@ -816,13 +955,13 @@ void tegra_dc_program_bandwidth(struct tegra_dc *dc, bool use_new)
 		/* going from non-zero to 0 */
 		if (dc->bw_kbps && !dc->new_bw_kbps &&
 			tegra_is_clk_enabled(dc->emc_clk))
-			clk_disable_unprepare(dc->emc_clk);
+			tegra_disp_clk_disable_unprepare(dc->emc_clk);
 #endif
 		dc->bw_kbps = dc->new_bw_kbps;
 	}
 
 	for_each_set_bit(i, &dc->valid_windows, DC_N_WINDOWS) {
-		struct tegra_dc_win *w = &dc->windows[i];
+		struct tegra_dc_win *w = tegra_dc_get_window(dc, i);
 
 		if ((use_new || w->bandwidth != w->new_bandwidth) &&
 			w->new_bandwidth != 0)
@@ -838,18 +977,20 @@ int tegra_dc_set_dynamic_emc(struct tegra_dc *dc)
 	struct tegra_dc_win *windows[DC_N_WINDOWS];
 	unsigned i;
 	unsigned len;
-	unsigned win_status = 0;
 
 	if (!use_dynamic_emc)
 		return 0;
 
 	for (i = 0, len = 0; i < DC_N_WINDOWS; i++) {
 		struct tegra_dc_win *win = tegra_dc_get_window(dc, i);
-		if (win) {
+		if (win)
 			windows[len++] = win;
+<<<<<<< HEAD
 			if (win->flags & TEGRA_WIN_FLAG_ENABLED)
 				win_status |= 1 << i;
 		}
+=======
+>>>>>>> update/master
 	}
 #ifdef CONFIG_TEGRA_ISOMGR
 	new_rate = tegra_dc_get_bandwidth(windows, len);
@@ -863,44 +1004,44 @@ int tegra_dc_set_dynamic_emc(struct tegra_dc *dc)
 	dc->new_bw_kbps = new_rate;
 	trace_set_dynamic_emc(dc);
 
-	/* if low_v_win is set, we can lower vdd_core when
-		that windows is the only one active */
-	if (dc->pdata->low_v_win != 0) {
-		if (win_status == dc->pdata->low_v_win &&
-			dc->win_status != dc->pdata->low_v_win) {
-			tegra_dvfs_use_alt_freqs_on_clk(dc->clk, true);
-			dc->win_status = dc->pdata->low_v_win;
-		} else if (win_status != dc->pdata->low_v_win &&
-			dc->win_status == dc->pdata->low_v_win) {
-			tegra_dvfs_use_alt_freqs_on_clk(dc->clk, false);
-			dc->win_status = win_status;
-		}
-	}
 	return 0;
 }
 
 /* return the minimum bandwidth in kbps for display to function */
 long tegra_dc_calc_min_bandwidth(struct tegra_dc *dc)
 {
-	unsigned pclk = tegra_dc_get_out_max_pixclock(dc);
+	unsigned  pclk;
 
 	if (WARN_ONCE(!dc, "dc is NULL") ||
 		WARN_ONCE(!dc->out, "dc->out is NULL!"))
 		return 0;
+
+	pclk = tegra_dc_get_out_max_pixclock(dc);
 	if (!pclk) {
 		 if (dc->out->type == TEGRA_DC_OUT_HDMI) {
-#if defined(CONFIG_ARCH_TEGRA_11x_SOC)
+#if defined(CONFIG_ARCH_TEGRA_11x_SOC) || defined(CONFIG_ARCH_TEGRA_12x_SOC)
 			pclk = KHZ2PICOS(300000); /* 300MHz max */
+#elif defined(CONFIG_ARCH_TEGRA_21x_SOC)
+			pclk = KHZ2PICOS(600000); /* 600MHz max */
 #else
 			pclk = KHZ2PICOS(150000); /* 150MHz max */
 #endif
+<<<<<<< HEAD
 		} else if (dc->out->type == TEGRA_DC_OUT_DP) {
+=======
+		} else if ((dc->out->type == TEGRA_DC_OUT_DP) ||
+			(dc->out->type == TEGRA_DC_OUT_FAKE_DP) ||
+			(dc->out->type == TEGRA_DC_OUT_NULL) ||
+			(dc->out->type == TEGRA_DC_OUT_NVSR_DP)) {
+>>>>>>> update/master
 			if (dc->mode.pclk)
 				pclk = KHZ2PICOS(dc->mode.pclk / 1000);
 			else
 				pclk = KHZ2PICOS(25200); /* vga */
 		} else {
-			pclk = KHZ2PICOS(dc->mode.pclk / 1000);
+			if (!WARN_ONCE(!dc->mode.pclk,
+				"pclk is not set, bandwidth calc cannot work"))
+				pclk = KHZ2PICOS(dc->mode.pclk / 1000);
 		}
 	}
 
@@ -911,8 +1052,10 @@ long tegra_dc_calc_min_bandwidth(struct tegra_dc *dc)
 int tegra_dc_bandwidth_negotiate_bw(struct tegra_dc *dc,
 			struct tegra_dc_win *windows[], int n)
 {
-	int latency;
+	int i;
 	u32 bw;
+	int err;
+	int latency;
 
 	mutex_lock(&dc->lock);
 	/*
@@ -953,27 +1096,41 @@ int tegra_dc_bandwidth_negotiate_bw(struct tegra_dc *dc,
 		dc->bw_kbps = bw;
 	}
 
+	for_each_set_bit(i, &dc->valid_windows, DC_N_WINDOWS) {
+		struct tegra_dc_win *w = tegra_dc_get_window(dc, i);
+		if ((w->bandwidth != w->new_bandwidth) &&
+			w->new_bandwidth != 0) {
+			err = tegra_dc_check_latency_allowance(dc, w);
+			if (err) {
+				WARN_ONCE(!latency, "tegra_dc_check_latency_allowance failed\n");
+				mutex_unlock(&dc->lock);
+				return -1;
+			}
+		}
+	}
+
 	mutex_unlock(&dc->lock);
 
 	return 0;
 }
+EXPORT_SYMBOL(tegra_dc_bandwidth_negotiate_bw);
 
 void tegra_dc_bandwidth_renegotiate(void *p, u32 avail_bw)
 {
 	struct tegra_dc_bw_data data;
 	struct tegra_dc *dc = p;
 
-	if (dc->available_bw == avail_bw)
+	if (WARN_ONCE(!dc, "dc is NULL!"))
 		return;
 
-	if (WARN_ONCE(!dc, "dc is NULL!"))
+	if (dc->available_bw == avail_bw)
 		return;
 
 	data.total_bw = tegra_isomgr_get_total_iso_bw();
 	data.avail_bw = avail_bw;
 	data.resvd_bw = dc->reserved_bw;
 
-	tegra_dc_ext_process_bandwidth_renegotiate(dc->ndev->id, &data);
+	tegra_dc_process_bandwidth_renegotiate(dc, &data);
 
 	mutex_lock(&dc->lock);
 	dc->available_bw = avail_bw;

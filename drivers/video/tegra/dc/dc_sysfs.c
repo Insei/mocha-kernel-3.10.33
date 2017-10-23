@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/dc/dc_sysfs.c
  *
- * Copyright (c) 2011-2014, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2011-2015, NVIDIA CORPORATION, All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,8 +28,10 @@
 #include "dc_reg.h"
 #include "dc_priv.h"
 #include "nvsd.h"
+#include "nvsd2.h"
 #include "hdmi.h"
 #include "nvsr.h"
+#include "vrr.h"
 
 static ssize_t mode_show(struct device *device,
 	struct device_attribute *attr, char *buf)
@@ -209,7 +211,11 @@ static ssize_t crc_checksum_latched_show(struct device *device,
 		return -EFAULT;
 	}
 
+#ifdef CONFIG_TEGRA_NVDISPLAY
+	crc = tegra_nvdisp_read_rg_crc(dc);
+#else
 	crc = tegra_dc_read_checksum_latched(dc);
+#endif
 
 	return snprintf(buf, PAGE_SIZE, "%u\n", crc);
 }
@@ -230,10 +236,18 @@ static ssize_t crc_checksum_latched_store(struct device *dev,
 		return -EINVAL;
 
 	if (val == 1) {
+#ifdef CONFIG_TEGRA_NVDISPLAY
+		tegra_nvdisp_enable_crc(dc);
+#else
 		tegra_dc_enable_crc(dc);
+#endif
 		dev_dbg(&dc->ndev->dev, "crc is enabled.\n");
 	} else if (val == 0) {
+#ifdef CONFIG_TEGRA_NVDISPLAY
+		tegra_nvdisp_disable_crc(dc);
+#else
 		tegra_dc_disable_crc(dc);
+#endif
 		dev_dbg(&dc->ndev->dev, "crc is disabled.\n");
 	} else
 		dev_err(&dc->ndev->dev, "Invalid input.\n");
@@ -372,36 +386,6 @@ static ssize_t mode_3d_store(struct device *dev,
 
 static DEVICE_ATTR(stereo_mode,
 	S_IRUGO|S_IWUSR, mode_3d_show, mode_3d_store);
-
-static ssize_t nvdps_show(struct device *device,
-	struct device_attribute *attr, char *buf)
-{
-	int refresh_rate;
-	struct platform_device *ndev = to_platform_device(device);
-	struct tegra_dc *dc = platform_get_drvdata(ndev);
-
-	refresh_rate = tegra_fb_get_mode(dc);
-	return snprintf(buf, PAGE_SIZE, "%d\n", refresh_rate);
-}
-
-
-static ssize_t nvdps_store(struct device *dev,
-	struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct platform_device *ndev = to_platform_device(dev);
-	struct tegra_dc *dc = platform_get_drvdata(ndev);
-	int refresh_rate;
-	int e;
-
-	e = kstrtoint(buf, 10, &refresh_rate);
-	if (e)
-		return e;
-	e = tegra_fb_set_mode(dc, refresh_rate);
-
-	return count;
-}
-
-static DEVICE_ATTR(nvdps, S_IRUGO|S_IWUSR, nvdps_show, nvdps_store);
 
 #ifdef CONFIG_TEGRA_DC_CMU
 static ssize_t cmu_enable_store(struct device *dev,
@@ -744,7 +728,6 @@ void tegra_dc_remove_sysfs(struct device *dev)
 	struct tegra_dc_nvsr_data *nvsr = dc->nvsr;
 
 	device_remove_file(dev, &dev_attr_mode);
-	device_remove_file(dev, &dev_attr_nvdps);
 	device_remove_file(dev, &dev_attr_enable);
 	device_remove_file(dev, &dev_attr_stats_enable);
 	device_remove_file(dev, &dev_attr_crc_checksum_latched);
@@ -764,10 +747,18 @@ void tegra_dc_remove_sysfs(struct device *dev)
 	}
 
 	if (sd_settings)
-		nvsd_remove_sysfs(dev);
+#ifdef CONFIG_TEGRA_NVSD
+	nvsd_remove_sysfs(dev);
+#endif
+#ifdef CONFIG_TEGRA_NVDISPLAY
+	tegra_sd_remove_sysfs(dev);
+#endif
 
 	if (nvsr)
 		nvsr_remove_sysfs(dev);
+
+	if (dc->fb)
+		tegra_fb_remove_sysfs(dev);
 
 	if (dc->out->flags & TEGRA_DC_OUT_ONE_SHOT_MODE)
 		device_remove_file(dev, &dev_attr_smart_panel);
@@ -785,10 +776,10 @@ void tegra_dc_create_sysfs(struct device *dev)
 	struct tegra_dc *dc = platform_get_drvdata(ndev);
 	struct tegra_dc_sd_settings *sd_settings = dc->out->sd_settings;
 	struct tegra_dc_nvsr_data *nvsr = dc->nvsr;
+	struct tegra_vrr *vrr  = dc->out->vrr;
 	int error = 0;
 
 	error |= device_create_file(dev, &dev_attr_mode);
-	error |= device_create_file(dev, &dev_attr_nvdps);
 	error |= device_create_file(dev, &dev_attr_enable);
 	error |= device_create_file(dev, &dev_attr_stats_enable);
 	error |= device_create_file(dev, &dev_attr_crc_checksum_latched);
@@ -809,10 +800,23 @@ void tegra_dc_create_sysfs(struct device *dev)
 	}
 
 	if (sd_settings)
+#ifdef CONFIG_TEGRA_NVSD
 		error |= nvsd_create_sysfs(dev);
+#endif
+#ifdef CONFIG_TEGRA_NVDISPLAY
+		error |= tegra_sd_create_sysfs(dev);
+#endif
 
 	if (nvsr)
 		error |= nvsr_create_sysfs(dev);
+
+	if (vrr)
+#ifdef CONFIG_TEGRA_VRR
+		error |= vrr_create_sysfs(dev);
+#endif
+
+	if (dc->fb)
+		error |= tegra_fb_create_sysfs(dev);
 
 	if (dc->out->flags & TEGRA_DC_OUT_ONE_SHOT_MODE)
 		error |= device_create_file(dev, &dev_attr_smart_panel);

@@ -2,8 +2,12 @@
  * Generic Broadcom Home Networking Division (HND) DMA engine HW interface
  * This supports the following chips: BCM42xx, 44xx, 47xx .
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+>>>>>>> update/master
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -23,7 +27,11 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
+<<<<<<< HEAD
  * $Id: sbhnddma.h 424099 2013-09-16 07:44:34Z $
+=======
+ * $Id: sbhnddma.h 452424 2014-01-30 09:43:39Z $
+>>>>>>> update/master
  */
 
 #ifndef	_sbhnddma_h_
@@ -347,6 +355,10 @@ typedef volatile struct {
 #define DMA_CTRL_USB_BOUNDRY4KB_WAR (1 << 4)
 #define DMA_CTRL_DMA_AVOIDANCE_WAR (1 << 5)	/* DMA avoidance WAR for 4331 */
 #define DMA_CTRL_RXSINGLE	(1 << 6)	/* always single buffer */
+<<<<<<< HEAD
+=======
+#define DMA_CTRL_SDIO_RXGLOM	(1 << 7)	/* DMA Rx glome is enabled */
+>>>>>>> update/master
 
 /* receive descriptor table pointer */
 #define	D64_RP_LD_MASK		0x00001fff	/* last valid descriptor */

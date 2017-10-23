@@ -17,6 +17,7 @@
 #define _LINUX_WLAN_PLAT_H_
 
 #include <linux/sysedp.h>
+#define WLAN_PLAT_NODFS_FLAG	0x01
 
 struct wifi_platform_data {
 	int (*set_power)(int val);
@@ -26,6 +27,7 @@ struct wifi_platform_data {
 	int (*get_mac_addr)(unsigned char *buf);
 	void *(*get_country_code)(char *ccode);
 	struct sysedp_consumer *sysedpc;
+	int (*get_wake_irq)(void);
 };
 
 #endif

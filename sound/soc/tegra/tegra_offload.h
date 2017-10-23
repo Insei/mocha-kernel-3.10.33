@@ -39,8 +39,8 @@ struct tegra_offload_pcm_params {
 	int				period_size;	/* bytes */
 	struct tegra_offload_mem	source_buf;
 	struct tegra_offload_dma_params dma_params;
-	void				(*period_elapsed_cb)(void *args);
-	void				*period_elapsed_args;
+	void	(*period_elapsed_cb)(void *args, unsigned int is_eos);
+	void	*period_elapsed_args;
 };
 
 struct tegra_offload_compr_params {
@@ -51,12 +51,12 @@ struct tegra_offload_compr_params {
 	int				fragment_size;	/* bytes */
 	int				fragments;
 	struct tegra_offload_dma_params	dma_params;
-	void				(*fragments_elapsed_cb)(void *args);
-	void				*fragments_elapsed_args;
+	void	(*fragments_elapsed_cb)(void *args, unsigned int is_eos);
+	void	*fragments_elapsed_args;
 };
 
 struct tegra_offload_pcm_ops {
-	int	(*stream_open)(int *id);
+	int	(*stream_open)(int *id, char *stream);
 	void	(*stream_close)(int id);
 	int	(*set_stream_params)(int id,
 			struct tegra_offload_pcm_params *params);
@@ -88,8 +88,10 @@ struct tegra_offload_device_ops {
 struct tegra_offload_ops {
 	struct tegra_offload_device_ops device_ops;
 	struct tegra_offload_pcm_ops	pcm_ops;
+	struct tegra_offload_pcm_ops	loopback_ops;
 	struct tegra_offload_compr_ops	compr_ops;
 };
 
 int tegra_register_offload_ops(struct tegra_offload_ops *ops);
+void tegra_deregister_offload_ops(void);
 #endif

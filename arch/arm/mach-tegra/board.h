@@ -2,7 +2,7 @@
  * arch/arm/mach-tegra/board.h
  *
  * Copyright (C) 2010 Google, Inc.
- * Copyright (c) 2011-2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * Author:
  *	Colin Cross <ccross@google.com>
@@ -26,10 +26,10 @@
 
 #include <linux/types.h>
 #include <linux/errno.h>
-#include <linux/power_supply.h>
 #include <linux/memory.h>
-
-#include <mach/tegra_smmu.h>
+#include <linux/tegra_smmu.h>
+#include <linux/reboot.h>
+#include <linux/platform_device.h>
 
 /*
  * OF is always used on ARM64
@@ -80,7 +80,6 @@
 		.usage_mask	= NVMAP_HEAP_CARVEOUT_IRAM,			\
 		.base		= TEGRA_IRAM_BASE + TEGRA_RESET_HANDLER_SIZE,	\
 		.size		= TEGRA_IRAM_SIZE - TEGRA_RESET_HANDLER_SIZE,	\
-		.buddy_size	= 0, /* no buddy allocation for IRAM */		\
 	}
 #endif
 
@@ -95,14 +94,13 @@
 
 struct memory_accessor;
 
-void tegra_assert_system_reset(char mode, const char *cmd);
-
 void __init tegra20_init_early(void);
 void __init tegra30_init_early(void);
 void __init tegra11x_init_early(void);
 void __init tegra12x_init_early(void);
-void __init tegra14x_init_early(void);
+void __init tegra21x_init_early(void);
 void __init tegra_map_common_io(void);
+phys_addr_t __init tegra_reserve_adsp(unsigned long size);
 void __init tegra_reserve(unsigned long carveout_size, unsigned long fb_size,
 	unsigned long fb2_size);
 void __init tegra_reserve4(ulong carveout_size, ulong fb_size,
@@ -124,11 +122,7 @@ static inline void tegra_clear_framebuffer(unsigned long to, unsigned long size)
 {
 	__tegra_clear_framebuffer(NULL, to, size);
 }
-bool is_tegra_debug_uartport_hs(void);
-int get_tegra_uart_debug_port_id(void);
 bool is_uart_over_sd_enabled(void);
-int get_sd_uart_port_id(void);
-void set_sd_uart_port_id(int);
 int __init tegra_register_fuse(void);
 
 extern phys_addr_t tegra_bootloader_fb_start;
@@ -145,11 +139,7 @@ extern phys_addr_t tegra_vpr_start;
 extern phys_addr_t tegra_vpr_size;
 extern phys_addr_t tegra_lp0_vec_start;
 extern phys_addr_t tegra_lp0_vec_size;
-#if defined(CONFIG_ARCH_TEGRA_14x_SOC)
-extern phys_addr_t tegra_wb0_params_address;
-extern phys_addr_t tegra_wb0_params_instances;
-extern phys_addr_t tegra_wb0_params_block_size;
-#endif
+extern bool tegra_vpr_resize;
 #ifdef CONFIG_TEGRA_NVDUMPER
 extern unsigned long nvdumper_reserved;
 #endif
@@ -161,16 +151,10 @@ extern unsigned long tegra_nck_start;
 extern unsigned long tegra_nck_size;
 #endif
 
-#ifdef CONFIG_TEGRA_IOMMU_SMMU
+#ifdef CONFIG_OF_TEGRA_IOMMU_SMMU
 void tegra_fb_linear_set(struct iommu_linear_map *map);
 #else
 static inline void tegra_fb_linear_set(struct iommu_linear_map *map) {}
-#endif
-
-#ifdef CONFIG_CMA
-void carveout_linear_set(struct device *cma_dev);
-#else
-static inline void carveout_linear_set(struct device *cma_dev) {}
 #endif
 
 void tegra_init_late(void);
@@ -245,6 +229,12 @@ enum image_type {
 	rck_image,
 };
 
+/* Usage Model */
+enum chip_personality {
+	normal = 0,
+	always_on,
+};
+
 void tegra_get_board_info(struct board_info *);
 void tegra_get_pmu_board_info(struct board_info *bi);
 void tegra_get_display_board_info(struct board_info *bi);
@@ -261,13 +251,12 @@ int tegra_get_touch_panel_id(void);
 int get_core_edp(void);
 enum panel_type get_panel_type(void);
 int tegra_get_usb_port_owner_info(void);
+int tegra_get_board_battery_id(void);
 int tegra_get_modem_id(void);
 int tegra_get_commchip_id(void);
 u8 get_power_config(void);
 u8 get_display_config(void);
-enum power_supply_type get_power_supply_type(void);
 enum audio_codec_type get_audio_codec_type(void);
-int get_maximum_cpu_current_supported(void);
 int get_maximum_core_current_supported(void);
 int get_emc_max_dvfs(void);
 int tegra_get_memory_type(void);
@@ -275,7 +264,6 @@ enum image_type get_tegra_image_type(void);
 int tegra_get_cvb_alignment_uV(void);
 int tegra_soc_device_init(const char *machine);
 int get_pwr_i2c_clk_rate(void);
-bool is_pmic_wdt_disabled_at_boot(void);
 bool is_tegra_diagnostic_mode(void);
 #ifdef CONFIG_ANDROID
 bool get_androidboot_mode_charger(void);

@@ -16,6 +16,7 @@
 
 #include <linux/types.h>
 
+<<<<<<< HEAD
 #define MXT224_I2C_ADDR1        0x4A
 #define MXT224_I2C_ADDR2        0x4B
 #define MXT1386_I2C_ADDR1       0x4C
@@ -53,11 +54,14 @@ struct mxt_config_info {
 	int key_num;
 };
 
+=======
+>>>>>>> update/master
 /* The platform data for the Atmel maXTouch touchscreen driver */
 struct mxt_platform_data {
 	struct mxt_config_info *config_array;
 	size_t config_array_size;
 	unsigned long irqflags;
+<<<<<<< HEAD
 	int power_gpio;
 	int reset_gpio;
 	int irq_gpio;
@@ -76,3 +80,15 @@ struct mxt_platform_data {
 
 #endif /* __LINUX_ATMEL_MXT_TS_640T_H */
 
+=======
+	u8 t19_num_keys;
+	const unsigned int *t19_keymap;
+	int t15_num_keys;
+	const unsigned int *t15_keymap;
+	unsigned long gpio_reset;
+	const char *cfg_name;
+	const char *input_name;
+};
+
+#endif /* __LINUX_ATMEL_MXT_TS_H */
+>>>>>>> update/master

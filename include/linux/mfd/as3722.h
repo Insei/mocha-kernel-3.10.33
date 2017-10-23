@@ -282,23 +282,16 @@
 #define AS3722_INTERRUPT_MASK4_OCCUR_ALARM_SD6		BIT(6)
 #define AS3722_INTERRUPT_MASK4_ADC			BIT(7)
 
-#define AS3722_ADC1_INTERVAL_TIME			BIT(0)
-#define AS3722_ADC1_INT_MODE_ON				BIT(1)
-#define AS3722_ADC_BUF_ON				BIT(2)
-#define AS3722_ADC1_LOW_VOLTAGE_RANGE			BIT(5)
-#define AS3722_ADC1_INTEVAL_SCAN			BIT(6)
-#define AS3722_ADC1_INT_MASK				BIT(7)
-
-#define AS3722_ADC_MSB_VAL_MASK				0x7F
-#define AS3722_ADC_LSB_VAL_MASK				0x07
-
-#define AS3722_ADC0_CONV_START				BIT(7)
-#define AS3722_ADC0_CONV_NOTREADY			BIT(7)
-#define AS3722_ADC0_SOURCE_SELECT_MASK			0x1F
-
-#define AS3722_ADC1_CONV_START				BIT(7)
-#define AS3722_ADC1_CONV_NOTREADY			BIT(7)
-#define AS3722_ADC1_SOURCE_SELECT_MASK			0x1F
+#define AS3722_ADC1_MASK_INTERVAL_TIME			BIT(0)
+#define AS3722_ADC1_MASK_INT_MODE_ON			BIT(1)
+#define AS3722_ADC_MASK_BUF_ON				BIT(2)
+#define AS3722_ADC_MASK_LOW_VOLTAGE_RANGE		BIT(5)
+#define AS3722_ADC1_MASK_INTEVAL_SCAN			BIT(6)
+#define AS3722_ADC_MASK_CONV_START			BIT(7)
+#define AS3722_ADC_MASK_CONV_NOTREADY			BIT(7)
+#define AS3722_ADC_MASK_SOURCE_SELECT			0x1F
+#define AS3722_ADC_MASK_MSB_VAL				0x7F
+#define AS3722_ADC_MASK_LSB_VAL				0x07
 
 /* GPIO modes */
 #define AS3722_GPIO_MODE_MASK				0x07
@@ -350,20 +343,35 @@
 #define AS3722_EXT_CONTROL_ENABLE2			0x2
 #define AS3722_EXT_CONTROL_ENABLE3			0x3
 
-#define AS3722_ADC1_MASK_CONV_START			BIT(7)
-#define AS3722_ADC1_BIT_CONV_START			BIT(7)
-#define AS3722_ADC1_MASK_CONV_NOTREADY			BIT(7)
-#define AS3722_ADC1_BIT_CONV_NOTREADY			BIT(7)
-#define AS3722_ADC1_MASK_SOURCE_SELECT			0x1F
-
-#define AS3722_ADC_MASK_MSB_VAL				0x7F
-#define AS3722_ADC_MASK_LSB_VAL				0x07
-
-#define AS3722_ADC1_LOW_VOLTAGE_RANGE_MASK		BIT(5)
-#define AS3722_ADC1_INTEVAL_SCAN_MASK			BIT(6)
-#define AS3722_ADC1_CONVERSION_START_MASK		BIT(7)
-
 #define AS3722_CTRL_SEQ1_AC_OK_PWR_ON			BIT(0)
+
+#define AS3722_BBCCUR_MASK				0x18
+#define AS3722_BBCCUR_VAL(n)				((n)  << 3)
+#define AS3722_BBCCUR_50UA				AS3722_BBCCUR_VAL(0)
+#define AS3722_BBCCUR_200UA				AS3722_BBCCUR_VAL(1)
+#define AS3722_BBCCUR_100UA				AS3722_BBCCUR_VAL(2)
+#define AS3722_BBCCUR_400UA				AS3722_BBCCUR_VAL(3)
+#define AS3722_BBCRESOFF_MASK				BIT(2)
+#define AS3722_BBCMODE_MASK				0x03
+#define AS3722_BBCMODE_OFF				0
+#define AS3722_BBCMODE_ACTIVE				1
+#define AS3722_BBCMODE_ACT_STBY				2
+#define AS3722_BBCMODE_ACT_STBY_OFF			3
+
+#define AS3722_PG_AC_OK_INV_MASK			BIT(0)
+#define AS3722_PG_AC_OK_MASK				BIT(1)
+#define AS3722_PG_GPIO3_MASK				BIT(2)
+#define AS3722_PG_GPIO4_MASK				BIT(3)
+#define AS3722_PG_GPIO5_MASK				BIT(4)
+#define AS3722_PG_PWRGOOD_SD0_MASK			BIT(5)
+#define AS3722_PG_OVCURR_SD0_MASK			BIT(6)
+#define AS3722_PG_VRESFALL_MASK				BIT(7)
+
+#define AS3722_OC_PG_INVERT_MASK			BIT(0)
+#define AS3722_PG_VMASK_TIME_MASK			(3 << 1)
+#define AS3722_PG_SD6_OVC_ALARM_MASK			(7 << 3)
+#define AS3722_PG_POWERGOOD_SD6_MASK			BIT(6)
+#define AS3722_PG_OVCURR_SD6_MASK			BIT(7)
 
 /* Interrupt IDs */
 enum as3722_irq {
@@ -418,6 +426,11 @@ struct as3722 {
 	u32 minor_rev;
 	struct mutex mutex_config;
 	bool shutdown;
+	bool backup_battery_chargable;
+	bool battery_backup_enable_bypass;
+	u32 backup_battery_charge_current;
+	u32 battery_backup_charge_mode;
+	u32 oc_pg_mask;
 };
 
 static inline int as3722_read(struct as3722 *as3722, u32 reg, u32 *dest)
@@ -487,5 +500,42 @@ static inline bool as3722_device_rev_eq_later(struct as3722 *as3722,
 		return false;
 
 	return true;
+}
+
+/* as3722 adc channel */
+enum {
+	AS3722_ADC_CH_SD0,
+	AS3722_ADC_CH_SD1,
+	AS3722_ADC_CH_SD6,
+	AS3722_ADC_CH_DTEMP,
+	AS3722_ADC_CH_VSUP,
+	AS3722_ADC_CH_GPIO1,
+	AS3722_ADC_CH_GPIO2,
+	AS3722_ADC_CH_GPIO3,
+	AS3722_ADC_CH_GPIO4,
+	AS3722_ADC_CH_GPIO6,
+	AS3722_ADC_CH_GPIO7,
+	AS3722_ADC_CH_VBAT,
+	AS3722_ADC_CH_ADC1,
+	AS3722_ADC_CH_ADC2,
+	AS3722_ADC_CH_TBD1,
+	AS3722_ADC_CH_TBD2,
+	AS3722_ADC_CH_T1SD0,
+	AS3722_ADC_CH_T2SD0,
+	AS3722_ADC_CH_T3SD0,
+	AS3722_ADC_CH_T4SD0,
+	AS3722_ADC_CH_TSD1,
+	AS3722_ADC_CH_T1SD6,
+	AS3722_ADC_CH_T2SD6,
+	AS3722_ADC_CH_MAX,
+};
+
+#define AS3722_DATASHEET_NAME(_name)	"as3722-gpadc-chan-"#_name
+
+#define AS3722_GPADC_IIO_MAP(chan, _consumer, _comsumer_channel_name)	\
+{									\
+	.adc_channel_label = AS3722_DATASHEET_NAME(chan),		\
+	.consumer_dev_name = _consumer,					\
+	.consumer_channel = _comsumer_channel_name,			\
 }
 #endif

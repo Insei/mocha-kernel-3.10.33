@@ -30,6 +30,10 @@ enum {
 
 #define TEGRA_PWR_DN_AFFINITY_CPU	0
 #define TEGRA_PWR_DN_AFFINITY_CLUSTER	1
+<<<<<<< HEAD
+=======
+#define TEGRA_PWR_DN_AFFINITY_SYSTEM	2
+>>>>>>> update/master
 #endif
 
 #define TEGRA_POWER_LP1_AUDIO		(1 << 25) /* do not turn off pll-p in LP1 */
@@ -359,6 +363,8 @@ extern unsigned int lp1_register_i2c_base_addr;
 extern unsigned int lp1_register_core_lowvolt;
 extern unsigned int lp1_register_core_highvolt;
 #endif
+void tegra3_tear_down_core(void);
+void tegra3_stop_mc_clk(void);
 int tegra3_sleep_core_finish(unsigned long int);
 int tegra3_sleep_cpu_secondary_finish(unsigned long int);
 int tegra3_stop_mc_clk_finish(unsigned long int);

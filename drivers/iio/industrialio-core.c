@@ -1,6 +1,7 @@
 /* The industrial I/O core
  *
  * Copyright (c) 2008 Jonathan Cameron
+ * Copyright (c) 2014-2016, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published by
@@ -47,7 +48,7 @@ static const char * const iio_direction[] = {
 	[1] = "out",
 };
 
-static const char * const iio_chan_type_name_spec[] = {
+const char * const iio_chan_type_name_spec[] = {
 	[IIO_VOLTAGE] = "voltage",
 	[IIO_CURRENT] = "current",
 	[IIO_POWER] = "power",
@@ -66,6 +67,7 @@ static const char * const iio_chan_type_name_spec[] = {
 	[IIO_ALTVOLTAGE] = "altvoltage",
 	[IIO_CCT] = "cct",
 	[IIO_PRESSURE] = "pressure",
+<<<<<<< HEAD
 	[IIO_SIGN_MOTION] = "sign_motion",
 	[IIO_QUATERNION] = "quaternion",
 	[IIO_STEP_DETECTOR] = "step_detector",
@@ -73,12 +75,41 @@ static const char * const iio_chan_type_name_spec[] = {
 	[IIO_EULER_ANGLES] = "euler",
 	[IIO_LINEAR_ACCEL] = "linear_accel",
 	[IIO_GRAVITY] = "gravity",
+=======
+	[IIO_ORIENTATION] = "orientation",
+	[IIO_GRAVITY] = "gravity",
+	[IIO_LINEAR_ACCEL] = "linearaccel",
+	[IIO_HUMIDITY] = "humidity",
+	[IIO_MAGN_UNCAL] = "magnuncal",
+	[IIO_ANGLVEL_UNCAL] = "anglveluncal",
+	[IIO_GAME_ROT] = "gamerot",
+	[IIO_MOTION] = "motion",
+	[IIO_STEP] = "step",
+	[IIO_STEP_COUNT] = "stepcount",
+	[IIO_GEOMAGN_ROT] = "geomagnrot",
+	[IIO_HEART_RATE] = "heartrate",
+	[IIO_GESTURE_WAKE] = "gesturewake",
+	[IIO_GESTURE_GLANCE] = "gestureglance",
+	[IIO_GESTURE_PICKUP] = "gesturepickup",
+	[IIO_GESTURE_WRIST_TILT] = "gesturewristtilt",
+	[IIO_DEVICE_ORIENTATION] = "dev_orientation",
+	[IIO_POSE_6DOF] = "pose6dof",
+	[IIO_STATIONARY_DETECT] = "stationary_detect",
+	[IIO_MOTION_DETECT] = "motion_detect",
+	[IIO_HEART_BEAT] = "heartbeat",
+	[IIO_DYNAMIC_SENSOR_META] = "dsm",
+	[IIO_ADDITIONAL_INFO] = "info",
+	[IIO_GENERIC] = "generic_sensor",
+>>>>>>> update/master
 };
+EXPORT_SYMBOL(iio_chan_type_name_spec);
 
 static const char * const iio_modifier_names[] = {
 	[IIO_MOD_X] = "x",
 	[IIO_MOD_Y] = "y",
 	[IIO_MOD_Z] = "z",
+	[IIO_MOD_W] = "w",
+	[IIO_MOD_COS] = "cos",
 	[IIO_MOD_ROOT_SUM_SQUARED_X_Y] = "sqrt(x^2+y^2)",
 	[IIO_MOD_SUM_SQUARED_X_Y_Z] = "x^2+y^2+z^2",
 	[IIO_MOD_LIGHT_BOTH] = "both",
@@ -87,8 +118,19 @@ static const char * const iio_modifier_names[] = {
 	[IIO_MOD_LIGHT_RED] = "red",
 	[IIO_MOD_LIGHT_GREEN] = "green",
 	[IIO_MOD_LIGHT_BLUE] = "blue",
+<<<<<<< HEAD
 	[IIO_MOD_MODULE] = "module",
 	[IIO_MOD_ACCURACY] = "accuracy",
+=======
+	[IIO_MOD_X_UNCALIB] = "x_uncalib",
+	[IIO_MOD_Y_UNCALIB] = "y_uncalib",
+	[IIO_MOD_Z_UNCALIB] = "z_uncalib",
+	[IIO_MOD_X_BIAS] = "x_bias",
+	[IIO_MOD_Y_BIAS] = "y_bias",
+	[IIO_MOD_Z_BIAS] = "z_bias",
+	[IIO_MOD_STATUS] = "status",
+	[IIO_MOD_BPM] = "bpm"
+>>>>>>> update/master
 };
 
 /* relies on pairs of these shared then separate */
@@ -103,15 +145,22 @@ static const char * const iio_chan_info_postfix[] = {
 	[IIO_CHAN_INFO_CALIBBIAS] = "calibbias",
 	[IIO_CHAN_INFO_PEAK] = "peak_raw",
 	[IIO_CHAN_INFO_PEAK_SCALE] = "peak_scale",
-	[IIO_CHAN_INFO_QUADRATURE_CORRECTION_RAW] = "quadrature_correction_raw",
+	[IIO_CHAN_INFO_QUADRATURE_CORRECTION_RAW] =
+	"quadrature_correction_raw",
 	[IIO_CHAN_INFO_AVERAGE_RAW] = "mean_raw",
-	[IIO_CHAN_INFO_LOW_PASS_FILTER_3DB_FREQUENCY]
-	= "filter_low_pass_3db_frequency",
+	[IIO_CHAN_INFO_LOW_PASS_FILTER_3DB_FREQUENCY] =
+	"filter_low_pass_3db_frequency",
 	[IIO_CHAN_INFO_SAMP_FREQ] = "sampling_frequency",
 	[IIO_CHAN_INFO_FREQUENCY] = "frequency",
 	[IIO_CHAN_INFO_PHASE] = "phase",
 	[IIO_CHAN_INFO_HARDWAREGAIN] = "hardwaregain",
 	[IIO_CHAN_INFO_HYSTERESIS] = "hysteresis",
+	[IIO_CHAN_INFO_THRESHOLD_LOW] = "threshold_low",
+	[IIO_CHAN_INFO_THRESHOLD_HIGH] = "threshold_high",
+	[IIO_CHAN_INFO_BATCH_FLAGS] = "batch_flags",
+	[IIO_CHAN_INFO_BATCH_PERIOD] = "batch_period",
+	[IIO_CHAN_INFO_BATCH_TIMEOUT] = "batch_timeout",
+	[IIO_CHAN_INFO_BATCH_FLUSH] = "flush",
 };
 
 const struct iio_chan_spec
@@ -381,11 +430,26 @@ static ssize_t iio_read_channel_info(struct device *dev,
 	unsigned long long tmp;
 	int ret, val, val2;
 	bool scale_db = false;
+<<<<<<< HEAD
 	if (likely(indio_dev && indio_dev->info && indio_dev->info->read_raw))
 		ret = indio_dev->info->read_raw(indio_dev, this_attr->c,
 					&val, &val2, this_attr->address);
 	else
 		ret = -ENODEV;
+=======
+	int ret;
+	unsigned long flags;
+
+	spin_lock_irqsave(&indio_dev->dc_lock, flags);
+	if (test_bit(IIO_DISCONNECTING_BIT_POS, &indio_dev->flags)) {
+		spin_unlock_irqrestore(&indio_dev->dc_lock, flags);
+		return 0;
+	}
+	spin_unlock_irqrestore(&indio_dev->dc_lock, flags);
+
+	ret = indio_dev->info->read_raw(indio_dev, this_attr->c,
+					    &val, &val2, this_attr->address);
+>>>>>>> update/master
 
 	if (ret < 0)
 		return ret;
@@ -489,6 +553,14 @@ static ssize_t iio_write_channel_info(struct device *dev,
 	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
 	int ret, fract_mult = 100000;
 	int integer, fract;
+	unsigned long flags;
+
+	spin_lock_irqsave(&indio_dev->dc_lock, flags);
+	if (test_bit(IIO_DISCONNECTING_BIT_POS, &indio_dev->flags)) {
+		spin_unlock_irqrestore(&indio_dev->dc_lock, flags);
+		return 0;
+	}
+	spin_unlock_irqrestore(&indio_dev->dc_lock, flags);
 
 	/* Assumes decimal - precision based on number of digits */
 	if (!indio_dev->info->write_raw)
@@ -879,7 +951,11 @@ struct device_type iio_device_type = {
 	.release = iio_dev_release,
 };
 
-struct iio_dev *iio_device_alloc(int sizeof_priv)
+/**
+ * nvs_device_alloc() - allocate an iio_dev from a driver
+ * @sizeof_priv:	Space to allocate for private structure.
+ **/
+struct iio_dev *nvs_device_alloc(int sizeof_priv, bool multi_link)
 {
 	struct iio_dev *dev;
 	size_t alloc_size;
@@ -895,27 +971,46 @@ struct iio_dev *iio_device_alloc(int sizeof_priv)
 	dev = kzalloc(alloc_size, GFP_KERNEL);
 
 	if (dev) {
+		dev->id = ida_simple_get(&iio_ida, 0, 0, GFP_KERNEL);
+		if (dev->id < 0) {
+			/* cannot use a dev_err as the name isn't available */
+			pr_err("failed to get device id\n");
+			kfree(dev);
+			return NULL;
+		}
+
+		memcpy(&dev->dev_type, &iio_device_type,
+		       sizeof(dev->dev_type));
+		if (multi_link) {
+			snprintf(dev->link_name, sizeof(dev->link_name),
+				 "iio_device_%d", dev->id);
+			dev->dev_type.name = dev->link_name;
+			dev->dev.type = &dev->dev_type;
+		} else {
+			dev->dev.type = &iio_device_type;
+		}
 		dev->dev.groups = dev->groups;
-		dev->dev.type = &iio_device_type;
 		dev->dev.bus = &iio_bus_type;
 		device_initialize(&dev->dev);
 		dev_set_drvdata(&dev->dev, (void *)dev);
 		mutex_init(&dev->mlock);
 		mutex_init(&dev->info_exist_lock);
 		INIT_LIST_HEAD(&dev->channel_attr_list);
-
-		dev->id = ida_simple_get(&iio_ida, 0, 0, GFP_KERNEL);
-		if (dev->id < 0) {
-			/* cannot use a dev_err as the name isn't available */
-			printk(KERN_ERR "Failed to get id\n");
-			kfree(dev);
-			return NULL;
-		}
 		dev_set_name(&dev->dev, "iio:device%d", dev->id);
 		INIT_LIST_HEAD(&dev->buffer_list);
 	}
 
 	return dev;
+}
+EXPORT_SYMBOL(nvs_device_alloc);
+
+/**
+ * iio_device_alloc() - allocate an iio_dev from a driver
+ * @sizeof_priv:	Space to allocate for private structure.
+ **/
+struct iio_dev *iio_device_alloc(int sizeof_priv)
+{
+	return nvs_device_alloc(sizeof_priv, false);
 }
 EXPORT_SYMBOL(iio_device_alloc);
 
@@ -986,6 +1081,8 @@ static int iio_chrdev_open(struct inode *inode, struct file *filp)
 
 	filp->private_data = indio_dev;
 
+	iio_device_get(indio_dev);
+
 	return 0;
 }
 
@@ -997,6 +1094,8 @@ static int iio_chrdev_release(struct inode *inode, struct file *filp)
 	struct iio_dev *indio_dev = container_of(inode->i_cdev,
 						struct iio_dev, chrdev);
 	clear_bit(IIO_BUSY_BIT_POS, &indio_dev->flags);
+	iio_device_put(indio_dev);
+
 	return 0;
 }
 
@@ -1041,6 +1140,8 @@ int iio_device_register(struct iio_dev *indio_dev)
 	/* configure elements for the chrdev */
 	indio_dev->dev.devt = MKDEV(MAJOR(iio_devt), indio_dev->id);
 
+	spin_lock_init(&indio_dev->dc_lock);
+
 	ret = iio_device_register_debugfs(indio_dev);
 	if (ret) {
 		dev_err(indio_dev->dev.parent,
@@ -1071,7 +1172,12 @@ int iio_device_register(struct iio_dev *indio_dev)
 		goto error_unreg_eventset;
 
 	ret = sysfs_create_link(&indio_dev->dev.parent->kobj,
+<<<<<<< HEAD
 			&indio_dev->dev.kobj, "iio_device");
+=======
+				&indio_dev->dev.kobj,
+				indio_dev->dev_type.name);
+>>>>>>> update/master
 	if (ret) {
 		dev_err(indio_dev->dev.parent,
 			"Failed to create link for iio_device %d\n", ret);
@@ -1087,7 +1193,12 @@ int iio_device_register(struct iio_dev *indio_dev)
 	return 0;
 
 error_free_syslink:
+<<<<<<< HEAD
 	sysfs_remove_link(&indio_dev->dev.parent->kobj, "iio_device");
+=======
+	sysfs_remove_link(&indio_dev->dev.parent->kobj,
+			  indio_dev->dev_type.name);
+>>>>>>> update/master
 error_del_device:
 	device_del(&indio_dev->dev);
 error_unreg_eventset:
@@ -1103,8 +1214,20 @@ EXPORT_SYMBOL(iio_device_register);
 
 void iio_device_unregister(struct iio_dev *indio_dev)
 {
+	unsigned long flags;
+
 	mutex_lock(&indio_dev->info_exist_lock);
+
+	spin_lock_irqsave(&indio_dev->dc_lock, flags);
+	set_bit(IIO_DISCONNECTING_BIT_POS, &indio_dev->flags);
+	spin_unlock_irqrestore(&indio_dev->dc_lock, flags);
+
+	sysfs_remove_link(&indio_dev->dev.parent->kobj,
+			  indio_dev->dev_type.name);
 	indio_dev->info = NULL;
+
+	iio_buffer_wakeup_poll(indio_dev);
+
 	mutex_unlock(&indio_dev->info_exist_lock);
 	device_del(&indio_dev->dev);
 }

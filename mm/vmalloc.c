@@ -359,6 +359,12 @@ static struct vmap_area *alloc_vmap_area(unsigned long size,
 	if (unlikely(!va))
 		return ERR_PTR(-ENOMEM);
 
+	/*
+	 * Only scan the relevant parts containing pointers to other objects
+	 * to avoid false negatives.
+	 */
+	kmemleak_scan_area(&va->rb_node, SIZE_MAX, gfp_mask & GFP_RECLAIM_MASK);
+
 retry:
 	spin_lock(&vmap_area_lock);
 	/*
@@ -636,10 +642,11 @@ static void __purge_vmap_area_lazy(unsigned long *start, unsigned long *end,
 		atomic_sub(nr, &vmap_lazy_nr);
 
 	if (nr || force_flush) {
-		if (*end - *start > sysctl_lazy_vfree_tlb_flush_all_threshold)
+		if (nr > (sysctl_lazy_vfree_tlb_flush_all_threshold >> PAGE_SHIFT))
 			flush_tlb_all();
 		else
-			flush_tlb_kernel_range(*start, *end);
+			list_for_each_entry(va, &valist, purge_list)
+				flush_tlb_kernel_range(va->va_start, va->va_end);
 	}
 
 	if (nr) {
@@ -1425,6 +1432,7 @@ struct vm_struct *get_vm_area(unsigned long size, unsigned long flags)
 				  NUMA_NO_NODE, GFP_KERNEL,
 				  __builtin_return_address(0));
 }
+EXPORT_SYMBOL_GPL(get_vm_area);
 
 struct vm_struct *get_vm_area_caller(unsigned long size, unsigned long flags,
 				const void *caller)
@@ -1712,11 +1720,11 @@ void *__vmalloc_node_range(unsigned long size, unsigned long align,
 	clear_vm_unlist(area);
 
 	/*
-	 * A ref_count = 3 is needed because the vm_struct and vmap_area
-	 * structures allocated in the __get_vm_area_node() function contain
-	 * references to the virtual address of the vmalloc'ed block.
+	 * A ref_count = 2 is needed because vm_struct allocated in
+	 * __get_vm_area_node() contains a reference to the virtual address of
+	 * the vmalloc'ed block.
 	 */
-	kmemleak_alloc(addr, real_size, 3, gfp_mask);
+	kmemleak_alloc(addr, real_size, 2, gfp_mask);
 
 	return addr;
 

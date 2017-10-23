@@ -1,7 +1,7 @@
 /*
  * arch/arm/mach-tegra/panel-s-uhdtv-15-6.c
  *
- * Copyright (c) 2012-2013, NVIDIA CORPORATION. All rights reserved.
+ * Copyright (c) 2012-2015, NVIDIA CORPORATION. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -19,78 +19,29 @@
 #include <mach/dc.h>
 #include <linux/delay.h>
 #include <linux/gpio.h>
-#include <linux/tegra_pwm_bl.h>
 #include <linux/regulator/consumer.h>
-#include <linux/pwm_backlight.h>
-#include <linux/leds.h>
-#include <linux/ioport.h>
 #include "board.h"
 #include "board-panel.h"
 #include "devices.h"
 #include "gpio-names.h"
-#include "tegra12_host1x_devices.h"
-
-#define DC_CTRL_MODE	TEGRA_DC_OUT_CONTINUOUS_MODE
-
-#define EDP_PANEL_BL_PWM	TEGRA_GPIO_PH1
 
 static bool reg_requested;
-static struct platform_device *disp_device;
 
 static struct regulator *vdd_lcd_bl_en; /* VDD_LCD_BL_EN */
+
+static struct regulator *avdd_io_edp; /* AVDD_IO_EDP */
 
 static struct regulator *vdd_ds_1v8; /* VDD_1V8_AON */
 static struct regulator *avdd_3v3_dp; /* EDP_3V3_IN: LCD_RST_GPIO */
 static struct regulator *avdd_lcd; /* VDD_LCD_HV */
+static u16 en_panel_rst;
 
-static struct tegra_dc_sd_settings edp_s_uhdtv_15_6_sd_settings = {
-	.enable = 1, /* enabled by default. */
-	.use_auto_pwm = false,
-	.hw_update_delay = 0,
-	.bin_width = -1,
-	.aggressiveness = 5,
-	.use_vid_luma = false,
-	.phase_in_adjustments = 0,
-	.k_limit_enable = true,
-	.k_limit = 200,
-	.sd_window_enable = false,
-	.soft_clipping_enable = true,
-	/* Low soft clipping threshold to compensate for aggressive k_limit */
-	.soft_clipping_threshold = 128,
-	.smooth_k_enable = false,
-	.smooth_k_incr = 64,
-	/* Default video coefficients */
-	.coeff = {5, 9, 2},
-	.fc = {0, 0},
-	/* Immediate backlight changes */
-	.blp = {1024, 255},
-	/* Gammas: R: 2.2 G: 2.2 B: 2.2 */
-	/* Default BL TF */
-	.bltf = {
-			{
-				{57, 65, 73, 82},
-				{92, 103, 114, 125},
-				{138, 150, 164, 178},
-				{193, 208, 224, 241},
-			},
-		},
-	/* Default LUT */
-	.lut = {
-			{
-				{255, 255, 255},
-				{199, 199, 199},
-				{153, 153, 153},
-				{116, 116, 116},
-				{85, 85, 85},
-				{59, 59, 59},
-				{36, 36, 36},
-				{17, 17, 17},
-				{0, 0, 0},
-			},
-		},
-	.sd_brightness = &sd_brightness,
-	.use_vpulse2 = true,
-};
+/*
+ * In platform dts side, followings need to be defined
+ * for this panel, additionally.
+ * - nvidia,hpd-gpio in panel node
+ * - pwm-gpio in backlight node
+ */
 
 static int shield_edp_regulator_get(struct device *dev)
 {
@@ -125,12 +76,29 @@ static int shield_edp_regulator_get(struct device *dev)
 		goto fail;
 	}
 
-	/* LCD_RST */
-	avdd_3v3_dp = regulator_get(dev, "avdd_3v3_dp");
-	if (IS_ERR(avdd_3v3_dp)) {
-		pr_err("avdd_3v3_dp regulator get failed\n");
-		err = PTR_ERR(avdd_3v3_dp);
-		avdd_3v3_dp = NULL;
+	/* LCD_RST
+	 *
+	 * If the panel reset gpio is explicitly specified in DT,
+	 * prefer using it over the avdd_3v3_dp regulator.
+	 */
+	err = tegra_panel_gpio_get_dt("s-edp,uhdtv-15-6", &panel_of);
+	if (err < 0 || !gpio_is_valid(panel_of.panel_gpio[TEGRA_GPIO_RESET])) {
+		avdd_3v3_dp = regulator_get(dev, "avdd_3v3_dp");
+		if (IS_ERR(avdd_3v3_dp)) {
+			pr_err("avdd_3v3_dp regulator get failed\n");
+			err = PTR_ERR(avdd_3v3_dp);
+			avdd_3v3_dp = NULL;
+			goto fail;
+		}
+	} else {
+		en_panel_rst = panel_of.panel_gpio[TEGRA_GPIO_RESET];
+	}
+
+	avdd_io_edp = regulator_get(dev, "avdd_io_edp");
+	if (IS_ERR(avdd_io_edp)) {
+		pr_err("avdd_io_edp regulator get failed\n");
+		err = PTR_ERR(avdd_io_edp);
+		avdd_io_edp = NULL;
 		goto fail;
 	}
 
@@ -167,6 +135,14 @@ static int edp_s_uhdtv_15_6_enable(struct device *dev)
 	}
 
 	/* LCD_RST */
+	if (gpio_is_valid(en_panel_rst)) {
+		gpio_direction_output(en_panel_rst, 1);
+		usleep_range(1000, 5000);
+		gpio_set_value(en_panel_rst, 0);
+		usleep_range(1000, 5000);
+		gpio_set_value(en_panel_rst, 1);
+	}
+
 	if (avdd_3v3_dp) {
 		err = regulator_enable(avdd_3v3_dp);
 		if (err < 0) {
@@ -186,15 +162,28 @@ static int edp_s_uhdtv_15_6_enable(struct device *dev)
 	}
 	msleep(180);
 
+	if (avdd_io_edp) {
+		err = regulator_enable(avdd_io_edp);
+		if (err < 0) {
+			pr_err("avdd_io_edp regulator enable failed\n");
+			goto fail;
+		}
+	}
+
 	return 0;
 fail:
 	return err;
 }
 
-static int edp_s_uhdtv_15_6_disable(void)
+static int edp_s_uhdtv_15_6_disable(struct device *dev)
 {
 	if (vdd_lcd_bl_en)
 		regulator_disable(vdd_lcd_bl_en);
+
+	if (gpio_is_valid(en_panel_rst)) {
+		gpio_set_value(en_panel_rst, 0);
+		usleep_range(1000, 5000);
+	}
 
 	if (avdd_3v3_dp)
 		regulator_disable(avdd_3v3_dp);
@@ -204,6 +193,9 @@ static int edp_s_uhdtv_15_6_disable(void)
 
 	if (vdd_ds_1v8)
 		regulator_disable(vdd_ds_1v8);
+
+	if (avdd_io_edp)
+		regulator_disable(avdd_io_edp);
 
 	msleep(500);
 
@@ -215,44 +207,13 @@ static int edp_s_uhdtv_15_6_postsuspend(void)
 	return 0;
 }
 
-static struct tegra_dc_out_pin edp_out_pins[] = {
-	{
-		.name   = TEGRA_DC_OUT_PIN_H_SYNC,
-		.pol    = TEGRA_DC_OUT_PIN_POL_LOW,
-	},
-	{
-		.name   = TEGRA_DC_OUT_PIN_V_SYNC,
-		.pol    = TEGRA_DC_OUT_PIN_POL_LOW,
-	},
-	{
-		.name   = TEGRA_DC_OUT_PIN_PIXEL_CLOCK,
-		.pol    = TEGRA_DC_OUT_PIN_POL_LOW,
-	},
-	{
-		.name   = TEGRA_DC_OUT_PIN_DATA_ENABLE,
-		.pol    = TEGRA_DC_OUT_PIN_POL_HIGH,
-	},
-};
-
-static struct tegra_dc_mode edp_s_uhdtv_15_6_modes[] = {
-	{
-		.pclk = 522090000,
-		.h_ref_to_sync = 1,
-		.v_ref_to_sync = 1,
-		.h_sync_width = 32,
-		.v_sync_width = 5,
-		.h_back_porch = 80,
-		.v_back_porch = 54,
-		.h_active = 3840,
-		.v_active = 2160,
-		.h_front_porch = 48,
-		.v_front_porch = 3,
-	},
-};
-
-static int edp_s_uhdtv_15_6_bl_notify(struct device *unused, int brightness)
+static int edp_s_uhdtv_15_6_bl_notify(struct device *dev, int brightness)
 {
+	struct backlight_device *bl = NULL;
+	struct pwm_bl_data *pb = NULL;
 	int cur_sd_brightness = atomic_read(&sd_brightness);
+	bl = (struct backlight_device *)dev_get_drvdata(dev);
+	pb = (struct pwm_bl_data *)dev_get_drvdata(&bl->dev);
 
 	/* SD brightness is a percentage */
 	brightness = (brightness * cur_sd_brightness) / 255;
@@ -260,95 +221,29 @@ static int edp_s_uhdtv_15_6_bl_notify(struct device *unused, int brightness)
 	/* Apply any backlight response curve */
 	if (brightness > 255)
 		pr_info("Error: Brightness > 255!\n");
+	else if (pb->bl_measured)
+		brightness = pb->bl_measured[brightness];
 
 	return brightness;
 }
 
 static int edp_s_uhdtv_15_6_check_fb(struct device *dev, struct fb_info *info)
 {
-	return info->device == &disp_device->dev;
+	struct platform_device *pdev = NULL;
+	pdev = to_platform_device(bus_find_device_by_name(
+		&platform_bus_type, NULL, "tegradc.0"));
+	return info->device == &pdev->dev;
 }
 
-static struct platform_pwm_backlight_data edp_s_uhdtv_15_6_bl_data = {
-	.pwm_id         = 1,
-	.max_brightness = 255,
-	.dft_brightness = 224,
-	.pwm_period_ns  = 5000000,
-	.pwm_gpio       = EDP_PANEL_BL_PWM,
-	.notify         = edp_s_uhdtv_15_6_bl_notify,
-	/* Only toggle backlight on fb blank notifications for disp1 */
-	.check_fb       = edp_s_uhdtv_15_6_check_fb,
+static struct pwm_bl_data_dt_ops edp_s_uhdtv_15_6_pwm_bl_ops = {
+	.notify = edp_s_uhdtv_15_6_bl_notify,
+	.check_fb = edp_s_uhdtv_15_6_check_fb,
+	.blnode_compatible = "s-edp,uhdtv-15-6-bl",
 };
 
-static struct platform_device __maybe_unused
-		edp_s_uhdtv_15_6_bl_device = {
-	.name	= "pwm-backlight",
-	.id	= -1,
-	.dev	= {
-		.platform_data = &edp_s_uhdtv_15_6_bl_data,
-	},
+struct tegra_panel_ops edp_s_uhdtv_15_6_ops = {
+	.enable = edp_s_uhdtv_15_6_enable,
+	.disable = edp_s_uhdtv_15_6_disable,
+	.postsuspend = edp_s_uhdtv_15_6_postsuspend,
+	.pwm_bl_ops = &edp_s_uhdtv_15_6_pwm_bl_ops,
 };
-
-static struct platform_device __maybe_unused
-			*edp_s_uhdtv_15_6_bl_devices[] __initdata = {
-	&edp_s_uhdtv_15_6_bl_device,
-};
-
-static int  __init edp_s_uhdtv_15_6_register_bl_dev(void)
-{
-	int err = 0;
-	err = platform_add_devices(edp_s_uhdtv_15_6_bl_devices,
-				ARRAY_SIZE(edp_s_uhdtv_15_6_bl_devices));
-	if (err) {
-		pr_err("disp1 bl device registration failed");
-		return err;
-	}
-	return err;
-}
-
-static void edp_s_uhdtv_15_6_set_disp_device(
-	struct platform_device *shield_display_device)
-{
-	disp_device = shield_display_device;
-}
-
-static void edp_s_uhdtv_15_6_dc_out_init(struct tegra_dc_out *out)
-{
-	out->align = TEGRA_DC_ALIGN_MSB;
-	out->order = TEGRA_DC_ORDER_RED_BLUE;
-	out->flags = DC_CTRL_MODE;
-	out->modes = edp_s_uhdtv_15_6_modes;
-	out->n_modes = ARRAY_SIZE(edp_s_uhdtv_15_6_modes);
-	out->out_pins = edp_out_pins;
-	out->n_out_pins = ARRAY_SIZE(edp_out_pins);
-	out->depth = 16;
-	out->parent_clk = "pll_d_out0";
-	out->enable = edp_s_uhdtv_15_6_enable;
-	out->disable = edp_s_uhdtv_15_6_disable;
-	out->postsuspend = edp_s_uhdtv_15_6_postsuspend;
-	out->width = 346;
-	out->height = 194;
-	out->hotplug_gpio = TEGRA_GPIO_PFF0;
-}
-
-static void edp_s_uhdtv_15_6_fb_data_init(struct tegra_fb_data *fb)
-{
-	fb->xres = edp_s_uhdtv_15_6_modes[0].h_active;
-	fb->yres = edp_s_uhdtv_15_6_modes[0].v_active;
-}
-
-static void
-edp_s_uhdtv_15_6_sd_settings_init(struct tegra_dc_sd_settings *settings)
-{
-	*settings = edp_s_uhdtv_15_6_sd_settings;
-	settings->bl_device_name = "pwm-backlight";
-}
-
-struct tegra_panel __initdata edp_s_uhdtv_15_6 = {
-	.init_sd_settings = edp_s_uhdtv_15_6_sd_settings_init,
-	.init_dc_out = edp_s_uhdtv_15_6_dc_out_init,
-	.init_fb_data = edp_s_uhdtv_15_6_fb_data_init,
-	.register_bl_dev = edp_s_uhdtv_15_6_register_bl_dev,
-	.set_disp_device = edp_s_uhdtv_15_6_set_disp_device,
-};
-EXPORT_SYMBOL(edp_s_uhdtv_15_6);

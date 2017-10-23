@@ -4,7 +4,11 @@
  * Copyright (C) 2010 Google, Inc.
  * Author: Erik Gilling <konkers@android.com>
  *
+<<<<<<< HEAD
  * Copyright (c) 2010-2015, NVIDIA CORPORATION, All rights reserved.
+=======
+ * Copyright (c) 2010-2017, NVIDIA CORPORATION, All rights reserved.
+>>>>>>> update/master
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -34,7 +38,7 @@
 #include <mach/dc.h>
 
 #include <mach/tegra_dc_ext.h>
-#include <mach/isomgr.h>
+#include <linux/platform/tegra/isomgr.h>
 
 #include "dc_reg.h"
 
@@ -50,11 +54,15 @@ static inline u32 ALL_UF_INT(void)
 {
 	if (tegra_platform_is_fpga())
 		return 0;
-#if defined(CONFIG_ARCH_TEGRA_14x_SOC) || defined(CONFIG_ARCH_TEGRA_12x_SOC)
+#if defined(CONFIG_ARCH_TEGRA_2x_SOC) || \
+	defined(CONFIG_ARCH_TEGRA_3x_SOC) || \
+	defined(CONFIG_ARCH_TEGRA_11x_SOC)
+	return WIN_A_UF_INT | WIN_B_UF_INT | WIN_C_UF_INT;
+#elif defined(CONFIG_TEGRA_NVDISPLAY)
+	return NVDISP_UF_INT;
+#else
 	return WIN_A_UF_INT | WIN_B_UF_INT | WIN_C_UF_INT | HC_UF_INT |
 		WIN_D_UF_INT | WIN_T_UF_INT;
-#else
-	return WIN_A_UF_INT | WIN_B_UF_INT | WIN_C_UF_INT;
 #endif
 }
 
@@ -77,6 +85,8 @@ struct tegra_dc_out_ops {
 	int (*init)(struct tegra_dc *dc);
 	/* destroy output.  dc clocks are not on at this point */
 	void (*destroy)(struct tegra_dc *dc);
+	/* shutdown output.  dc clocks are on at this point */
+	void (*shutdown)(struct tegra_dc *dc);
 	/* detect connected display.  can sleep.*/
 	bool (*detect)(struct tegra_dc *dc);
 	/* enable output.  dc clocks are on at this point */
@@ -108,9 +118,32 @@ struct tegra_dc_out_ops {
 	 * during OSidle.
 	 */
 	bool (*osidle)(struct tegra_dc *dc);
-	/* callback after new mode is programmed.
+	/* callback before new mode is programmed.
 	 * dc clocks are on at this point */
 	void (*modeset_notifier)(struct tegra_dc *dc);
+<<<<<<< HEAD
+=======
+	/* Set up interface and sink for partial frame update.
+	 */
+	int (*partial_update) (struct tegra_dc *dc, unsigned int *xoff,
+		unsigned int *yoff, unsigned int *width, unsigned int *height);
+	/* refcounted enable of pads and clocks before performing DDC/I2C. */
+	int (*ddc_enable)(struct tegra_dc *dc);
+	/* refcounted disable of pads and clocks after performing DDC/I2C. */
+	int (*ddc_disable)(struct tegra_dc *dc);
+	/* Enable/disable VRR */
+	void (*vrr_enable)(struct tegra_dc *dc, bool enable);
+	/* Mark VRR-compatible modes in fb_info->info->modelist */
+	void (*vrr_update_monspecs)(struct tegra_dc *dc,
+		struct list_head *head);
+	/* return if hpd asserted or deasserted */
+	bool (*hpd_state) (struct tegra_dc *dc);
+	/* Configure controller to receive hotplug events */
+	int (*hotplug_init)(struct tegra_dc *dc);
+	int (*set_hdr)(struct tegra_dc *dc);
+	/* shutdown the serial interface */
+	void (*shutdown_interface)(struct tegra_dc *dc);
+>>>>>>> update/master
 };
 
 struct tegra_dc_shift_clk_div {
@@ -119,6 +152,20 @@ struct tegra_dc_shift_clk_div {
 };
 
 struct tegra_dc_nvsr_data;
+
+enum tegra_dc_cursor_size {
+	TEGRA_DC_CURSOR_SIZE_32X32 = 0,
+	TEGRA_DC_CURSOR_SIZE_64X64 = 1,
+	TEGRA_DC_CURSOR_SIZE_128X128 = 2,
+	TEGRA_DC_CURSOR_SIZE_256X256 = 3,
+};
+
+enum tegra_dc_cursor_format {
+	TEGRA_DC_CURSOR_FORMAT_2BIT_LEGACY = 0,
+	TEGRA_DC_CURSOR_FORMAT_RGBA_NON_PREMULT_ALPHA = 1,
+	TEGRA_DC_CURSOR_FORMAT_RGBA_PREMULT_ALPHA = 3,
+	TEGRA_DC_CURSOR_FORMAT_RGBA_XOR = 4,
+};
 
 struct tegra_dc {
 	struct platform_device		*ndev;
@@ -134,19 +181,28 @@ struct tegra_dc {
 #else
 	struct clk			*emc_clk;
 #endif
+<<<<<<< HEAD
 #ifdef CONFIG_ARCH_TEGRA_12x_SOC
 	struct clk			*emc_la_clk;
 #endif
+=======
+	struct clk			*emc_la_clk;
+>>>>>>> update/master
 	long				bw_kbps; /* bandwidth in KBps */
 	long				new_bw_kbps;
 	struct tegra_dc_shift_clk_div	shift_clk_div;
 
 	u32				powergate_id;
+	int				sor_instance;
 
 	bool				connected;
 	bool				enabled;
 	bool				suspended;
 	bool				blanked;
+<<<<<<< HEAD
+=======
+	bool				shutdown;
+>>>>>>> update/master
 
 	/* Some of the setup code could reset display even if
 	 * DC is already by bootloader.  This one-time mark is
@@ -162,12 +218,28 @@ struct tegra_dc {
 	struct tegra_dc_mode		mode;
 	s64				frametime_ns;
 
+#ifndef CONFIG_TEGRA_NVDISPLAY
 	struct tegra_dc_win		windows[DC_N_WINDOWS];
+#endif
+	struct tegra_dc_win		shadow_windows[DC_N_WINDOWS];
+
 	struct tegra_dc_blend		blend;
 	int				n_windows;
-#ifdef CONFIG_TEGRA_DC_CMU
+	struct tegra_dc_hdr		hdr;
+
+#if defined(CONFIG_TEGRA_DC_CMU)
 	struct tegra_dc_cmu		cmu;
+<<<<<<< HEAD
 	struct tegra_dc_cmu		cmu_shadow;
+=======
+#elif defined(CONFIG_TEGRA_DC_CMU_V2)
+	struct tegra_dc_lut		cmu;
+#endif
+
+#if defined(CONFIG_TEGRA_DC_CMU) || defined(CONFIG_TEGRA_DC_CMU_V2)
+	struct tegra_dc_cmu		cmu_shadow;
+	bool				cmu_dirty;
+>>>>>>> update/master
 	/* Is CMU set by bootloader */
 	bool				is_cmu_set_bl;
 	bool				cmu_shadow_dirty;
@@ -183,17 +255,13 @@ struct tegra_dc {
 
 	struct resource			*fb_mem;
 	struct tegra_fb_info		*fb;
+#ifdef CONFIG_ADF_TEGRA
+	struct tegra_adf_info		*adf;
+#endif
 
-	struct {
-		u32			id;
-		u32			min;
-		u32			max;
-	} syncpt[DC_N_WINDOWS];
 	u32				vblank_syncpt;
-	u32				win_syncpt[DC_N_WINDOWS];
 
 	unsigned long int		valid_windows;
-	unsigned long int		win_status;
 
 	unsigned long			underflow_mask;
 	struct work_struct		reset_work;
@@ -217,14 +285,15 @@ struct tegra_dc {
 		u64			underflows_a;
 		u64			underflows_b;
 		u64			underflows_c;
-#if defined(CONFIG_ARCH_TEGRA_14x_SOC) || defined(CONFIG_ARCH_TEGRA_12x_SOC)
 		u64			underflows_d;
 		u64			underflows_h;
 		u64			underflows_t;
-#endif
+		u64			underflow_frames;
 	} stats;
 
+#ifdef CONFIG_TEGRA_DC_EXTENSIONS
 	struct tegra_dc_ext		*ext;
+#endif
 
 	struct tegra_dc_feature		*feature;
 	int				gen1_blend_num;
@@ -240,6 +309,10 @@ struct tegra_dc {
 	atomic_t			frame_end_ref;
 
 	bool				mode_dirty;
+<<<<<<< HEAD
+=======
+	bool				yuv_bypass;
+>>>>>>> update/master
 	atomic_t			holding;
 
 	u32				reserved_bw;
@@ -249,6 +322,30 @@ struct tegra_dc {
 	struct tegra_edid		*edid;
 
 	struct tegra_dc_nvsr_data *nvsr;
-};
 
+	bool	disp_active_dirty;
+
+	struct tegra_dc_cursor {
+		bool dirty;
+		bool enabled;
+		dma_addr_t phys_addr;
+		u32 fg;
+		u32 bg;
+		unsigned clip_win;
+		int x;
+		int y;
+		enum tegra_dc_cursor_size size;
+		enum tegra_dc_cursor_format format;
+	} cursor;
+
+	int	ctrl_num;
+	bool	switchdev_registered;
+
+	struct notifier_block slgc_notifier;
+	bool	vedid;
+	u8	*vedid_data;
+	bool	hdr_cache_dirty;
+
+	u32 dbg_fe_count;
+};
 #endif

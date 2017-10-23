@@ -2,8 +2,12 @@
  *  BCMSDH interface glue
  *  implement bcmsdh API for SDIOH driver
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+>>>>>>> update/master
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -23,7 +27,11 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
+<<<<<<< HEAD
  * $Id: bcmsdh.c 455573 2014-02-14 17:49:31Z $
+=======
+ * $Id: bcmsdh.c 450676 2014-01-22 22:45:13Z $
+>>>>>>> update/master
  */
 
 /**
@@ -43,7 +51,6 @@
 #include <bcmsdh.h>	/* BRCM API for SDIO clients (such as wl, dhd) */
 #include <bcmsdbus.h>	/* common SDIO/controller interface */
 #include <sbsdio.h>	/* SDIO device core hardware definitions. */
-
 #include <sdio.h>	/* SDIO Device and Protocol Specs */
 
 #define SDIOH_API_ACCESS_RETRY_LIMIT	2
@@ -51,6 +58,7 @@ const uint bcmsdh_msglevel = BCMSDH_ERROR_VAL;
 
 /* local copy of bcm sd handler */
 bcmsdh_info_t * l_bcmsdh = NULL;
+
 
 #if defined(OOB_INTR_ONLY) && defined(HW_OOB)
 extern int
@@ -106,6 +114,7 @@ bcmsdh_detach(osl_t *osh, void *sdh)
 	}
 
 	l_bcmsdh = NULL;
+
 	return 0;
 }
 

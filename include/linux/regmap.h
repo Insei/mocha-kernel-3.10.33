@@ -410,6 +410,8 @@ int regcache_volatile_set(struct regmap *map, unsigned int reg,
 
 int regmap_register_patch(struct regmap *map, const struct reg_default *regs,
 			  int num_regs);
+int regmap_system_prod_config(struct device *dev, struct regmap **map,
+		const char *config_np_name);
 
 static inline bool regmap_reg_in_range(unsigned int reg,
 				       const struct regmap_range *range)
@@ -461,7 +463,15 @@ struct regmap_irq {
  * @num_type_reg:    Number of type registers.
  * @type_reg_stride: Stride to use for chips where type registers are not
  *			contiguous.
+ * @pre_irq:	The callback that is to be executed initially, before the main
+ *		handling in regmap irq	handler when an interrupt occurs.
+ * @post_irq:	The callback that is to be executed after the main handling in
+ *		the regmap irq handler when an interrupt occurs.
+ * @pre_post_irq_data: The driver specific data that is the parameter for the
+ *		pre_irq and post_irq callbacks.
+ *
  */
+
 struct regmap_irq_chip {
 	const char *name;
 
@@ -483,6 +493,10 @@ struct regmap_irq_chip {
 
 	int num_type_reg;
 	unsigned int type_reg_stride;
+
+	int (*pre_irq)(void *irq_data);
+	int (*post_irq)(void *irq_data);
+	void *pre_post_irq_data;
 };
 
 struct regmap_irq_chip_data;
@@ -491,6 +505,9 @@ int regmap_add_irq_chip(struct regmap *map, int irq, int irq_flags,
 			int irq_base, const struct regmap_irq_chip *chip,
 			struct regmap_irq_chip_data **data);
 void regmap_del_irq_chip(int irq, struct regmap_irq_chip_data *data);
+void regmap_shutdown_irq_chip(struct regmap_irq_chip_data *d);
+int regmap_irq_suspend_noirq(struct regmap_irq_chip_data *d);
+int regmap_irq_resume(struct regmap_irq_chip_data *d);
 int regmap_irq_chip_get_base(struct regmap_irq_chip_data *data);
 int regmap_irq_get_virq(struct regmap_irq_chip_data *data, int irq);
 struct irq_domain *regmap_irq_get_domain(struct regmap_irq_chip_data *data);

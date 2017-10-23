@@ -1,6 +1,7 @@
 
 GCOV_PROFILE := y
 
+ccflags-y += -Werror
 # LED Core
 obj-$(CONFIG_NEW_LEDS)			+= led-core.o
 obj-$(CONFIG_LEDS_CLASS)		+= led-class.o
@@ -59,6 +60,8 @@ obj-$(CONFIG_LEDS_LM355x)		+= leds-lm355x.o
 obj-$(CONFIG_LEDS_BLINKM)		+= leds-blinkm.o
 
 obj-$(CONFIG_LEDS_MAX8831)		+= leds-max8831.o
+
+obj-$(CONFIG_LEDS_CY8C)			+= leds-cy8c.o
 
 # LED SPI Drivers
 obj-$(CONFIG_LEDS_DAC124S085)		+= leds-dac124s085.o

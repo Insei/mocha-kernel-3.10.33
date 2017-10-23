@@ -104,6 +104,10 @@ __setup("board_id=", board_id_setup);
 static int __init sku_info_setup(char *line)
 {
 	memcpy(skuinfo_buffer, line, SKUINFO_BUF_SIZE);
+	/* Call board_id_setup function here, so that SKU-info is also
+	 * populated in board_info_array, and we can use tegra_is_board API for
+	 * differentiating between vcm module as well */
+	board_id_setup(skuinfo_buffer);
 	return 1;
 }
 
@@ -285,6 +289,31 @@ bool tegra_is_board(const char *bom, const char *project,
 	return false;
 }
 EXPORT_SYMBOL(tegra_is_board);
+
+int tegra_board_get_skurev(const char *project)
+{
+	int i;
+	unsigned int revision;
+
+	if (!project)
+		return -1;
+
+	for (i = 0;
+		(i < TEGRA_MAX_BOARDS && board_info_array[i].valid != 0);
+		i++) {
+		if (!strncmp(board_info_array[i].project, project,
+						MAX_BUFFER)) {
+			if (kstrtouint(
+			(const char *)board_info_array[i].revision,
+			10, &revision) == 0)
+				return revision;
+			else
+				break;
+		}
+	}
+	return -1;
+}
+EXPORT_SYMBOL(tegra_board_get_skurev);
 
 bool is_tegra_diagnostic_mode(void)
 {

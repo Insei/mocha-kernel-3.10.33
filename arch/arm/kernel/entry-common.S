@@ -11,6 +11,7 @@
 #include <asm/unistd.h>
 #include <asm/ftrace.h>
 #include <asm/unwind.h>
+#include <asm/cp15.h>
 
 #ifdef CONFIG_NEED_RET_TO_USER
 #include <mach/entry-macro.S>
@@ -32,7 +33,9 @@ ret_fast_syscall:
  UNWIND(.fnstart	)
  UNWIND(.cantunwind	)
 	disable_irq				@ disable interrupts
-	ldr	r1, [tsk, #TI_FLAGS]
+	ldr	r1, [tsk, #TI_FLAGS]		@ re-check for syscall tracing
+	tst	r1, #_TIF_SYSCALL_WORK
+	bne	__sys_trace_return
 	tst	r1, #_TIF_WORK_MASK
 	bne	fast_work_pending
 	asm_trace_hardirqs_on
@@ -402,7 +405,18 @@ ENTRY(vector_swi)
 #ifdef CONFIG_ALIGNMENT_TRAP
 	ldr	ip, __cr_alignment
 	ldr	ip, [ip]
+<<<<<<< HEAD
 	mcr	p15, 0, ip, c1, c0		@ update control register
+=======
+	/*
+	 * Update alignment bit in control register only if it is different
+	 * from what's expected.
+	 */
+	mrc	p15, 0, r8, c1, c0
+	eor	r8, r8, ip
+	ands	r8, r8, #CR_A
+	mcrne	p15, 0, ip, c1, c0
+>>>>>>> update/master
 #endif
 	enable_irq
 	ct_user_exit

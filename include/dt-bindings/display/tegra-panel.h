@@ -1,7 +1,7 @@
 /*
  * include/dt-bindings/display/tegra-panel.h
  *
- * Copyright (c) 2013, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2014, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -34,6 +34,7 @@
 
 #define TEGRA_DSI_GANGED_SYMMETRIC_LEFT_RIGHT  1
 #define TEGRA_DSI_GANGED_SYMMETRIC_EVEN_ODD    2
+#define TEGRA_DSI_GANGED_SYMMETRIC_LEFT_RIGHT_OVERLAP  3
 
 #define TEGRA_DSI_PACKET_CMD 0
 #define TEGRA_DSI_DELAY_MS 1
@@ -59,6 +60,9 @@
 
 #define	TEGRA_DSI_VIDEO_CLOCK_CONTINUOUS 0
 #define	TEGRA_DSI_VIDEO_CLOCK_TX_ONLY    1
+
+#define CMD_NOT_CLUBBED	0
+#define CMD_CLUBBED	1
 
 #define DSI_GENERIC_LONG_WRITE			0x29
 #define DSI_DCS_LONG_WRITE			0x39
@@ -109,9 +113,46 @@
 #define TEGRA_DSI_DISABLE 0
 #define TEGRA_DSI_ENABLE 1
 
+#define TEGRA_HDMI_DISABLE 0
+#define TEGRA_HDMI_ENABLE 1
+
 #define NUMOF_PKT_SEQ	12
 
 #define DSI_INSTANCE_0 0
 #define DSI_INSTANCE_1 1
+
+/* Aggressiveness level of DSI suspend. The higher, the more aggressive. */
+#define DSI_NO_SUSPEND			0
+#define DSI_HOST_SUSPEND_LV0		1
+#define DSI_HOST_SUSPEND_LV1		2
+#define DSI_HOST_SUSPEND_LV2		3
+
+/*
+ * DPD (deep power down) mode for dsi pads.
+ */
+#define DSI_DPD_EN		(1 << 0)
+#define DSIB_DPD_EN		(1 << 1)
+#define DSIC_DPD_EN		(1 << 2)
+#define DSID_DPD_EN		(1 << 3)
+
+#define DRIVE_CURRENT_L0 0
+#define DRIVE_CURRENT_L1 1
+#define DRIVE_CURRENT_L2 2
+#define DRIVE_CURRENT_L3 3
+
+#define PRE_EMPHASIS_L0 0
+#define PRE_EMPHASIS_L1 1
+#define PRE_EMPHASIS_L2 2
+#define PRE_EMPHASIS_L3 3
+
+#define POST_CURSOR2_L0 0
+#define POST_CURSOR2_L1 1
+#define POST_CURSOR2_L2 2
+#define POST_CURSOR2_L3 3
+
+#define SOR_LINK_SPEED_G1_62 6
+#define SOR_LINK_SPEED_G2_7 10
+#define SOR_LINK_SPEED_G5_4 20
+#define SOR_LINK_SPEED_LVDS 7
 
 #endif /* __TEGRA_PANEL_H */

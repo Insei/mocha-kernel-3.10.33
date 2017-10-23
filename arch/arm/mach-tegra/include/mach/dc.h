@@ -6,7 +6,7 @@
  * Author:
  *	Erik Gilling <konkers@google.com>
  *
- * Copyright (c) 2010-2014, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2010-2017, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -27,14 +27,31 @@
 #include <linux/fb.h>
 #include <drm/drm_fixed.h>
 
+#if defined(CONFIG_TEGRA_NVDISPLAY)
+#define TEGRA_MAX_DC		3
+#else
 #define TEGRA_MAX_DC		2
+#endif
 
 #if defined(CONFIG_ARCH_TEGRA_14x_SOC)
 #define DC_N_WINDOWS		6
-#elif defined(CONFIG_ARCH_TEGRA_12x_SOC)
+#elif defined(CONFIG_ARCH_TEGRA_12x_SOC) || defined(CONFIG_ARCH_TEGRA_21x_SOC)
 #define DC_N_WINDOWS		5
-#else
+#elif defined(CONFIG_ARCH_TEGRA_11x_SOC)
 #define DC_N_WINDOWS		3
+#else  /* Max of all chips */
+#define DC_N_WINDOWS		6
+#endif
+
+#define DSI_NODE		"/host1x/dsi"
+#define SOR_NODE		"/host1x/sor"
+#define DPAUX_NODE		"/host1x/dpaux"
+#define SOR1_NODE		"/host1x/sor1"
+#define DPAUX1_NODE		"/host1x/dpaux1"
+#if defined(CONFIG_ARCH_TEGRA_21x_SOC) || defined(CONFIG_TEGRA_NVDISPLAY)
+#define HDMI_NODE		SOR1_NODE
+#else
+#define HDMI_NODE		"/host1x/hdmi"
 #endif
 
 #define DEFAULT_FPGA_FREQ_KHZ	160000
@@ -42,6 +59,16 @@
 #define TEGRA_DC_EXT_FLIP_MAX_WINDOW 6
 
 extern atomic_t sd_brightness;
+
+extern struct fb_videomode tegra_dc_vga_mode;
+
+extern char dc_or_node_names[][13];
+
+enum {
+	TEGRA_HPD_STATE_FORCE_DEASSERT = -1,
+	TEGRA_HPD_STATE_NORMAL = 0,
+	TEGRA_HPD_STATE_FORCE_ASSERT = 1,
+};
 
 /* DSI pixel data format */
 enum {
@@ -87,6 +114,7 @@ enum {
 enum {
 	TEGRA_DSI_GANGED_SYMMETRIC_LEFT_RIGHT = 1,
 	TEGRA_DSI_GANGED_SYMMETRIC_EVEN_ODD = 2,
+	TEGRA_DSI_GANGED_SYMMETRIC_LEFT_RIGHT_OVERLAP = 3,
 };
 
 enum {
@@ -102,6 +130,7 @@ enum {
 	TEGRA_DSI_LINK1,
 };
 
+<<<<<<< HEAD
 enum {
 	TEGRA_DSI_LEFT_RIGHT_NORMAL,
 	TEGRA_DSI_LEFT_RIGHT_FLIPPED,
@@ -112,6 +141,8 @@ enum {
 	TEGRA_DSI_EVEN_ODD_FLIPPED,
 };
 
+=======
+>>>>>>> update/master
 struct tegra_dsi_cmd {
 	u8	cmd_type;
 	u8	data_id;
@@ -127,8 +158,10 @@ struct tegra_dsi_cmd {
 	} sp_len_dly;
 	u8	*pdata;
 	u8   link_id;
+	bool	club_cmd;
 };
 
+<<<<<<< HEAD
 /* Processor to Peripheral Direction Packet Data Types */
 /* Sync Event */
 #define DSI_V_SYNC_START			0x01	/* short */
@@ -226,18 +259,46 @@ struct tegra_dsi_cmd {
 #define DSI_DCS_WRITE_LUT			0x2d	/* variable */
 #define DSI_DCS_WRITE_MEMORY_CONTINUE		0x3c	/* variable */
 #define DSI_DCS_WRITE_MEMORY_START		0x2c	/* variable */
+=======
+#define CMD_CLUBBED				true
+#define CMD_NOT_CLUBBED				false
 
-#define _DSI_CMD_SHORT(di, p0, p1, lnk_id, _cmd_type)	{ \
+#define DSI_GENERIC_LONG_WRITE			0x29
+#define DSI_DCS_LONG_WRITE			0x39
+#define DSI_GENERIC_SHORT_WRITE_1_PARAMS	0x13
+#define DSI_GENERIC_SHORT_WRITE_2_PARAMS	0x23
+#define DSI_DCS_WRITE_0_PARAM			0x05
+#define DSI_DCS_WRITE_1_PARAM			0x15
+
+#define DSI_DCS_SET_ADDR_MODE			0x36
+#define DSI_DCS_EXIT_SLEEP_MODE			0x11
+#define DSI_DCS_ENTER_SLEEP_MODE		0x10
+#define DSI_DCS_SET_DISPLAY_ON			0x29
+#define DSI_DCS_SET_DISPLAY_OFF			0x28
+#define DSI_DCS_SET_TEARING_EFFECT_OFF		0x34
+#define DSI_DCS_SET_TEARING_EFFECT_ON		0x35
+#define DSI_DCS_NO_OP				0x0
+#define DSI_NULL_PKT_NO_DATA			0x9
+#define DSI_BLANKING_PKT_NO_DATA		0x19
+>>>>>>> update/master
+
+#define IS_DSI_SHORT_PKT(cmd)	((cmd.data_id == DSI_DCS_WRITE_0_PARAM) ||\
+			(cmd.data_id == DSI_DCS_WRITE_1_PARAM) ||\
+			(cmd.data_id == DSI_GENERIC_SHORT_WRITE_1_PARAMS) ||\
+			(cmd.data_id == DSI_GENERIC_SHORT_WRITE_2_PARAMS))
+
+#define _DSI_CMD_SHORT(di, p0, p1, lnk_id, _cmd_type, club)	{ \
 					.cmd_type = _cmd_type, \
 					.data_id = di, \
 					.sp_len_dly.sp.data0 = p0, \
 					.sp_len_dly.sp.data1 = p1, \
 					.link_id = lnk_id, \
+					.club_cmd = club,\
 					}
 
-#define DSI_CMD_VBLANK_SHORT(di, p0, p1) \
+#define DSI_CMD_VBLANK_SHORT(di, p0, p1, club) \
 			_DSI_CMD_SHORT(di, p0, p1, TEGRA_DSI_LINK0,\
-				TEGRA_DSI_PACKET_VIDEO_VBLANK_CMD)
+				TEGRA_DSI_PACKET_VIDEO_VBLANK_CMD, club)
 
 #define DSI_CMD_VBLANK_SHORT_LINK(di, p0, p1, lnk_id) \
 			_DSI_CMD_SHORT(di, p0, p1, lnk_id,\
@@ -248,7 +309,8 @@ struct tegra_dsi_cmd {
 		DSI_CMD_VBLANK_SHORT_LINK(di, p0, p1, TEGRA_DSI_LINK1)
 				
 #define DSI_CMD_SHORT_LINK(di, p0, p1, lnk_id) \
-			_DSI_CMD_SHORT(di, p0, p1, lnk_id, TEGRA_DSI_PACKET_CMD)
+			_DSI_CMD_SHORT(di, p0, p1, lnk_id,\
+				TEGRA_DSI_PACKET_CMD, CMD_NOT_CLUBBED)
 
 #define DSI_CMD_SHORT(di, p0, p1)	\
 			DSI_CMD_SHORT_LINK(di, p0, p1, TEGRA_DSI_LINK0)
@@ -277,8 +339,8 @@ struct tegra_dsi_cmd {
 				}
 
 #define DSI_CMD_VBLANK_LONG(di, ptr)	\
-		_DSI_CMD_LONG(di, ptr, TEGRA_DSI_LINK0,\
-				TEGRA_DSI_PACKET_VIDEO_VBLANK_CMD)
+		_DSI_CMD_LONG(di, ptr, TEGRA_DSI_LINK0, \
+					TEGRA_DSI_PACKET_VIDEO_VBLANK_CMD)
 
 #define DSI_CMD_LONG_LINK(di, ptr, lnk_id)	\
 		_DSI_CMD_LONG(di, ptr, lnk_id, TEGRA_DSI_PACKET_CMD)
@@ -377,6 +439,20 @@ enum {
 #define DSI_HOST_SUSPEND_LV1		2
 #define DSI_HOST_SUSPEND_LV2		3
 
+/*
+ * DPD (deep power down) mode for dsi pads.
+ *  - Available for DSI_VS1 and later.
+ *  - Available for Non-DSI_GANGED.
+ * Usually, DSIC/DSID pads' DPD for DSI_INSTANCE_0 and
+   DSI/DSIB pads' DPD for DSI_INSTANCE_1 can be enabled, respectively,
+ * but in SW, sometimes pins from one pad can be used by
+ * more than one module, so it may be dependent on board design.
+ */
+#define DSI_DPD_EN		(1 << 0)
+#define DSIB_DPD_EN		(1 << 1)
+#define DSIC_DPD_EN		(1 << 2)
+#define DSID_DPD_EN		(1 << 3)
+
 struct tegra_dsi_board_info {
 	u32 platform_boardid;
 	u32 platform_boardversion;
@@ -394,6 +470,7 @@ struct tegra_dsi_out {
 	u16		dsi_panel_rst_gpio;
 	u16		dsi_panel_bl_en_gpio;
 	u16		dsi_panel_bl_pwm_gpio;
+	u16		even_odd_split_width;
 	u8		controller_vs;
 
 	bool		panel_has_frame_buffer;	/* required*/
@@ -417,8 +494,14 @@ struct tegra_dsi_out {
 	u8		video_clock_mode;
 	u8		video_burst_mode;
 	u8		ganged_type;
+<<<<<<< HEAD
 	u8		left_right_align;
 	u8		even_odd_align;
+=======
+	u16		ganged_overlap;
+	bool		ganged_swap_links;
+	bool		ganged_write_to_all_links;
+>>>>>>> update/master
 
 	u8		suspend_aggr;
 
@@ -434,6 +517,7 @@ struct tegra_dsi_out {
 	bool		no_pkt_seq_hbp;
 	bool		te_polarity_low;
 	bool		power_saving_suspend;
+	bool		suspend_stop_stream_late;
 	bool		dsi2lvds_bridge_enable;
 	bool		dsi2edp_bridge_enable;
 
@@ -445,6 +529,8 @@ struct tegra_dsi_out {
 	u32		fpga_freq_khz;
 
 	u32		te_gpio;
+
+	u32		dpd_dsi_pads;
 
 	const u32		*pkt_seq;
 
@@ -496,10 +582,13 @@ struct tegra_dc_mode {
 
 #define TEGRA_DC_MODE_FLAG_NEG_V_SYNC	(1 << 0)
 #define TEGRA_DC_MODE_FLAG_NEG_H_SYNC	(1 << 1)
+#define TEGRA_DC_MODE_FLAG_NEG_DE		(1 << 2)
 
-/* aspect ratio. 0 means unspecified or default. */
-#define TEGRA_DC_MODE_AVI_M_4_3		0x1
+#define TEGRA_DC_MODE_AVI_M_NO_DATA	0x0
+#define TEGRA_DC_MODE_AVI_M_4_3	0x1
 #define TEGRA_DC_MODE_AVI_M_16_9	0x2
+#define TEGRA_DC_MODE_AVI_M_64_27	0x3	/* dummy, no avi m support */
+#define TEGRA_DC_MODE_AVI_M_256_135	0x4	/* dummy, no avi m support */
 
 enum {
 	TEGRA_DC_OUT_RGB,
@@ -508,6 +597,12 @@ enum {
 	TEGRA_DC_OUT_DP,
 	TEGRA_DC_OUT_LVDS,
 	TEGRA_DC_OUT_NVSR_DP,
+	TEGRA_DC_OUT_FAKE_DP,
+	TEGRA_DC_OUT_FAKE_DSIA,
+	TEGRA_DC_OUT_FAKE_DSIB,
+	TEGRA_DC_OUT_FAKE_DSI_GANGED,
+	TEGRA_DC_OUT_NULL,
+	TEGRA_DC_OUT_MAX /* Keep this always as last enum */
 };
 
 struct tegra_dc_out_pin {
@@ -533,6 +628,7 @@ enum {
 	TEGRA_DC_ORDERED_DITHER,
 	TEGRA_DC_ERRDIFF_DITHER,
 	TEGRA_DC_TEMPORAL_DITHER,
+	TEGRA_DC_ERRACC_DITHER,
 };
 
 typedef u8 tegra_dc_bl_output[256];
@@ -567,7 +663,27 @@ struct tegra_dc_sd_window {
 };
 
 struct tegra_dc_sd_settings {
+#ifdef CONFIG_TEGRA_NVDISPLAY
+	bool update_sd;
+	unsigned upper_bound;
+	unsigned lower_bound;
+	unsigned num_over_saturated_pixels;
+	unsigned over_saturated_bin;
+	unsigned *gain_table;
+	unsigned *current_gain_table;
+	unsigned *phase_backlight_table;
+	unsigned new_backlight;
+	unsigned old_backlight;
+	unsigned last_phase_step;
+	unsigned phase_in_steps;
+	int backlight_adjust_steps;
+#endif
 	unsigned enable;
+<<<<<<< HEAD
+=======
+	u8 turn_off_brightness;
+	u8 turn_on_brightness;
+>>>>>>> update/master
 	unsigned enable_int;
 	bool use_auto_pwm;
 	u8 hw_update_delay;
@@ -611,6 +727,8 @@ struct tegra_dc_sd_settings {
 	atomic_t *sd_brightness;
 	char *bl_device_name;
 	struct backlight_device *bl_device;
+
+	u8 bias0;
 };
 
 enum {
@@ -641,9 +759,77 @@ enum {
 /* this is the old name. provided for compatibility with old board files. */
 #define dcc_bus ddc_bus
 
+<<<<<<< HEAD
+=======
+struct tegra_vrr {
+	s32	capability;
+	s32	enable;
+	s32	lastenable;
+	s32	flip;
+	s32	pclk;
+	s32	vrr_min_fps;
+	s32	vrr_max_fps;
+	s32	v_front_porch_max;
+	s32	v_front_porch_min;
+	s32	vfp_extend;
+	s32	vfp_shrink;
+	s32	v_front_porch;
+	s32	v_back_porch;
+
+	s64	curr_flip_us;
+	s64	last_flip_us;
+	s32	flip_count;
+	s32	flip_interval_us;
+	s32	frame_len_max;
+	s32	frame_len_min;
+	s32	frame_len_fluct;
+	s32	line_width;
+	s32	lines_per_frame_common;
+
+	s32	frame_type;
+	s32	frame_count;
+	s32	v_count;
+	s32	last_v_cnt;
+	s32	curr_v_cnt;
+	s64     last_frame_us;
+	s64     curr_frame_us;
+	s64     fe_time_us;
+	s32	frame_delta_us;
+	s32	frame_interval_us;
+	s32	even_frame_us;
+	s32	odd_frame_us;
+
+	s32	max_adj_pct;
+	s32	max_flip_pct;
+	s32	max_dcb;
+	s32	max_inc_pct;
+
+	s32	dcb;
+	s32	frame_avg_pct;
+	s32	fluct_avg_pct;
+
+	s32	fe_intr_req;
+	s32	db_tolerance;
+	s32	frame2flip_us;
+	s32	adjust_vfp;
+	s32     adjust_db;
+	u32 db_correct_cap;
+	u32 db_hist_cap;
+	s32     vfp;
+
+	/* Must be kept in order */
+	u8	keynum;
+	u8	serial[9];
+	u8	challenge[32];
+	u8	digest[32];
+	u8	challenge_src;
+};
+
+>>>>>>> update/master
 struct tegra_dc_out {
 	int				type;
 	unsigned			flags;
+	unsigned			hdcp_policy;
 
 	/* size in mm */
 	unsigned			h_size;
@@ -668,6 +854,7 @@ struct tegra_dc_out {
 	struct tegra_hdmi_out		*hdmi_out;
 	struct tegra_dp_out		*dp_out;
 	struct tegra_stereo_out		*stereo;
+	struct tegra_vrr		*vrr;
 
 	unsigned			height; /* mm */
 	unsigned			width; /* mm */
@@ -683,10 +870,12 @@ struct tegra_dc_out {
 	int			user_needs_vblank;
 	struct completion	user_vblank_comp;
 
+	bool				is_ext_dp_panel;
+
 	int	(*enable)(struct device *);
 	int	(*postpoweron)(struct device *);
 	int	(*prepoweroff)(void);
-	int	(*disable)(void);
+	int	(*disable)(struct device *);
 
 	int	(*hotplug_init)(struct device *);
 	int	(*postsuspend)(void);
@@ -707,6 +896,11 @@ struct tegra_dc_out {
 #define TEGRA_DC_OUT_INITIALIZED_MODE		(1 << 6)
 /* Makes hotplug GPIO a LP0 wakeup source */
 #define TEGRA_DC_OUT_HOTPLUG_WAKE_LP0		(1 << 7)
+#define TEGRA_DC_OUT_NVSR_MODE			(1 << 8)
+
+#define TEGRA_DC_HDCP_POLICY_ALWAYS_ON	0
+#define TEGRA_DC_HDCP_POLICY_ON_DEMAND	1
+#define TEGRA_DC_HDCP_POLICY_ALWAYS_OFF	2
 
 #define TEGRA_DC_ALIGN_MSB		0
 #define TEGRA_DC_ALIGN_LSB		1
@@ -725,6 +919,23 @@ struct tegra_dc_out {
 struct tegra_dc;
 struct nvmap_handle_ref;
 
+#if defined(CONFIG_TEGRA_CSC_V2)
+struct tegra_dc_csc_v2 {
+	u32 r2r;
+	u32 g2r;
+	u32 b2r;
+	u32 const2r;
+	u32 r2g;
+	u32 g2g;
+	u32 b2g;
+	u32 const2g;
+	u32 r2b;
+	u32 g2b;
+	u32 b2b;
+	u32 const2b;
+};
+#endif
+
 struct tegra_dc_csc {
 	unsigned short yof;
 	unsigned short kyrgb;
@@ -736,12 +947,23 @@ struct tegra_dc_csc {
 	unsigned short kvb;
 };
 
+#if defined(CONFIG_TEGRA_LUT)
 /* palette lookup table */
 struct tegra_dc_lut {
 	u8 r[256];
 	u8 g[256];
 	u8 b[256];
 };
+#endif
+
+#if defined(CONFIG_TEGRA_LUT_V2)
+/* palette lookup table */
+struct tegra_dc_lut {
+	u64 *rgb;
+	dma_addr_t phy_addr;
+	size_t size;
+};
+#endif
 
 struct tegra_dc_cmu_csc {
 	u16 krr;
@@ -755,10 +977,23 @@ struct tegra_dc_cmu_csc {
 	u16 kbb;
 };
 
+#if defined(CONFIG_TEGRA_DC_CMU_V2)
+struct tegra_dc_cmu {
+	u64 rgb[1025];
+};
+#else
 struct tegra_dc_cmu {
 	u16 lut1[256];
 	struct tegra_dc_cmu_csc csc;
 	u8 lut2[960];
+};
+#endif
+
+struct tegra_dc_hdr {
+	bool		enabled;
+	u32		eotf;
+	u32		static_metadata_id;
+	u8		static_metadata[24];
 };
 
 struct tegra_dc_win {
@@ -790,7 +1025,14 @@ struct tegra_dc_win {
 	unsigned		out_h;
 	unsigned		z;
 
+#if defined(CONFIG_TEGRA_CSC_V2)
+	struct tegra_dc_csc_v2	csc;
+#else
 	struct tegra_dc_csc	csc;
+<<<<<<< HEAD
+=======
+#endif
+>>>>>>> update/master
 	bool			csc_dirty;
 
 	int			dirty;
@@ -804,6 +1046,20 @@ struct tegra_dc_win {
 #if defined(CONFIG_TEGRA_DC_BLOCK_LINEAR)
 	u8	block_height_log2;
 #endif
+#if defined(CONFIG_TEGRA_DC_CDE)
+	struct {
+		dma_addr_t cde_addr;
+		unsigned offset_x;
+		unsigned offset_y;
+		u32 zbc_color;
+		unsigned ctb_entry;
+	} cde;
+#endif
+	struct {
+		u32			id;
+		u32			min;
+		u32			max;
+	} syncpt;
 };
 
 #define TEGRA_WIN_PPFLAG_CP_ENABLE	(1 << 0) /* enable RGB color lut */
@@ -821,48 +1077,74 @@ struct tegra_dc_win {
 #define TEGRA_WIN_FLAG_SCAN_COLUMN	(1 << 9)
 #define TEGRA_WIN_FLAG_INTERLACE	(1 << 10)
 #define TEGRA_WIN_FLAG_FB		(1 << 11)
+#define TEGRA_WIN_FLAG_BLEND_ADD	(1 << 12)
+
 #define TEGRA_WIN_FLAG_INVALID		(1 << 31) /* window does not exist. */
 
 #define TEGRA_WIN_BLEND_FLAGS_MASK \
-	(TEGRA_WIN_FLAG_BLEND_PREMULT | TEGRA_WIN_FLAG_BLEND_COVERAGE)
+	(TEGRA_WIN_FLAG_BLEND_PREMULT |  \
+	 TEGRA_WIN_FLAG_BLEND_COVERAGE | \
+	 TEGRA_WIN_FLAG_BLEND_ADD)
 
 /* Note: These are the actual values written to the DC_WIN_COLOR_DEPTH register
  * and may change in new tegra architectures.
  */
-#define TEGRA_WIN_FMT_P1		0
-#define TEGRA_WIN_FMT_P2		1
-#define TEGRA_WIN_FMT_P4		2
-#define TEGRA_WIN_FMT_P8		3
-#define TEGRA_WIN_FMT_B4G4R4A4		4
-#define TEGRA_WIN_FMT_B5G5R5A		5
-#define TEGRA_WIN_FMT_B5G6R5		6
-#define TEGRA_WIN_FMT_AB5G5R5		7
-#define TEGRA_WIN_FMT_B8G8R8A8		12
-#define TEGRA_WIN_FMT_R8G8B8A8		13
-#define TEGRA_WIN_FMT_B6x2G6x2R6x2A8	14
-#define TEGRA_WIN_FMT_R6x2G6x2B6x2A8	15
-#define TEGRA_WIN_FMT_YCbCr422		16
-#define TEGRA_WIN_FMT_YUV422		17
-#define TEGRA_WIN_FMT_YCbCr420P		18
-#define TEGRA_WIN_FMT_YUV420P		19
-#define TEGRA_WIN_FMT_YCbCr422P		20
-#define TEGRA_WIN_FMT_YUV422P		21
-#define TEGRA_WIN_FMT_YCbCr422R		22
-#define TEGRA_WIN_FMT_YUV422R		23
-#define TEGRA_WIN_FMT_YCbCr422RA	24
-#define TEGRA_WIN_FMT_YUV422RA		25
-#define TEGRA_WIN_FMT_YCbCr444P		41
-#define TEGRA_WIN_FMT_YUV444P		52
-#define TEGRA_WIN_FMT_YCrCb420SP	42
-#define TEGRA_WIN_FMT_YCbCr420SP	43
-#define TEGRA_WIN_FMT_YCrCb422SP	44
-#define TEGRA_WIN_FMT_YCbCr422SP	45
-#define TEGRA_WIN_FMT_YVU420SP		53
-#define TEGRA_WIN_FMT_YUV420SP		54
-#define TEGRA_WIN_FMT_YVU422SP		55
-#define TEGRA_WIN_FMT_YUV422SP		56
-#define TEGRA_WIN_FMT_YVU444SP		59
-#define TEGRA_WIN_FMT_YUV444SP		60
+#define TEGRA_WIN_FMT_P1			0
+#define TEGRA_WIN_FMT_P2			1
+#define TEGRA_WIN_FMT_P4			2
+#define TEGRA_WIN_FMT_P8			3
+#define TEGRA_WIN_FMT_B4G4R4A4			4
+#define TEGRA_WIN_FMT_B5G5R5A			5
+#define TEGRA_WIN_FMT_B5G6R5			6
+#define TEGRA_WIN_FMT_AB5G5R5			7
+#define TEGRA_WIN_FMT_T_R4G4B4A4		8
+#define TEGRA_WIN_FMT_B8G8R8A8			12
+#define TEGRA_WIN_FMT_R8G8B8A8			13
+#define TEGRA_WIN_FMT_B6x2G6x2R6x2A8		14
+#define TEGRA_WIN_FMT_R6x2G6x2B6x2A8		15
+#define TEGRA_WIN_FMT_YCbCr422			16
+#define TEGRA_WIN_FMT_YUV422			17
+#define TEGRA_WIN_FMT_YCbCr420P			18
+#define TEGRA_WIN_FMT_YUV420P			19
+#define TEGRA_WIN_FMT_YCbCr422P			20
+#define TEGRA_WIN_FMT_YUV422P			21
+#define TEGRA_WIN_FMT_YCbCr422R			22
+#define TEGRA_WIN_FMT_YUV422R			23
+#define TEGRA_WIN_FMT_YCbCr422RA		24
+#define TEGRA_WIN_FMT_YUV422RA			25
+#define TEGRA_WIN_FMT_A8R8G8B8			35
+#define TEGRA_WIN_FMT_A8B8G8R8			36
+#define TEGRA_WIN_FMT_B8G8R8X8			37
+#define TEGRA_WIN_FMT_R8G8B8X8			38
+#define TEGRA_WIN_FMT_YCbCr444P			41
+#define TEGRA_WIN_FMT_YUV444P			52
+#define TEGRA_WIN_FMT_YCrCb420SP		42
+#define TEGRA_WIN_FMT_YCbCr420SP		43
+#define TEGRA_WIN_FMT_YCrCb422SP		44
+#define TEGRA_WIN_FMT_YCbCr422SP		45
+#define TEGRA_WIN_FMT_YVU420SP			53
+#define TEGRA_WIN_FMT_YUV420SP			54
+#define TEGRA_WIN_FMT_YVU422SP			55
+#define TEGRA_WIN_FMT_YUV422SP			56
+#define TEGRA_WIN_FMT_YVU444SP			59
+#define TEGRA_WIN_FMT_YUV444SP			60
+#define TEGRA_WIN_FMT_T_A2R10G10B10		70
+#define TEGRA_WIN_FMT_T_A2B10G10R10             71
+#define TEGRA_WIN_FMT_T_X2BL10GL10RL10_XRBIAS   72
+#define TEGRA_WIN_FMT_T_X2BL10GL10RL10_XVYCC    73
+#define TEGRA_WIN_FMT_T_R16_G16_B16_A16         75
+#define TEGRA_WIN_FMT_T_Y10___U10___V10_N420    80
+#define TEGRA_WIN_FMT_T_Y10___U10___V10_N444    82
+#define TEGRA_WIN_FMT_T_Y10___V10U10_N420       83
+#define TEGRA_WIN_FMT_T_Y10___U10V10_N422       84
+#define TEGRA_WIN_FMT_T_Y10___U10V10_N422R      86
+#define TEGRA_WIN_FMT_T_Y10___U10V10_N444       88
+#define TEGRA_WIN_FMT_T_Y12___U12___V12_N420    96
+#define TEGRA_WIN_FMT_T_Y12___U12___V12_N444    98
+#define TEGRA_WIN_FMT_T_Y12___V12U12_N420       99
+#define TEGRA_WIN_FMT_T_Y12___U12V12_N422       100
+#define TEGRA_WIN_FMT_T_Y12___U12V12_N422R      102
+#define TEGRA_WIN_FMT_T_Y12___U12V12_N444	104
 
 struct tegra_fb_data {
 	int		win;
@@ -870,6 +1152,7 @@ struct tegra_fb_data {
 	int		xres;
 	int		yres;
 	int		bits_per_pixel; /* -1 means autodetect */
+	size_t		fbmem_size;
 
 	unsigned long	flags;
 };
@@ -883,10 +1166,15 @@ struct tegra_dc_platform_data {
 	struct tegra_fb_data	*fb;
 	unsigned long		low_v_win;
 
-#ifdef CONFIG_TEGRA_DC_CMU
+#if defined(CONFIG_TEGRA_DC_CMU) || defined(CONFIG_TEGRA_DC_CMU_V2)
 	bool			cmu_enable;
 	struct tegra_dc_cmu	*cmu;
+	struct tegra_dc_cmu	*cmu_adbRGB;
+	int			default_clr_space;
 #endif
+	unsigned long		ctrl_num;
+	unsigned long		win_mask;
+	bool		plld2_ss_enable;
 };
 
 struct tegra_dc_bw_data {
@@ -896,6 +1184,12 @@ struct tegra_dc_bw_data {
 };
 
 #define TEGRA_DC_FLAG_ENABLED		(1 << 0)
+<<<<<<< HEAD
+=======
+#define TEGRA_DC_FLAG_SET_EARLY_MODE		(1 << 1)
+
+struct drm_mode_modeinfo;
+>>>>>>> update/master
 
 int tegra_dc_get_stride(struct tegra_dc *dc, unsigned win);
 struct tegra_dc *tegra_dc_get_dc(unsigned idx);
@@ -907,9 +1201,14 @@ bool tegra_dc_hpd(struct tegra_dc *dc);
 bool tegra_dc_has_vsync(struct tegra_dc *dc);
 int tegra_dc_vsync_enable(struct tegra_dc *dc);
 void tegra_dc_vsync_disable(struct tegra_dc *dc);
+<<<<<<< HEAD
 void tegra_dc_get_fbvblank(struct tegra_dc *dc, struct fb_vblank *vblank);
 int tegra_dc_wait_for_vsync(struct tegra_dc *dc);
 void tegra_dc_blank(struct tegra_dc *dc, unsigned windows);
+=======
+int tegra_dc_wait_for_vsync(struct tegra_dc *dc);
+int tegra_dc_blank_wins(struct tegra_dc *dc, unsigned windows);
+>>>>>>> update/master
 int tegra_dc_restore(struct tegra_dc *dc);
 
 void tegra_dc_enable(struct tegra_dc *dc);
@@ -917,14 +1216,17 @@ void tegra_dc_disable(struct tegra_dc *dc);
 int tegra_dc_set_default_videomode(struct tegra_dc *dc);
 
 
-u32 tegra_dc_get_syncpt_id(const struct tegra_dc *dc, int i);
+u32 tegra_dc_get_syncpt_id(struct tegra_dc *dc, int i);
 u32 tegra_dc_incr_syncpt_max(struct tegra_dc *dc, int i);
 void tegra_dc_incr_syncpt_min(struct tegra_dc *dc, int i, u32 val);
+struct sync_fence *tegra_dc_create_fence(struct tegra_dc *dc, int i, u32 val);
 
 /* tegra_dc_update_windows and tegra_dc_sync_windows do not support windows
  * with differenct dcs in one call
+ * dirty_rect is u16[4]: xoff, yoff, width, height
  */
-int tegra_dc_update_windows(struct tegra_dc_win *windows[], int n);
+int tegra_dc_update_windows(struct tegra_dc_win *windows[], int n,
+	u16 *dirty_rect, bool wait_for_vblank);
 int tegra_dc_sync_windows(struct tegra_dc_win *windows[], int n);
 void tegra_dc_disable_window(struct tegra_dc *dc, unsigned win);
 int tegra_dc_config_frame_end_intr(struct tegra_dc *dc, bool enable);
@@ -935,6 +1237,8 @@ int tegra_dc_set_mode(struct tegra_dc *dc, const struct tegra_dc_mode *mode);
 struct fb_videomode;
 int tegra_dc_to_fb_videomode(struct fb_videomode *fbmode,
 	const struct tegra_dc_mode *mode);
+int tegra_dc_set_drm_mode(struct tegra_dc *dc,
+	const struct drm_mode_modeinfo *dmode, bool stereo_mode);
 int tegra_dc_set_fb_mode(struct tegra_dc *dc, const struct fb_videomode *fbmode,
 	bool stereo_mode);
 
@@ -943,6 +1247,10 @@ unsigned tegra_dc_get_out_width(const struct tegra_dc *dc);
 unsigned tegra_dc_get_out_max_pixclock(const struct tegra_dc *dc);
 
 void nvsd_enbl_dsbl_prism(struct device *dev, bool status);
+<<<<<<< HEAD
+=======
+void nvsd_check_prism_thresh(struct device *dev, int brightness);
+>>>>>>> update/master
 
 /* PM0 and PM1 signal control */
 #define TEGRA_PWM_PM0 0
@@ -961,7 +1269,11 @@ void tegra_dc_config_pwm(struct tegra_dc *dc, struct tegra_dc_pwm_params *cfg);
 
 int tegra_dsi_send_panel_short_cmd(struct tegra_dc *dc, u8 *pdata, u8 data_len);
 
+#if defined(CONFIG_TEGRA_CSC_V2)
+int tegra_nvdisp_update_csc(struct tegra_dc *dc, int win_index);
+#else
 int tegra_dc_update_csc(struct tegra_dc *dc, int win_index);
+#endif
 
 int tegra_dc_update_lut(struct tegra_dc *dc, int win_index, int fboveride);
 
@@ -983,16 +1295,36 @@ int tegra_dc_set_flip_callback(void (*callback)(void));
 int tegra_dc_unset_flip_callback(void);
 int tegra_dc_get_panel_sync_rate(void);
 
+int tegra_dc_get_head(const struct tegra_dc *dc);
 int tegra_dc_get_out(const struct tegra_dc *dc);
+int tegra_dc_get_source_physical_address(u8 *phy_address);
 
-struct device_node *tegra_panel_get_dt_node(
+struct device_node *tegra_dc_get_hdmi_node(int id);
+
+struct device_node *tegra_primary_panel_get_dt_node(
 				struct tegra_dc_platform_data *pdata);
+struct device_node *tegra_secondary_panel_get_dt_node(
+				struct tegra_dc_platform_data *pdata);
+#if defined(CONFIG_TEGRA_NVDISPLAY)
+struct device_node *tegra_tertiary_panel_get_dt_node(
+				struct tegra_dc_platform_data *pdata);
+#else
+static inline struct device_node *tegra_tertiary_panel_get_dt_node(
+				struct tegra_dc_platform_data *pdata)
+{
+	return NULL;
+}
+#endif
+bool tegra_is_bl_display_initialized(int instance);
 
 void find_dc_node(struct device_node **dc1_node,
 				struct device_node **dc2_node);
 
 void tegra_get_fb_resource(struct resource *fb_res);
 void tegra_get_fb2_resource(struct resource *fb2_res);
+unsigned tegra_dc_out_flags_from_dev(struct device *dev);
+bool tegra_dc_initialized(struct device *dev);
+bool tegra_dc_is_ext_dp_panel(const struct tegra_dc *dc);
 
 /* table of electrical settings, must be in acending order. */
 struct tmds_config {
@@ -1010,6 +1342,7 @@ struct tmds_config {
 struct tegra_hdmi_out {
 	struct tmds_config *tmds_config;
 	int n_tmds_config;
+	bool hdmi2fpd_bridge_enable;
 };
 
 enum {
@@ -1033,6 +1366,13 @@ enum {
 	POST_CURSOR2_L3 = 3,
 };
 
+enum {
+	SOR_LINK_SPEED_G1_62 = 6,
+	SOR_LINK_SPEED_G2_7 = 10,
+	SOR_LINK_SPEED_G5_4 = 20,
+	SOR_LINK_SPEED_LVDS = 7,
+};
+
 struct tegra_dc_dp_lt_settings {
 	u32 drive_current[4]; /* Entry for each lane */
 	u32 lane_preemphasis[4]; /* Entry for each lane */
@@ -1044,7 +1384,10 @@ struct tegra_dc_dp_lt_settings {
 struct tegra_dp_out {
 	struct tegra_dc_dp_lt_settings *lt_settings;
 	int n_lt_settings;
+	bool enable_fast_lt_pdata;
 	bool tx_pu_disable;
+	int max_n_lanes;
+	u8 max_link_bw;
 };
 
 #ifdef CONFIG_PM_SLEEP

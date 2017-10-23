@@ -1,5 +1,9 @@
 /*
+<<<<<<< HEAD
  * Copyright (c) 2012-2015, NVIDIA CORPORATION.  All rights reserved.
+=======
+ * Copyright (c) 2012-2016, NVIDIA CORPORATION.  All rights reserved.
+>>>>>>> update/master
  *
  * Description:
  * High-speed USB device controller driver.
@@ -167,10 +171,28 @@ static inline bool vbus_enabled(struct tegra_udc *udc)
 		 * of VBUS status.*/
 		status = (udc_readl(udc, VBUS_SENSOR_REG_OFFSET)
 						& USB_SYS_VBUS_ASESSION);
-	} else if (!udc->support_pmu_vbus) {
+	} else if (udc->support_pmu_vbus) {
+		if (udc->vbus_extcon_dev &&
+			extcon_get_cable_state(udc->vbus_extcon_dev, "USB"))
+			return true;
+
+		if (udc->aca_nv_extcon_cable &&
+			extcon_get_cable_state_(udc->aca_nv_extcon_dev,
+			udc->aca_nv_extcon_cable->cable_index))
+			return true;
+
+		if (udc->aca_rid_b_ecable &&
+			extcon_get_cable_state_(udc->aca_rid_b_ecable->edev,
+			udc->aca_rid_b_ecable->cable_index))
+			return true;
+
+		if (udc->aca_rid_c_ecable &&
+			extcon_get_cable_state_(udc->aca_rid_c_ecable->edev,
+			udc->aca_rid_c_ecable->cable_index))
+			return true;
+	} else
 		status = (udc_readl(udc, VBUS_WAKEUP_REG_OFFSET)
 						& USB_SYS_VBUS_STATUS);
-	}
 
 	return status;
 }
@@ -184,7 +206,7 @@ static void done(struct tegra_ep *ep, struct tegra_req *req, int status)
 {
 	struct tegra_udc *udc = NULL;
 	unsigned char stopped = ep->stopped;
-	struct ep_td_struct *curr_td, *next_td = 0;
+	struct ep_td_struct *curr_td, *next_td = NULL;
 	int j;
 	int count;
 
@@ -433,7 +455,8 @@ static void dr_controller_run(struct tegra_udc *udc)
 	if (can_pullup(udc)) {
 		temp |= USB_CMD_RUN_STOP;
 		if (udc->charging_supported &&
-			(udc->connect_type == CONNECT_TYPE_SDP))
+			((udc->connect_type == CONNECT_TYPE_SDP) ||
+			(udc->connect_type == CONNECT_TYPE_CDP)))
 			schedule_delayed_work(&udc->non_std_charger_work,
 				msecs_to_jiffies(NON_STD_CHARGER_DET_TIME_MS));
 	}
@@ -664,7 +687,7 @@ static int tegra_ep_enable(struct usb_ep *_ep,
 	ep->ep.maxpacket = max;
 	ep->desc = desc;
 	ep->stopped = 0;
-	ep->last_td = 0;
+	ep->last_td = NULL;
 	ep->last_dtd_count = 0;
 
 	/* Controller related setup
@@ -748,7 +771,7 @@ static int tegra_ep_disable(struct usb_ep *_ep)
 			}
 		}
 	}
-	ep->last_td =0;
+	ep->last_td = NULL;
 	ep->last_dtd_count = 0;
 	spin_unlock_irqrestore(&udc->lock, flags);
 
@@ -1139,7 +1162,7 @@ static int tegra_ep_dequeue(struct usb_ep *_ep, struct usb_request *_req)
 
 			/* Point the QH to the first TD of next request */
 			writel((u32) (uintptr_t) next_req->head,
-					&qh->curr_dtd_ptr);
+					(void __iomem *)&qh->curr_dtd_ptr);
 		}
 
 		/* The request hasn't been processed, patch up the TD chain */
@@ -1147,8 +1170,8 @@ static int tegra_ep_dequeue(struct usb_ep *_ep, struct usb_request *_req)
 		struct tegra_req *prev_req;
 
 		prev_req = list_entry(req->queue.prev, struct tegra_req, queue);
-		writel(readl(&req->tail->next_td_ptr),
-				&prev_req->tail->next_td_ptr);
+		writel(readl((void __iomem *)&req->tail->next_td_ptr),
+				(void __iomem *)&prev_req->tail->next_td_ptr);
 	}
 
 	done(ep, req, -ECONNRESET);
@@ -1478,9 +1501,15 @@ static int tegra_usb_set_charging_current(struct tegra_udc *udc)
 		tegra_udc_notify_event(udc, USB_EVENT_CHARGER);
 		break;
 	case CONNECT_TYPE_ACA_NV_CHARGER:
+<<<<<<< HEAD
 		dev_info(dev, "connected to ACA-NV Charger 2A custom charger\n");
 		max_ua = USB_CHARGING_ACA_NV_CHARGER_CURRENT_LIMIT_UA;
 		tegra_udc_notify_event(udc, USB_EVENT_CHARGER);
+=======
+		dev_info(dev, "connected to ACA-NV Y-Cable 17V/2.1A custom charger\n");
+		max_ua = USB_CHARGING_ACA_NV_CHARGER_CURRENT_LIMIT_UA;
+		tegra_udc_notify_event(udc, USB_EVENT_VBUS);
+>>>>>>> update/master
 		break;
 	case CONNECT_TYPE_ACA_RID_B:
 		dev_info(dev, "connected to ACA RID_B\n");
@@ -1506,7 +1535,12 @@ static int tegra_usb_set_charging_current(struct tegra_udc *udc)
 								 0, max_ua);
 	}
 
+<<<<<<< HEAD
 	if (!udc->vbus_in_lp0)
+=======
+	if (!udc->vbus_in_lp0) {
+		tegra_udc_set_extcon_state(udc);
+>>>>>>> update/master
 		udc->connect_type_lp0 = CONNECT_TYPE_NONE;
 
 	return ret;
@@ -1666,9 +1700,21 @@ static int tegra_vbus_session(struct usb_gadget *gadget, int is_active)
 		    (udc->connect_type == CONNECT_TYPE_ACA_RID_B) ||
 		    (udc->connect_type == CONNECT_TYPE_ACA_RID_C))
 			dr_controller_run(udc);
+<<<<<<< HEAD
 	} else if (udc->vbus_active && is_active && udc->support_aca_rid)
 		/* handle rid_b -> rid_c, rid_c/rid_b -> vbus, vbus -> rid_c/rid_b */
 		tegra_detect_cable_type(udc);
+=======
+	} else if (udc->vbus_active && is_active && udc->support_aca_rid) {
+		/* handle rid_b -> rid_c */
+		/* rid_c/rid_b -> vbus */
+		/* vbus -> rid_c/rid_b */
+
+		/* If MAXIM do not call cable_detect. resets vbus */
+		if (udc->connect_type != CONNECT_TYPE_DCP_MAXIM)
+			tegra_detect_cable_type(udc);
+	}
+>>>>>>> update/master
 	mutex_unlock(&udc->sync_lock);
 
 	return 0;
@@ -1688,7 +1734,13 @@ static int tegra_vbus_draw(struct usb_gadget *gadget, unsigned mA)
 
 	udc = container_of(gadget, struct tegra_udc, gadget);
 
+<<<<<<< HEAD
 	if (udc->connect_type == CONNECT_TYPE_DCP_MAXIM)
+=======
+	if (udc->connect_type == CONNECT_TYPE_DCP_MAXIM ||
+		udc->connect_type == CONNECT_TYPE_ACA_RID_B ||
+		udc->connect_type == CONNECT_TYPE_ACA_RID_C)
+>>>>>>> update/master
 		return 0;
 
 	/* Some hosts during booting first supply vbus and then
@@ -1697,9 +1749,13 @@ static int tegra_vbus_draw(struct usb_gadget *gadget, unsigned mA)
 	if (udc->connect_type != CONNECT_TYPE_NONE
 		&& udc->connect_type != CONNECT_TYPE_SDP
 		&& udc->connect_type != CONNECT_TYPE_CDP
+<<<<<<< HEAD
 		&& udc->connect_type != CONNECT_TYPE_ACA_NV_CHARGER
 		&& udc->connect_type != CONNECT_TYPE_ACA_RID_B
 		&& udc->connect_type != CONNECT_TYPE_ACA_RID_C)
+=======
+		&& udc->connect_type != CONNECT_TYPE_ACA_NV_CHARGER)
+>>>>>>> update/master
 		tegra_udc_set_charger_type(udc, CONNECT_TYPE_SDP);
 
 	/* Avoid unnecessary work if there is no change in current limit */
@@ -1745,11 +1801,14 @@ static int tegra_pullup(struct usb_gadget *gadget, int is_on)
 		 * enumeration started.
 		 */
 		if (udc->charging_supported &&
-			(udc->connect_type == CONNECT_TYPE_SDP))
+			((udc->connect_type == CONNECT_TYPE_SDP) ||
+			(udc->connect_type == CONNECT_TYPE_CDP)))
 			schedule_delayed_work(&udc->non_std_charger_work,
 				msecs_to_jiffies(NON_STD_CHARGER_DET_TIME_MS));
-	} else
+	} else {
+		cancel_delayed_work(&udc->non_std_charger_work);
 		udc_writel(udc, (tmp & ~USB_CMD_RUN_STOP), USB_CMD_REG_OFFSET);
+	}
 
 	DBG("%s(%d) END\n", __func__, __LINE__);
 	return 0;
@@ -1758,8 +1817,8 @@ static int tegra_pullup(struct usb_gadget *gadget, int is_on)
 /* Release udc structures */
 static void tegra_udc_release(struct device *dev)
 {
-	struct platform_device *pdev = to_platform_device(dev);
-	struct tegra_udc *udc = platform_get_drvdata(pdev);
+	struct usb_gadget *gadget = dev_to_usb_gadget(dev);
+	struct tegra_udc *udc = container_of(gadget, struct tegra_udc, gadget);
 
 	complete(udc->done);
 	usb_phy_shutdown(get_usb_phy(udc->phy));
@@ -1942,6 +2001,7 @@ static void udc_test_mode(struct tegra_udc *udc, u32 test_mode)
 	struct tegra_ep *ep;
 	u32 portsc, bitmask;
 	unsigned long timeout;
+	struct usb_request *usb_req = NULL;
 
 	/* Ack the ep0 IN */
 	if (ep0_prime_status(udc, EP_DIR_IN))
@@ -1987,16 +2047,28 @@ static void udc_test_mode(struct tegra_udc *udc, u32 test_mode)
 		udc->ep0_dir = USB_DIR_IN;
 
 		/* Initialize ep0 status request structure */
-		req = container_of(tegra_alloc_request(NULL, GFP_ATOMIC),
-				struct tegra_req, req);
-		/* allocate a small amount of memory to get valid address */
-		req->req.buf = kmalloc(sizeof(tegra_udc_test_packet),
-					GFP_ATOMIC);
-		req->req.dma = virt_to_phys(req->req.buf);
+		usb_req = tegra_alloc_request(NULL, GFP_ATOMIC);
+		if (usb_req)
+			req = container_of(usb_req, struct tegra_req, req);
+		else {
+			dev_err(ep->udc->gadget.dev.parent,
+				"allocate tegra_req failed\n");
+			goto stall;
+		}
+
+		req->req.buf = (void *) tegra_udc_test_packet;
+		req->req.dma = dma_map_single(ep->udc->gadget.dev.parent,
+						req->req.buf,
+						sizeof(tegra_udc_test_packet),
+						DMA_TO_DEVICE);
+
+		if (dma_mapping_error(ep->udc->gadget.dev.parent,
+					req->req.dma)) {
+			dev_err(ep->udc->gadget.dev.parent, "dma map failed\n");
+			goto stall;
+		}
 
 		/* Fill in the reqest structure */
-		memcpy(req->req.buf, tegra_udc_test_packet,
-					sizeof(tegra_udc_test_packet));
 		req->ep = ep;
 		req->req.length = sizeof(tegra_udc_test_packet);
 		req->req.status = -EINPROGRESS;
@@ -2044,10 +2116,8 @@ static void udc_test_mode(struct tegra_udc *udc, u32 test_mode)
 	return;
 stall:
 	ep0stall(udc);
-	if (req) {
-		kfree(req->req.buf);
+	if (req)
 		tegra_free_request(NULL, &req->req);
-	}
 }
 
 static void setup_received_irq(struct tegra_udc *udc,
@@ -2524,7 +2594,7 @@ static void tegra_udc_set_current_limit_work(struct work_struct *work)
 }
 
 #ifdef CONFIG_TEGRA_GADGET_BOOST_CPU_FREQ
-void tegra_udc_set_cpu_freq_normal(unsigned long data)
+static void tegra_udc_set_cpu_freq_normal(unsigned long data)
 {
 	set_cpufreq_normal_flag = 1;
 	schedule_work(&the_udc->boost_cpufreq_work);
@@ -2784,6 +2854,7 @@ static int tegra_udc_setup_qh(struct tegra_udc *udc)
 	u32 dccparams;
 	size_t size;
 	struct resource *res;
+	struct usb_request *usb_req = NULL;
 
 	/* Read Device Controller Capability Parameters register */
 	dccparams = udc_readl(udc, DCCPARAMS_REG_OFFSET);
@@ -2816,8 +2887,14 @@ static int tegra_udc_setup_qh(struct tegra_udc *udc)
 
 	/* Initialize ep0 status request structure */
 	/* FIXME: tegra_alloc_request() ignores ep argument */
-	udc->status_req = container_of(tegra_alloc_request(NULL, GFP_KERNEL),
-			struct tegra_req, req);
+	usb_req = tegra_alloc_request(NULL, GFP_KERNEL);
+	if (usb_req)
+		udc->status_req = container_of(usb_req, struct tegra_req, req);
+	else {
+		ERR("allocate tegra_req failed\n");
+		kfree(udc->eps);
+		return -ENOMEM;
+	}
 	/* Allocate a small amount of memory to get valid address */
 	udc->status_req->req.buf = dma_alloc_coherent(&udc->pdev->dev,
 				STATUS_BUFFER_SIZE, &udc->status_req->req.dma,
@@ -2871,7 +2948,7 @@ static int __init struct_ep_setup(struct tegra_udc *udc, unsigned char index,
 	return 0;
 }
 
-static int tegra_udc_ep_setup(struct tegra_udc *udc)
+static int __init tegra_udc_ep_setup(struct tegra_udc *udc)
 {
 	/* initialize EP0 descriptor */
 	static const struct usb_endpoint_descriptor tegra_ep0_desc = {
@@ -2913,6 +2990,10 @@ static struct tegra_usb_platform_data *tegra_udc_dt_parse_pdata(
 {
 	struct tegra_usb_platform_data *pdata;
 	struct device_node *np = pdev->dev.of_node;
+<<<<<<< HEAD
+=======
+	u32 current_ua;
+>>>>>>> update/master
 
 	if (!np)
 		return NULL;
@@ -2932,10 +3013,22 @@ static struct tegra_usb_platform_data *tegra_udc_dt_parse_pdata(
 	pdata->u_data.dev.is_xhci =
 		of_property_read_bool(np, "nvidia,enable-xhci-host");
 
+<<<<<<< HEAD
 	of_property_read_u32(np, "nvidia,dcp-current-limit-ma",
 				&pdata->u_data.dev.dcp_current_limit_ma);
 	of_property_read_u32(np, "nvidia,qc2-current-limit-ma",
 				&pdata->u_data.dev.qc2_current_limit_ma);
+=======
+	current_ua = 0;
+	of_property_read_u32(np, "nvidia,dcp-current-limit-ua",
+				&current_ua);
+	pdata->u_data.dev.dcp_current_limit_ma = current_ua/1000;
+
+	current_ua = 0;
+	of_property_read_u32(np, "nvidia,qc2-current-limit-ua",
+				&current_ua);
+	pdata->u_data.dev.qc2_current_limit_ma = current_ua/1000;
+>>>>>>> update/master
 	of_property_read_u32(np, "nvidia,qc2-input-voltage",
 				&pdata->qc2_voltage);
 	of_property_read_u32(np, "nvidia,id-detection-type",
@@ -2945,6 +3038,7 @@ static struct tegra_usb_platform_data *tegra_udc_dt_parse_pdata(
 	return pdata;
 }
 
+<<<<<<< HEAD
 static struct tegra_udc_soc_data tegra12x_soc_config = {
 	.utmi = {
 		.hssync_start_delay = 0,
@@ -2957,6 +3051,19 @@ static struct tegra_udc_soc_data tegra12x_soc_config = {
 		.xcvr_lsfslew = 2,
 		.xcvr_lsrslew = 2,
 		.xcvr_use_lsb = 1,
+=======
+static struct tegra_udc_soc_data tegra_soc_config = {
+	.utmi = {
+		.hssync_start_delay = 0,
+		.elastic_limit = 16,
+		.idle_wait_delay = 17,
+		.term_range_adj = 6,
+		.xcvr_setup = 8,
+		.xcvr_lsfslew = 2,
+		.xcvr_lsrslew = 2,
+		.xcvr_setup_offset = 0,
+		.xcvr_use_fuses = 1,
+>>>>>>> update/master
 	},
 	.has_hostpc = true,
 	.unaligned_dma_buf_supported = false,
@@ -2964,9 +3071,15 @@ static struct tegra_udc_soc_data tegra12x_soc_config = {
 	.op_mode = TEGRA_USB_OPMODE_DEVICE,
 };
 
+<<<<<<< HEAD
 static struct tegra_udc_soc_data tegra_soc_config = {
 	.utmi = {
 		.hssync_start_delay = 0,
+=======
+static struct tegra_udc_soc_data tegra21x_soc_config = {
+	.utmi = {
+		.hssync_start_delay = 9,
+>>>>>>> update/master
 		.elastic_limit = 16,
 		.idle_wait_delay = 17,
 		.term_range_adj = 6,
@@ -2983,9 +3096,15 @@ static struct tegra_udc_soc_data tegra_soc_config = {
 };
 
 static struct of_device_id tegra_udc_of_match[] = {
+<<<<<<< HEAD
 	{.compatible = "nvidia,tegra210-udc", .data = &tegra_soc_config, },
 	{.compatible = "nvidia,tegra132-udc", .data = &tegra_soc_config, },
 	{.compatible = "nvidia,tegra124-udc", .data = &tegra12x_soc_config, },
+=======
+	{.compatible = "nvidia,tegra210-udc", .data = &tegra21x_soc_config, },
+	{.compatible = "nvidia,tegra132-udc", .data = &tegra_soc_config, },
+	{.compatible = "nvidia,tegra124-udc", .data = &tegra_soc_config, },
+>>>>>>> update/master
 	{ /* termination */ },
 };
 MODULE_DEVICE_TABLE(of, tegra_udc_of_match);
@@ -3002,11 +3121,25 @@ static int __init tegra_udc_probe(struct platform_device *pdev)
 	const struct of_device_id *match;
 	struct tegra_udc_soc_data *soc_data;
 	struct tegra_usb_dev_mode_data *dev_pdata;
+<<<<<<< HEAD
+=======
+	unsigned char xcvr_setup_offset;
+>>>>>>> update/master
 
 	int err = -ENODEV;
 	DBG("%s(%d) BEGIN\n", __func__, __LINE__);
 
+<<<<<<< HEAD
 	the_udc = udc = kzalloc(sizeof(struct tegra_udc), GFP_KERNEL);
+=======
+#ifdef CONFIG_ARCH_TEGRA_21x_SOC
+	if (tegra_bonded_out_dev(BOND_OUT_USBD))
+		return -ENODEV;
+#endif
+
+	the_udc = udc = devm_kzalloc(&pdev->dev,
+				sizeof(struct tegra_udc), GFP_KERNEL);
+>>>>>>> update/master
 	if (udc == NULL) {
 		ERR("malloc udc failed\n");
 		return -ENOMEM;
@@ -3070,7 +3203,17 @@ static int __init tegra_udc_probe(struct platform_device *pdev)
 		pdata->phy_intf = soc_data->phy_intf;
 		pdata->op_mode = soc_data->op_mode;
 		pdata->u_cfg.utmi = soc_data->utmi;
+<<<<<<< HEAD
 		pdata->u_data.dev.vbus_gpio = -1;
+=======
+
+		/* Note:  setup_offset is actually a signed char value*/
+		if (!of_property_read_u8(pdev->dev.of_node,
+				"nvidia,xcvr-setup-offset",
+				&xcvr_setup_offset))
+			pdata->u_cfg.utmi.xcvr_setup_offset =
+				(signed char)xcvr_setup_offset;
+>>>>>>> update/master
 
 		dev_pdata = dev_get_platdata(&pdev->dev);
 		if (dev_pdata)
@@ -3298,8 +3441,6 @@ err_rel_mem_region:
 	release_mem_region(res->start, res->end - res->start + 1);
 
 err_kfree:
-	kfree(udc);
-
 	return err;
 }
 
@@ -3325,8 +3466,8 @@ static int __exit tegra_udc_remove(struct platform_device *pdev)
 		kfree(udc->edev);
 	}
 
-	usb_del_gadget_udc(&udc->gadget);
 	udc->done = &done;
+	usb_del_gadget_udc(&udc->gadget);
 
 	cancel_delayed_work(&udc->non_std_charger_work);
 	cancel_work_sync(&udc->irq_work);
@@ -3470,6 +3611,7 @@ static int tegra_udc_resume(struct device *dev)
 
 	/* Set Current limit to 0 if charger is disconnected in LP0 */
 	if (udc->vbus_reg != NULL) {
+<<<<<<< HEAD
 		if (udc->support_pmu_vbus) {
 			dev_info(dev, "%s: state (%d, %d)\n", __func__,
 			       udc->connect_type_lp0,
@@ -3478,6 +3620,51 @@ static int tegra_udc_resume(struct device *dev)
 			if ((udc->connect_type_lp0 != CONNECT_TYPE_NONE) &&
 				udc->vbus_extcon_dev != NULL &&
 				!extcon_get_cable_state(udc->vbus_extcon_dev, "USB")) {
+=======
+		if (udc->support_aca_nv_cable && udc->aca_nv_extcon_cable &&
+			udc->connect_type_lp0 == CONNECT_TYPE_ACA_NV_CHARGER) {
+			index = udc->aca_nv_extcon_cable->cable_index;
+			if ((udc->connect_type_lp0 != CONNECT_TYPE_NONE) &&
+				!extcon_get_cable_state_(udc->aca_nv_extcon_dev,
+								index)) {
+				tegra_udc_set_extcon_state(udc);
+				udc->connect_type_lp0 = CONNECT_TYPE_NONE;
+				regulator_set_current_limit(udc->vbus_reg,
+								0, 0);
+			}
+		} else if (udc->support_aca_rid && udc->aca_rid_b_ecable &&
+			udc->connect_type_lp0 == CONNECT_TYPE_ACA_RID_B) {
+			index = udc->aca_rid_b_ecable->cable_index;
+			if ((udc->connect_type_lp0 == CONNECT_TYPE_ACA_RID_B) &&
+				!extcon_get_cable_state_(
+					udc->aca_rid_b_ecable->edev, index)) {
+				tegra_udc_set_extcon_state(udc);
+				udc->connect_type_lp0 = CONNECT_TYPE_NONE;
+				regulator_set_current_limit(udc->vbus_reg,
+								0, 0);
+			}
+		} else if (udc->support_aca_rid && udc->aca_rid_c_ecable &&
+			udc->connect_type_lp0 == CONNECT_TYPE_ACA_RID_C) {
+			index = udc->aca_rid_c_ecable->cable_index;
+			if ((udc->connect_type_lp0 != CONNECT_TYPE_ACA_RID_C) &&
+				!extcon_get_cable_state_(
+					udc->aca_rid_c_ecable->edev, index)) {
+				tegra_udc_set_extcon_state(udc);
+				udc->connect_type_lp0 = CONNECT_TYPE_NONE;
+				regulator_set_current_limit(udc->vbus_reg,
+								0, 0);
+			}
+		} else if (udc->support_pmu_vbus) {
+			dev_info(dev, "%s: state (%d, %d)\n", __func__,
+			       udc->connect_type_lp0,
+			       udc->vbus_extcon_dev != NULL ?
+				extcon_get_cable_state(udc->vbus_extcon_dev,
+								"USB") : -1);
+			if ((udc->connect_type_lp0 != CONNECT_TYPE_NONE) &&
+				udc->vbus_extcon_dev != NULL &&
+				!extcon_get_cable_state(udc->vbus_extcon_dev,
+								"USB")) {
+>>>>>>> update/master
 				tegra_udc_set_extcon_state(udc);
 				udc->connect_type_lp0 = CONNECT_TYPE_NONE;
 				regulator_set_current_limit(udc->vbus_reg,

@@ -3,6 +3,7 @@
 #
 GCOV_PROFILE := y
 
+ccflags-y += -Werror
 obj-$(CONFIG_SERIAL_CORE) += serial_core.o
 obj-$(CONFIG_SERIAL_21285) += 21285.o
 
@@ -87,3 +88,4 @@ obj-$(CONFIG_SERIAL_AR933X)   += ar933x_uart.o
 obj-$(CONFIG_SERIAL_EFM32_UART) += efm32-uart.o
 obj-$(CONFIG_SERIAL_ARC)	+= arc_uart.o
 obj-$(CONFIG_SERIAL_RP2)	+= rp2.o
+obj-$(CONFIG_TEGRA_HV_COMM)	+= tegra_hv_comm.o

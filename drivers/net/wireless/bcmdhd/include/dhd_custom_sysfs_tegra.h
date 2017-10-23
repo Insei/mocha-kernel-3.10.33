@@ -3,7 +3,11 @@
  *
  * NVIDIA Tegra Sysfs for BCMDHD driver
  *
+<<<<<<< HEAD
  * Copyright (C) 2014 NVIDIA Corporation. All rights reserved.
+=======
+ * Copyright (C) 2014-2016 NVIDIA Corporation. All rights reserved.
+>>>>>>> update/master
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -22,6 +26,7 @@
 #include <linux/kernel.h>
 #include <linux/device.h>
 #include <linux/netdevice.h>
+<<<<<<< HEAD
 #include <linux/net.h>
 #include <linux/skbuff.h>
 #include <linux/stat.h>
@@ -38,6 +43,25 @@
 #include <net/inet_sock.h>
 #include <linux/seq_file.h>
 #include <net/tcp.h>
+=======
+#include <linux/skbuff.h>
+#include <linux/stat.h>
+#include <linux/ktime.h>
+#include <linux/debugfs.h>
+#include <linux/fs.h>
+
+#ifndef UNUSED_PARAMETER
+#define UNUSED_PARAMETER(x)	(void)(x)
+#endif
+
+#define ETHER_TYPE_BRCM_REV 0x6c88
+#define TCPDUMP_TAG_FREE	'?'
+#define TCPDUMP_TAG_RX  	'<'
+#define TCPDUMP_TAG_TX  	'>'
+#define TCPDUMP_TAG_TIME	'@'
+#define TCPDUMP_TAG_STAT	'&'
+#define TCPDUMP_TAG_PWR 	'P'
+>>>>>>> update/master
 
 /* initialization */
 
@@ -101,20 +125,53 @@ tegra_sysfs_histogram_rssi_store(struct device *dev,
 	struct device_attribute *attr,
 	const char *buf, size_t count);
 
+<<<<<<< HEAD
+=======
+/* RF testing */
+
+#define NUM_RF_TEST_PARAMS 3
+typedef struct {
+	char *var;
+	atomic_t cur_val;
+} rf_test_params_t;
+
+ssize_t
+tegra_sysfs_rf_test_state_show(struct device *dev,
+	struct device_attribute *attr,
+	char *buf);
+
+ssize_t
+tegra_sysfs_rf_test_state_store(struct device *dev,
+	struct device_attribute *attr,
+	const char *buf, size_t count);
+
+void tegra_sysfs_rf_test_enable(void);
+void tegra_sysfs_rf_test_disable(void);
+void rf_test_params_init(void);
+
+>>>>>>> update/master
 /* scan histogram */
 
 #define TEGRA_SYSFS_HISTOGRAM_SCAN_REQUEST(netdev, request, request_size)\
 	{\
 		char *netif = netdev ? netdev->name : "";\
 		tcpdump_pkt_save('X', netif, __func__, __LINE__,\
+<<<<<<< HEAD
 			(unsigned char *) request, request_size, 0);\
+=======
+			(const unsigned char *) request, request_size, 0);\
+>>>>>>> update/master
 	}\
 
 #define TEGRA_SYSFS_HISTOGRAM_SCAN_RESULTS(netdev, results, results_size)\
 	{\
 		char *netif = netdev ? netdev->name : "";\
 		tcpdump_pkt_save('x', netif, __func__, __LINE__,\
+<<<<<<< HEAD
 			(unsigned char *) results, results_size, 0);\
+=======
+			(const unsigned char *) results, results_size, 0);\
+>>>>>>> update/master
 	}\
 
 void
@@ -133,9 +190,26 @@ tegra_sysfs_histogram_scan_store(struct device *dev,
 	struct device_attribute *attr,
 	const char *buf, size_t count);
 
+<<<<<<< HEAD
 /* stat histogram */
 
 void
+=======
+ssize_t
+tegra_debugfs_histogram_scan_read(struct file *filp,
+	char __user *buff, size_t count, loff_t *offp);
+
+ssize_t
+tegra_debugfs_histogram_scan_write(struct file *filp,
+	const char __user *buff, size_t count, loff_t *offp);
+
+/* stat histogram */
+
+void
+tegra_sysfs_histogram_stat_set_channel(int channel);
+
+void
+>>>>>>> update/master
 tegra_sysfs_histogram_stat_work_run(unsigned int ms);
 
 void
@@ -158,7 +232,11 @@ tegra_sysfs_histogram_stat_store(struct device *dev,
 
 void
 tcpdump_pkt_save(char tag, const char *netif, const char *func, int line,
+<<<<<<< HEAD
 	unsigned char *data,
+=======
+	const unsigned char *data,
+>>>>>>> update/master
 	unsigned int data_nonpaged_len,
 	unsigned int data_paged_len);
 
@@ -194,6 +272,7 @@ ssize_t
 tegra_debugfs_histogram_tcpdump_write(struct file *filp,
 	const char __user *buff, size_t count, loff_t *offp);
 
+<<<<<<< HEAD
 /* netstat histogram */
 
 void
@@ -228,6 +307,8 @@ void
 netstat_tcp_wait_save(char tag,
 	const struct inet_timewait_sock *sp, int bucket);
 
+=======
+>>>>>>> update/master
 void
 tegra_sysfs_resume_capture(void);
 
@@ -239,4 +320,17 @@ tegra_sysfs_control_pkt(int number);
 
 void
 tegra_sysfs_dpc_pkt(void);
+<<<<<<< HEAD
+=======
+
+ssize_t
+tegra_sysfs_hostapd_downgradevotovi_show(struct device *dev,
+	struct device_attribute *attr,
+	char *buf);
+
+ssize_t
+tegra_sysfs_hostapd_downgradevotovi_store(struct device *dev,
+	struct device_attribute *attr,
+	const char *buf, size_t count);
+>>>>>>> update/master
 #endif  /* _dhd_custom_sysfs_tegra_h_ */

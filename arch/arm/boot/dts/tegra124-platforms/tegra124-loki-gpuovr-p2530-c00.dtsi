@@ -1,20 +1,29 @@
 #include <dt-bindings/gpio/tegra-gpio.h>
 
 / {
+<<<<<<< HEAD
 	tegra_pwm: pwm@7000a000 {
 		compatible = "nvidia,tegra124-pwm";
 		reg = <0x0 0x7000a000 0x0 0x100>;
 		#pwm-cells = <2>;
 		status = "okay";
 	};
+=======
+>>>>>>> update/master
 	regulators {
 		compatible = "simple-bus";
 		#address-cells = <1>;
 		#size-cells = <0>;
 
+<<<<<<< HEAD
 		vdd_gpu: regulator@0 {
 			compatible = "regulator-pwm";
 			reg = <0>;
+=======
+		vdd_gpu: regulator@200 {
+			compatible = "regulator-pwm";
+			reg = <200>;
+>>>>>>> update/master
 			regulator-name = "vdd-gpu";
 			regulator-min-microvolt = <710000>;
 			regulator-max-microvolt = <1320000>;
@@ -34,4 +43,18 @@
 		};
 	};
 
+<<<<<<< HEAD
+=======
+	i2c@7000d000 {
+		tps65913 {
+			pmic {
+				regulators {
+					smps123 {
+						status="disabled";
+					};
+				};
+			};
+		};
+	};
+>>>>>>> update/master
 };

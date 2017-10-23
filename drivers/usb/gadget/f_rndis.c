@@ -68,10 +68,17 @@
  *   - MS-Windows drivers sometimes emit undocumented requests.
  */
 
+<<<<<<< HEAD
 static bool rndis_multipacket_dl_disable;
 module_param(rndis_multipacket_dl_disable, bool, S_IRUGO|S_IWUSR);
 MODULE_PARM_DESC(rndis_multipacket_dl_disable,
 	"Disable RNDIS Multi-packet support in DownLink");
+=======
+static unsigned int rndis_dl_max_pkt_per_xfer = 3;
+module_param(rndis_dl_max_pkt_per_xfer, uint, S_IRUGO | S_IWUSR);
+MODULE_PARM_DESC(rndis_dl_max_pkt_per_xfer,
+	"Maximum packets per transfer for DL aggregation");
+>>>>>>> update/master
 
 static unsigned int rndis_ul_max_pkt_per_xfer = 3;
 module_param(rndis_ul_max_pkt_per_xfer, uint, S_IRUGO | S_IWUSR);
@@ -477,7 +484,7 @@ static void rndis_command_complete(struct usb_ep *ep, struct usb_request *req)
 				__func__, buf->MaxTransferSize,
 				rndis->port.multi_pkt_xfer ? "enabled" :
 							    "disabled");
-		if (rndis_multipacket_dl_disable)
+		if (rndis_dl_max_pkt_per_xfer <= 1)
 			rndis->port.multi_pkt_xfer = 0;
 	}
 //	spin_unlock(&dev->lock);
@@ -570,11 +577,9 @@ static int rndis_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 			VDBG(cdev, "reset rndis control %d\n", intf);
 			usb_ep_disable(rndis->notify);
 		}
-		if (!rndis->notify->desc) {
-			VDBG(cdev, "init rndis ctrl %d\n", intf);
-			if (config_ep_by_speed(cdev->gadget, f, rndis->notify))
-				goto fail;
-		}
+		VDBG(cdev, "init rndis ctrl %d\n", intf);
+		if (config_ep_by_speed(cdev->gadget, f, rndis->notify))
+			goto fail;
 		usb_ep_enable(rndis->notify);
 		rndis->notify->driver_data = rndis;
 
@@ -586,16 +591,14 @@ static int rndis_set_alt(struct usb_function *f, unsigned intf, unsigned alt)
 			gether_disconnect(&rndis->port);
 		}
 
-		if (!rndis->port.in_ep->desc || !rndis->port.out_ep->desc) {
-			DBG(cdev, "init rndis\n");
-			if (config_ep_by_speed(cdev->gadget, f,
-					       rndis->port.in_ep) ||
-			    config_ep_by_speed(cdev->gadget, f,
-					       rndis->port.out_ep)) {
-				rndis->port.in_ep->desc = NULL;
-				rndis->port.out_ep->desc = NULL;
-				goto fail;
-			}
+		DBG(cdev, "init rndis\n");
+		if (config_ep_by_speed(cdev->gadget, f,
+				       rndis->port.in_ep) ||
+		    config_ep_by_speed(cdev->gadget, f,
+				       rndis->port.out_ep)) {
+			rndis->port.in_ep->desc = NULL;
+			rndis->port.out_ep->desc = NULL;
+			goto fail;
 		}
 
 		/* Avoid ZLPs; they can be troublesome. */
@@ -768,7 +771,7 @@ rndis_bind(struct usb_configuration *c, struct usb_function *f)
 
 	status = rndis_register(rndis_response_available, rndis);
 	if (status < 0)
-		goto fail;
+		goto fail_free_descs;
 	rndis->config = status;
 
 	rndis_set_param_medium(rndis->config, RNDIS_MEDIUM_802_3, 0);
@@ -778,7 +781,7 @@ rndis_bind(struct usb_configuration *c, struct usb_function *f)
 	if (rndis->manufacturer && rndis->vendorID &&
 			rndis_set_param_vendor(rndis->config, rndis->vendorID,
 					       rndis->manufacturer))
-		goto fail;
+		goto fail_free_descs;
 
 	/* NOTE:  all that is done without knowing or caring about
 	 * the network link ... which is unavailable to this code
@@ -792,9 +795,9 @@ rndis_bind(struct usb_configuration *c, struct usb_function *f)
 			rndis->notify->name);
 	return 0;
 
-fail:
+fail_free_descs:
 	usb_free_all_descriptors(f);
-
+fail:
 	if (rndis->notify_req) {
 		kfree(rndis->notify_req->buf);
 		usb_ep_free_request(rndis->notify, rndis->notify_req);
@@ -880,6 +883,10 @@ rndis_bind_config_vendor(struct usb_configuration *c, u8 ethaddr[ETH_ALEN],
 	rndis->port.wrap = rndis_add_header;
 	rndis->port.unwrap = rndis_rm_hdr;
 	rndis->port.ul_max_pkts_per_xfer = rndis_ul_max_pkt_per_xfer;
+<<<<<<< HEAD
+=======
+	rndis->port.dl_max_pkts_per_xfer = rndis_dl_max_pkt_per_xfer;
+>>>>>>> update/master
 
 	rndis->port.func.name = "rndis";
 	rndis->port.func.strings = rndis_strings;

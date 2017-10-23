@@ -42,6 +42,11 @@ obj-$(CONFIG_BLK_DEV_PCIESSD_MTIP32XX)	+= mtip32xx/
 
 obj-$(CONFIG_BLK_DEV_RSXX) += rsxx/
 obj-$(CONFIG_ZRAM) += zram/
+<<<<<<< HEAD
+=======
+
+obj-$(CONFIG_TEGRA_HV_BLKDEV) += tegra_hv_vblk.o
+>>>>>>> update/master
 
 nvme-y		:= nvme-core.o nvme-scsi.o
 swim_mod-y	:= swim.o swim_asm.o

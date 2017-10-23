@@ -4,7 +4,7 @@
  * Copyright (C) 2010 Google, Inc.
  * Author: Erik Gilling <konkers@android.com>
  *
- * Copyright (c) 2010-2014, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2010-2016, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -77,14 +77,6 @@
 #define  WIN_A_UF_INT		(1 << 8)
 #define  WIN_B_UF_INT		(1 << 9)
 #define  WIN_C_UF_INT		(1 << 10)
-#if defined(CONFIG_ARCH_TEGRA_11x_SOC) || defined(CONFIG_ARCH_TEGRA_14x_SOC) ||\
-	defined(CONFIG_ARCH_TEGRA_12x_SOC)
-#define  HC_UF_INT		(1 << 23) /* Cursor or WinH */
-#endif
-#if defined(CONFIG_ARCH_TEGRA_14x_SOC) || defined(CONFIG_ARCH_TEGRA_12x_SOC)
-#define  WIN_D_UF_INT		(1 << 24)
-#define  WIN_T_UF_INT		(1 << 25)
-#endif
 #define  MSF_INT		(1 << 12)
 #define  SSF_INT		(1 << 13)
 #define  WIN_A_OF_INT		(1 << 14)
@@ -93,6 +85,13 @@
 #define  GPIO_0_INT		(1 << 18)
 #define  GPIO_1_INT		(1 << 19)
 #define  GPIO_2_INT		(1 << 20)
+#ifdef CONFIG_TEGRA_NVDISPLAY
+#define  SMARTDIM_INT		(1 << 24)
+#endif
+#define  NVDISP_UF_INT		(1 << 23)
+#define  HC_UF_INT		(1 << 23) /* Cursor or WinH */
+#define  WIN_D_UF_INT		(1 << 24)
+#define  WIN_T_UF_INT		(1 << 25)
 
 #define DC_CMD_SIGNAL_RAISE1			0x03c
 #define DC_CMD_SIGNAL_RAISE2			0x03d
@@ -108,19 +107,15 @@
 #define  WIN_A_ACT_REQ		(1 << 1)
 #define  WIN_B_ACT_REQ		(1 << 2)
 #define  WIN_C_ACT_REQ		(1 << 3)
-#if defined(CONFIG_ARCH_TEGRA_14x_SOC) || defined(CONFIG_ARCH_TEGRA_12x_SOC)
 #define  WIN_D_ACT_REQ		(1 << 4)
 #define  WIN_H_ACT_REQ		(1 << 5)
-#endif
 #define  CURSOR_ACT_REQ		(1 << 7)
 #define  GENERAL_UPDATE		(1 << 8)
 #define  WIN_A_UPDATE		(1 << 9)
 #define  WIN_B_UPDATE		(1 << 10)
 #define  WIN_C_UPDATE		(1 << 11)
-#if defined(CONFIG_ARCH_TEGRA_14x_SOC) || defined(CONFIG_ARCH_TEGRA_12x_SOC)
 #define  WIN_D_UPDATE		(1 << 12)
 #define  WIN_H_UPDATE		(1 << 13)
-#endif
 #define  CURSOR_UPDATE		(1 << 15)
 #define  NC_HOST_TRIG		(1 << 24)
 
@@ -136,6 +131,7 @@
 #define CURSOR_ACT_CNTR_SEL_H	1
 #define CURSOR_ACT_CNTR_SEL		7
 
+#define  WIN_ACT_CNTR_SEL_HCOUNTER(x)	(1 << ((x) * 2 + 2))
 
 #define DC_COM_CRC_CONTROL			0x300
 #define  CRC_ALWAYS_ENABLE		(1 << 3)
@@ -237,6 +233,8 @@
 #define  LUT2_READ_ADDR(x)		(((x) & 0x3ff) << 8)
 #define  LUT2_READ_EN			(1 << 0)
 
+#define DC_COM_DSC_TOP_CTL			0x33e
+#define  DSC_SLCG_OVERRIDE		(1U << 2)
 
 #define DC_DISP_DISP_SIGNAL_OPTIONS0		0x400
 #define  H_PULSE_0_ENABLE		(1 << 8)
@@ -256,6 +254,8 @@
 #define DC_DISP_DISP_WIN_OPTIONS		0x402
 #define  CURSOR_ENABLE			(1 << 16)
 #define  SOR_ENABLE                     (1 << 25)
+#define  SOR1_ENABLE			(1 << 26)
+#define  SOR1_TIMING_CYA		(1 << 27)
 #define  TVO_ENABLE			(1 << 28)
 #define  DSI_ENABLE			(1 << 29)
 #define  HDMI_ENABLE			(1 << 30)
@@ -415,14 +415,21 @@
 #define	CURSOR_START_ADDR_LOW(_addr) ((_addr & 0xffffffff) >> 10)
 #define	CURSOR_START_ADDR_HI(_addr) (0)
 #endif
+#define   CURSOR_SIZE_32		(0x0 << 24)
 #define   CURSOR_SIZE_64		(0x1 << 24)
 #define   CURSOR_SIZE_128		(0x2 << 24)
 #define   CURSOR_SIZE_256		(0x3 << 24)
 
 #define DC_DISP_CURSOR_POSITION			0x440
+#if defined(CONFIG_TEGRA_NVDISPLAY)
+#define   CURSOR_POSITION(_x, _y)		\
+	(((_x) & ((1 << 16) - 1)) |		\
+	(((_y) & ((1 << 16) - 1)) << 16))
+#else
 #define   CURSOR_POSITION(_x, _y)		\
 	(((_x) & ((1 << 14) - 1)) |		\
 	(((_y) & ((1 << 14) - 1)) << 16))
+#endif
 
 #define DC_DISP_CURSOR_POSITION_NS		0x441
 #define DC_DISP_INIT_SEQ_CONTROL		0x442
@@ -430,6 +437,7 @@
 #define DC_DISP_SPI_INIT_SEQ_DATA_B		0x444
 #define DC_DISP_SPI_INIT_SEQ_DATA_C		0x445
 #define DC_DISP_SPI_INIT_SEQ_DATA_D		0x446
+
 #define DC_DISP_DC_MCCIF_FIFOCTRL		0x480
 #define DC_DISP_MCCIF_DISPLAY0A_HYST		0x481
 #define DC_DISP_MCCIF_DISPLAY0B_HYST		0x482
@@ -440,10 +448,12 @@
 #define   UF_LINE_FLUSH                         (1 << 1)
 
 #define	DC_DISP_BLEND_CURSOR_CONTROL		0x4f1
-#define CURSOR_MODE_CAL(x) ((x) << 24)
-#define CURSOR_DST_BLEND_FACTOR_SELECT(x) ((x) << 16)
-#define CURSOR_SRC_BLEND_FACTOR_SELECT(x) ((x) << 8)
-#define CURSOR_ALPHA	0xff
+#define  WINH_CURS_SELECT(x)		(((x) & 0x1) << 28)
+#define  CURSOR_COMP_MODE(x)		(((x) & 0x1) << 25)
+#define  CURSOR_MODE_SELECT(x)		(((x) & 0x1) << 24)
+#define  CURSOR_DST_BLEND_FACTOR_SELECT(x) ((x) << 16)
+#define  CURSOR_SRC_BLEND_FACTOR_SELECT(x) ((x) << 8)
+#define  CURSOR_ALPHA(a)		((a) & 0xff)
 
 #define DC_WIN_COLOR_PALETTE(x)			(0x500 + (x))
 
@@ -463,10 +473,15 @@
 #define DC_DISP_INTERLACE_FIELD2_DISP_ACTIVE	0x4ea
 #endif
 
+<<<<<<< HEAD
 #if defined(CONFIG_ARCH_TEGRA_12x_SOC)
 #define DC_DISP_CURSOR_START_ADDR_HI		0x4ec
 #define DC_DISP_CURSOR_START_ADDR_HI_NS		0x4ed
 #endif
+=======
+#define DC_DISP_CURSOR_START_ADDR_HI		0x4ec
+#define DC_DISP_CURSOR_START_ADDR_HI_NS		0x4ed
+>>>>>>> update/master
 
 #define DC_WIN_PALETTE_COLOR_EXT		0x600
 #define DC_WIN_H_FILTER_P(x)			(0x601 + (x))
@@ -604,10 +619,6 @@
 
 #endif
 
-
-
-#define DC_WIN_HP_FETCH_CONTROL			0x714
-
 #if !defined(CONFIG_ARCH_TEGRA_2x_SOC)
 #define DC_WIN_GLOBAL_ALPHA			0x715
 #define  GLOBAL_ALPHA_ENABLE		0x10000
@@ -625,21 +636,17 @@
 #define DC_WINBUF_ADDR_V_OFFSET_NS		0x809
 #define DC_WINBUF_UFLOW_STATUS			0x80a
 
-#if defined(CONFIG_ARCH_TEGRA_12x_SOC)
 #define DC_WINBUF_START_ADDR_HI	0x80d
 #define DC_WINBUF_START_ADDR_HI_U	0x80f
 #define DC_WINBUF_START_ADDR_HI_V	0x811
-#endif
 
 #define DC_WINBUF_START_ADDR_FIELD2		0x813
 #define DC_WINBUF_START_ADDR_FIELD2_U	0x815
 #define DC_WINBUF_START_ADDR_FIELD2_V	0x817
 
-#if defined(CONFIG_ARCH_TEGRA_12x_SOC)
 #define DC_WINBUF_START_ADDR_FIELD2_HI	0x819
 #define DC_WINBUF_START_ADDR_FIELD2_HI_U	0x81b
 #define DC_WINBUF_START_ADDR_FIELD2_HI_V	0x81d
-#endif
 
 #define DC_WINBUF_ADDR_H_OFFSET_FIELD2	0x81f
 #define DC_WINBUF_ADDR_V_OFFSET_FIELD2	0x821
@@ -648,11 +655,9 @@
 #define DC_WINBUF_AD_UFLOW_STATUS		0xbca
 #define DC_WINBUF_BD_UFLOW_STATUS		0xdca
 #define DC_WINBUF_CD_UFLOW_STATUS		0xfca
-#if defined(CONFIG_ARCH_TEGRA_14x_SOC) || defined(CONFIG_ARCH_TEGRA_12x_SOC)
 #define DC_WINBUF_DD_UFLOW_STATUS		0x0ca
 #define DC_WINBUF_HD_UFLOW_STATUS		0x1ca
 #define DC_WINBUF_TD_UFLOW_STATUS		0x14a
-#endif
 
 #define DC_WINBUF_BLEND_LAYER_CONTROL		0x716
 #define  WIN_DEPTH(x)			(((x) & 0xff) << 0)
@@ -760,6 +765,22 @@
 #define  WIN_ALPHA_1BIT_WEIGHT0(x)	(((x) & 0xff) << 0)
 #define  WIN_ALPHA_1BIT_WEIGHT1(x)	(((x) & 0xff) << 8)
 
+#define DC_WINBUF_MEMFETCH_CONTROL		0x82b
+#define  MEMFETCH_CLK_GATE_OVERRIDE	(1U << 1)
+#define  MEMFETCH_RESET			(1U << 0)
+
+#define DC_WINBUF_CDE_CONTROL			0x82f
+#define  CLEARRESPONSEONFRAMESTART	(1U << 13)
+#define  CLEARREQUESTONFRAMESTART	(1U << 12)
+#define  ENABLESURFACE0			(1U << 0)
+#define DC_WINBUF_CDE_COMPTAG_BASE_0		0x830
+#define DC_WINBUF_CDE_COMPTAG_BASEHI_0		0x832
+#define DC_WINBUF_CDE_ZBC_COLOR_0		0x834
+#define DC_WINBUF_CDE_SURFACE_OFFSET_0		0x835
+#define DC_WINBUF_CDE_CTB_ENTRY_0		0x836
+#define DC_WINBUF_CDE_CG_SW_OVR			0x837
+#define DC_WINBUF_CDE_PM_CONTROL		0x838
+#define DC_WINBUF_CDE_PM_COUNTER		0x839
 
 #define DC_DISP_SD_CONTROL			0x4c2
 #define  SD_ENABLE_NORMAL		(1 << 0)
@@ -783,6 +804,7 @@
 #define  SD_SMOOTH_K_ENABLE		(1 << 15)
 #define  SD_VSYNC			(0 << 28)
 #define  SD_VPULSE2			(1 << 28)
+#define  SD_BIAS0(x)			(((x) & 0x3) << 29)
 
 #define NUM_BIN_WIDTHS 4
 #define STEPS_PER_AGG_LVL 64
@@ -831,6 +853,7 @@
 #define  SD_BLC_MODE_MAN		(0 << 0)
 #define  SD_BLC_MODE_AUTO		(1 << 1)
 #define  SD_BLC_BRIGHTNESS(val)		(((val) & (0xff << 8)) >> 8)
+#define  BRIGHTNESS_THEORETICAL_MAX 0xffu
 
 #define DC_DISP_SD_HW_K_VALUES			0x4dd
 #define  SD_HW_K_R(val)			(((val) & (0x3ff << 0)) >> 0)
@@ -863,10 +886,6 @@
 #define  NUM_AGG_PRI_LVLS		4
 #define  SD_AGG_PRI_LVL(x)		((x) >> 3)
 #define  SD_GET_AGG(x)			((x) & 0x7)
-
-#define DC_DISP_BLEND_CURSOR_CONTROL		0x4f1
-#define  WINH_CURS_SELECT(x)		(((x) & 0x1) << 28)
-#define  CURSOR_MODE_SELECT(x)		(((x) & 0x1) << 24)
 
 #define DC_DISP_BLEND_BACKGROUND_COLOR		0x4e4
 

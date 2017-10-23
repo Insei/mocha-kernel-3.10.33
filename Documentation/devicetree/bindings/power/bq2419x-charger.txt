@@ -54,6 +54,10 @@ Optional properties:
                       rtc alarm timer to wake the device from LP0.
 - ti,charge-status-gpio : charger gpio control to isolate green led
 
+-extcon-name: the extcon name to be used for USB VBUS detection
+-ti,charge-hw-current-limit-milliamp: maximum hardware input charge
+		 current limit in milliamp
+
 Subnode properties:
 ==================
 There is two optional subnodes, vbus and charger.
@@ -68,6 +72,7 @@ bq2419x: bq2419x@6b {
 	compatible = "ti,bq2419x";
 	reg = <0x6b>;
 	ti,charging-term-current-mA = <100>;
+	extcon-name = "bq2419x-extcon";
 	charger {
 			regulator-name = "batt_regulator";
 			regulator-max-microamp = <3000>;

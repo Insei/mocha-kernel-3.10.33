@@ -25,11 +25,11 @@
 #define MAX_PCIE_SUPPORTED_PORTS 2
 
 struct tegra_pci_platform_data {
-	int port_status[MAX_PCIE_SUPPORTED_PORTS];
-	/* used to identify if current platofrm supports CLKREQ# */
-	bool has_clkreq;
-	int gpio_hot_plug;
-	int gpio_wake;
-	int gpio_x1_slot;
+	bool has_memtype_lpddr4; /* apply WAR for lpddr4 mem */
+	int gpio_hot_plug; /* GPIO num to support hotplug */
+	int gpio_wake; /* GPIO num to support WAKE from LP0 */
+	int gpio_x1_slot; /* GPIO num to enable x1 slot */
+	u32 lane_map; /* lane mux info in byte nibbles */
+	u32 boot_detect_delay; /* program delay in detection */
 };
 #endif

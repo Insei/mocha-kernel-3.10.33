@@ -2,7 +2,7 @@
 /*
  * drivers/video/tegra/dc/sor.h
  *
- * Copyright (c) 2011-2014, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2011-2017, NVIDIA CORPORATION, All rights reserved.
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -18,22 +18,28 @@
 #ifndef __DRIVERS_VIDEO_TEGRA_DC_SOR_H__
 #define __DRIVERS_VIDEO_TEGRA_DC_SOR_H__
 
+#include <linux/tegra-soc.h>
+#include <linux/clk/tegra.h>
+#include <linux/rwsem.h>
+#include <linux/delay.h>
+#include <soc/tegra/tegra_bpmp.h>
+
 enum {
 	TRAINING_PATTERN_DISABLE = 0,
 	TRAINING_PATTERN_1 = 1,
 	TRAINING_PATTERN_2 = 2,
 	TRAINING_PATTERN_3 = 3,
+	TRAINING_PATTERN_D102 = 4,
+	TRAINING_PATTERN_SBLERRRATE = 5,
+	TRAINING_PATTERN_PRBS7 = 6,
+	TRAINING_PATTERN_CSTM = 7,
+	TRAINING_PATTERN_HBR2_COMPLIANCE = 8,
 };
 
 enum tegra_dc_sor_protocol {
 	SOR_DP,
 	SOR_LVDS,
 };
-
-#define SOR_LINK_SPEED_G1_62	6
-#define SOR_LINK_SPEED_G2_7	10
-#define SOR_LINK_SPEED_G5_4	20
-#define SOR_LINK_SPEED_LVDS	7
 
 struct tegra_dc_dp_link_config {
 	bool	is_valid;	/*
@@ -79,23 +85,45 @@ struct tegra_dc_dp_link_config {
 	u8	aux_rd_interval;
 };
 
+enum {
+	TEGRA_SOR_SAFE_CLK = 1,
+	TEGRA_SOR_MACRO_CLK = 2,
+};
 
 struct tegra_dc_sor_data {
 	struct tegra_dc	*dc;
 
 	void __iomem	*base;
+	int instance; /* SOR0 or SOR1 */
+	struct resource	*res;
 	struct resource	*base_res;
 	struct clk	*sor_clk;
+	struct clk *safe_clk;
+	struct clk *brick_clk;
+	struct clk *src_switch_clk;
 
 	u8					 portnum;	/* 0 or 1 */
 	const struct tegra_dc_dp_link_config	*link_cfg;
 
 	bool   power_is_up;
+
+	int dc_reg_ctx[DC_N_WINDOWS + 5];
+	enum {
+		SOR_ATTACHED = 1,
+		SOR_DETACHING,
+		SOR_DETACHED,
+		SOR_SLEEP,
+	} sor_state;
+
+	u8	clk_type;
+	u32  xbar_ctrl[5];
+	struct rw_semaphore reset_lock;
 };
 
 #define TEGRA_SOR_TIMEOUT_MS		1000
-#define TEGRA_SOR_ATTACH_TIMEOUT_MS	100000
+#define TEGRA_SOR_ATTACH_TIMEOUT_MS	50
 #define TEGRA_SOR_SEQ_BUSY_TIMEOUT_MS	10000
+#define TEGRA_DC_POLL_TIMEOUT_MS       50
 
 #define CHECK_RET(x)			\
 	do {				\
@@ -107,10 +135,13 @@ struct tegra_dc_sor_data {
 
 struct tegra_dc_sor_data *tegra_dc_sor_init(struct tegra_dc *dc,
 	const struct tegra_dc_dp_link_config *cfg);
-
+void tegra_sor_config_xbar(struct tegra_dc_sor_data *sor);
 void tegra_dc_sor_destroy(struct tegra_dc_sor_data *sor);
 void tegra_dc_sor_enable_dp(struct tegra_dc_sor_data *sor);
 void tegra_dc_sor_attach(struct tegra_dc_sor_data *sor);
+void tegra_dc_sor_detach(struct tegra_dc_sor_data *sor);
+void tegra_dc_sor_pre_detach(struct tegra_dc_sor_data *sor);
+void tegra_dc_sor_sleep(struct tegra_dc_sor_data *sor);
 void tegra_dc_sor_enable_lvds(struct tegra_dc_sor_data *sor,
 	bool balanced, bool conforming);
 void tegra_dc_sor_disable(struct tegra_dc_sor_data *sor, bool is_lvds);
@@ -131,7 +162,7 @@ void tegra_dc_sor_set_dp_linkctl(struct tegra_dc_sor_data *sor, bool ena,
 	u8 training_pattern, const struct tegra_dc_dp_link_config *cfg);
 void tegra_dc_sor_set_dp_mode(struct tegra_dc_sor_data *sor,
 	const struct tegra_dc_dp_link_config *cfg);
-void tegra_dc_sor_setup_clk(struct tegra_dc_sor_data *sor, struct clk *clk,
+void tegra_sor_setup_clk(struct tegra_dc_sor_data *sor, struct clk *clk,
 	bool is_lvds);
 void tegra_sor_precharge_lanes(struct tegra_dc_sor_data *sor);
 int tegra_dc_sor_set_power_state(struct tegra_dc_sor_data *sor,
@@ -140,18 +171,37 @@ void tegra_dc_sor_modeset_notifier(struct tegra_dc_sor_data *sor,
 	bool is_lvds);
 void tegra_sor_tpg(struct tegra_dc_sor_data *sor, u32 tp, u32 n_lanes);
 void tegra_sor_port_enable(struct tegra_dc_sor_data *sor, bool enb);
-int tegra_sor_power_dp_lanes(struct tegra_dc_sor_data *sor,
+int tegra_sor_power_lanes(struct tegra_dc_sor_data *sor,
 					u32 lane_count, bool pu);
+void tegra_sor_config_dp_clk(struct tegra_dc_sor_data *sor);
+void tegra_sor_stop_dc(struct tegra_dc_sor_data *sor);
+void tegra_sor_start_dc(struct tegra_dc_sor_data *sor);
+void tegra_sor_config_safe_clk(struct tegra_dc_sor_data *sor);
+void tegra_sor_hdmi_pad_power_up(struct tegra_dc_sor_data *sor);
+void tegra_sor_hdmi_pad_power_down(struct tegra_dc_sor_data *sor);
+void tegra_sor_config_hdmi_clk(struct tegra_dc_sor_data *sor);
+void tegra_dc_sor_termination_cal(struct tegra_dc_sor_data *sor);
 
 static inline u32 tegra_sor_readl(struct tegra_dc_sor_data *sor, u32 reg)
 {
-	u32 reg_val = readl(sor->base + reg * 4);
+	u32 reg_val;
+	if (likely(tegra_platform_is_silicon())) {
+		if (WARN(!tegra_is_clk_enabled(sor->sor_clk),
+		"SOR is clock gated!"))
+			return 0;
+	}
+	reg_val = readl(sor->base + reg * 4);
 	return reg_val;
 }
 
 static inline void tegra_sor_writel(struct tegra_dc_sor_data *sor,
 	u32 reg, u32 val)
 {
+	if (likely(tegra_platform_is_silicon())) {
+		if (WARN(!tegra_is_clk_enabled(sor->sor_clk),
+		"SOR is clock gated!"))
+			return;
+	}
 	writel(val, sor->base + reg * 4);
 }
 
@@ -162,6 +212,30 @@ static inline void tegra_sor_write_field(struct tegra_dc_sor_data *sor,
 	reg_val &= ~mask;
 	reg_val |= val;
 	tegra_sor_writel(sor, reg, reg_val);
+}
+
+static inline void tegra_sor_clk_enable(struct tegra_dc_sor_data *sor)
+{
+	if (tegra_platform_is_silicon() || tegra_bpmp_running())
+		clk_prepare_enable(sor->sor_clk);
+}
+
+static inline void tegra_sor_clk_disable(struct tegra_dc_sor_data *sor)
+{
+	if (tegra_platform_is_silicon() || tegra_bpmp_running())
+		clk_disable_unprepare(sor->sor_clk);
+}
+
+static inline void tegra_sor_safe_clk_enable(struct tegra_dc_sor_data *sor)
+{
+	if (tegra_platform_is_silicon() || tegra_bpmp_running())
+		clk_prepare_enable(sor->safe_clk);
+}
+
+static inline void tegra_sor_safe_clk_disable(struct tegra_dc_sor_data *sor)
+{
+	if (tegra_platform_is_silicon() || tegra_bpmp_running())
+		clk_disable_unprepare(sor->safe_clk);
 }
 
 static inline int lt_param_idx(int link_bw)
@@ -184,4 +258,47 @@ static inline int lt_param_idx(int link_bw)
 	return idx;
 }
 
+static inline void tegra_sor_reset(struct tegra_dc_sor_data *sor)
+{
+	if (tegra_platform_is_linsim())
+		return;
+
+	down_write(&sor->reset_lock);
+	tegra_periph_reset_assert(sor->sor_clk);
+	mdelay(2);
+	tegra_periph_reset_deassert(sor->sor_clk);
+	mdelay(1);
+	up_write(&sor->reset_lock);
+}
+
+static inline u32 tegra_sor_readl_ext(struct tegra_dc_sor_data *sor, u32 reg)
+{
+	u32 val;
+
+	down_read(&sor->reset_lock);
+	val = tegra_sor_readl(sor, reg);
+	up_read(&sor->reset_lock);
+	return val;
+}
+
+static inline void tegra_sor_writel_ext(struct tegra_dc_sor_data *sor,
+	u32 reg, u32 val)
+{
+	down_read(&sor->reset_lock);
+	tegra_sor_writel(sor, reg, val);
+	up_read(&sor->reset_lock);
+}
+
+static inline void tegra_sor_write_field_ext(struct tegra_dc_sor_data *sor,
+	u32 reg, u32 mask, u32 val)
+{
+	u32 reg_val;
+
+	down_read(&sor->reset_lock);
+	reg_val = tegra_sor_readl(sor, reg);
+	reg_val &= ~mask;
+	reg_val |= val;
+	tegra_sor_writel(sor, reg, reg_val);
+	up_read(&sor->reset_lock);
+}
 #endif

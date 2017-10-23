@@ -31,8 +31,12 @@
 #include <linux/debugfs.h>
 #include <linux/sysedp.h>
 #include <linux/regmap.h>
+#include <linux/of_gpio.h>
 #include <media/nvc.h>
 #include <media/as364x.h>
+#include "camera_platform.h"
+
+#include "nvc_utilities.h"
 
 /* #define DEBUG_I2C_TRAFFIC */
 
@@ -783,24 +787,25 @@ static int as364x_strobe(struct as364x_info *info, int t_on)
 	return gpio_direction_output(gpio, lact ^ (t_on & 1));
 }
 
-#ifdef CONFIG_PM
-static int as364x_suspend(struct i2c_client *client, pm_message_t msg)
+#ifdef CONFIG_PM_SLEEP
+static int as364x_suspend(struct device *dev)
 {
-	struct as364x_info *info = i2c_get_clientdata(client);
+	struct as364x_info *info = dev_get_drvdata(dev);
 
-	dev_info(&client->dev, "Suspending %s\n", info->dev_cap->name);
+	dev_info(dev, "Suspending %s\n", info->dev_cap->name);
 
 	return 0;
 }
 
-static int as364x_resume(struct i2c_client *client)
+static int as364x_resume(struct device *dev)
 {
-	struct as364x_info *info = i2c_get_clientdata(client);
+	struct as364x_info *info = dev_get_drvdata(dev);
 
-	dev_info(&client->dev, "Resuming %s\n", info->dev_cap->name);
+	dev_info(dev, "Resuming %s\n", info->dev_cap->name);
 
 	return 0;
 }
+#endif /* CONFIG_PM_SLEEP */
 
 static void as364x_shutdown(struct i2c_client *client)
 {
@@ -810,7 +815,6 @@ static void as364x_shutdown(struct i2c_client *client)
 
 	as364x_set_leds(info, 3, 0, 0);
 }
-#endif
 
 static int as364x_power_on(struct as364x_info *info)
 {
@@ -966,7 +970,8 @@ read_devid_exit:
 	return err;
 }
 
-static int as364x_user_get_param(struct as364x_info *info, long arg)
+static int as364x_user_get_param(
+	struct as364x_info *info, long arg, bool is_compat)
 {
 	struct nvc_param params;
 	struct nvc_torch_pin_state pinstate;
@@ -975,9 +980,7 @@ static int as364x_user_get_param(struct as364x_info *info, long arg)
 	int err = 0;
 	u8 reg;
 
-	if (copy_from_user(&params,
-			(const void __user *)arg,
-			sizeof(struct nvc_param))) {
+	if (get_user_nvc_param(info->dev, is_compat, arg, 0, &params, NULL)) {
 		dev_err(info->dev,
 			"%s %d copy_from_user err\n", __func__, __LINE__);
 		return -EINVAL;
@@ -1071,7 +1074,7 @@ static int as364x_user_get_param(struct as364x_info *info, long arg)
 		err = -EINVAL;
 	}
 
-	if (!err && copy_to_user((void __user *)params.p_value,
+	if (!err && copy_to_user((void __user *)(uintptr_t)params.p_value,
 		data_ptr, data_size)) {
 		dev_err(info->dev, "%s copy_to_user err line %d\n",
 			__func__, __LINE__);
@@ -1089,8 +1092,9 @@ static int as364x_get_levels(struct as364x_info *info,
 	struct nvc_torch_timer_capabilities_v1 *p_tm;
 	u8 op_mode;
 
-	if (copy_from_user(plevels, (const void __user *)params->p_value,
-			   sizeof(*plevels))) {
+	if (copy_from_user(plevels,
+		(const void __user *)(uintptr_t)params->p_value,
+		sizeof(*plevels))) {
 		dev_err(info->dev, "%s %d copy_from_user err\n",
 				__func__, __LINE__);
 		return -EINVAL;
@@ -1141,15 +1145,15 @@ static int as364x_get_levels(struct as364x_info *info,
 	return 0;
 }
 
-static int as364x_user_set_param(struct as364x_info *info, long arg)
+static int as364x_user_set_param(
+	struct as364x_info *info, long arg, bool is_compat)
 {
 	struct nvc_param params;
 	struct nvc_torch_set_level_v1 led_levels;
 	int err = 0;
 	u8 val;
 
-	if (copy_from_user(
-		&params, (const void __user *)arg, sizeof(struct nvc_param))) {
+	if (get_user_nvc_param(info->dev, is_compat, arg, 0, &params, NULL)) {
 		dev_err(info->dev,
 			"%s %d copy_from_user err\n", __func__, __LINE__);
 		return -EINVAL;
@@ -1172,7 +1176,8 @@ static int as364x_user_set_param(struct as364x_info *info, long arg)
 			led_levels.levels[0], led_levels.levels[1]);
 		break;
 	case NVC_PARAM_FLASH_PIN_STATE:
-		if (copy_from_user(&val, (const void __user *)params.p_value,
+		if (copy_from_user(&val,
+			(const void __user *)(uintptr_t)params.p_value,
 			sizeof(val))) {
 			dev_err(info->dev, "%s %d copy_from_user err\n",
 				__func__, __LINE__);
@@ -1200,14 +1205,22 @@ static long as364x_ioctl(struct file *file,
 	int pwr;
 	int err = 0;
 
-	switch (_IOC_NR(cmd)) {
-	case _IOC_NR(NVC_IOCTL_PARAM_WR):
-		err = as364x_user_set_param(info, arg);
+	switch (cmd) {
+#ifdef CONFIG_COMPAT
+	case NVC_IOCTL32_PARAM_WR:
+		err = as364x_user_set_param(info, arg, true);
 		break;
-	case _IOC_NR(NVC_IOCTL_PARAM_RD):
-		err = as364x_user_get_param(info, arg);
+	case NVC_IOCTL32_PARAM_RD:
+		err = as364x_user_get_param(info, arg, true);
 		break;
-	case _IOC_NR(NVC_IOCTL_PWR_WR):
+#endif
+	case NVC_IOCTL_PARAM_WR:
+		err = as364x_user_set_param(info, arg, false);
+		break;
+	case NVC_IOCTL_PARAM_RD:
+		err = as364x_user_get_param(info, arg, false);
+		break;
+	case NVC_IOCTL_PWR_WR:
 		/* This is a Guaranteed Level of Service (GLOS) call */
 		pwr = (int)arg * 2;
 		dev_dbg(info->dev, "%s PWR_WR: %d\n", __func__, pwr);
@@ -1219,7 +1232,7 @@ static long as364x_ioctl(struct file *file,
 		if (info->pdata->cfg & NVC_CFG_NOERR)
 			err = 0;
 		break;
-	case _IOC_NR(NVC_IOCTL_PWR_RD):
+	case NVC_IOCTL_PWR_RD:
 		pwr = info->pwr_state / 2;
 		dev_dbg(info->dev, "%s PWR_RD: %d\n", __func__, pwr);
 		if (copy_to_user((void __user *)arg, (const void *)&pwr,
@@ -1296,7 +1309,7 @@ static int as364x_regulator_get(struct as364x_info *info,
 	reg = regulator_get(info->dev, vreg_name);
 	if (unlikely(IS_ERR(reg))) {
 		dev_err(info->dev,
-			"%s %s ERR: %d\n", __func__, vreg_name, (int)reg);
+			"%s %s ERR: %p\n", __func__, vreg_name, reg);
 		err = PTR_ERR(reg);
 		reg = NULL;
 	} else
@@ -1373,10 +1386,111 @@ static void as364x_caps_layout(struct as364x_info *info)
 	}
 	info->torch_cap_size = AS364X_TORCH_CAP_TIMEOUT_SIZE;
 
-	dev_dbg(info->dev, "%s: %d(%d + %d), %d(%d + %d)\n", __func__,
-		info->flash_cap_size, as364x_flash_cap_size,
-		as364x_flash_timeout_size, info->torch_cap_size,
-		as364x_torch_cap_size, as364x_torch_timeout_size);
+	dev_dbg(info->dev, "%s: %d(%lu + %lu), %d(%lu + %lu)\n", __func__,
+		info->flash_cap_size, (unsigned long)as364x_flash_cap_size,
+		(unsigned long)as364x_flash_timeout_size, info->torch_cap_size,
+		(unsigned long)as364x_torch_cap_size,
+		(unsigned long) as364x_torch_timeout_size);
+}
+
+static void as364x_parse_caps(struct device_node *np, struct as364x_config *cfg)
+{
+	u32 data;
+
+	of_property_read_u32(np, "led-mask", &cfg->led_mask);
+	of_property_read_u32(np, "current-limit", &data);
+	if (data)
+		cfg->I_limit_mA = (u16)data;
+	of_property_read_u32(np, "txmasked-current", &data);
+	if (data)
+		cfg->txmasked_current_mA = (u16)data;
+	of_property_read_u32(np, "vin-low-v-run", &data);
+	if (data)
+		cfg->vin_low_v_run_mV = (u16)data;
+	of_property_read_u32(np, "vin-low-v", &data);
+	if (data)
+		cfg->vin_low_v_mV = (u16)data;
+	of_property_read_u32(np, "max-total-current", &data);
+	if (data)
+		cfg->max_total_current_mA = (u16)data;
+	of_property_read_u32(np, "max-peak-current", &data);
+	if (data)
+		cfg->max_peak_current_mA = (u16)data;
+	of_property_read_u32(np, "max-torch-current", &data);
+	if (data)
+		cfg->max_torch_current_mA = (u16)data;
+	of_property_read_u32(np, "max-peak-duration", &data);
+	if (data)
+		cfg->max_peak_duration_ms = (u16)data;
+	of_property_read_u32(np, "max-sustained-current", &data);
+	if (data)
+		cfg->max_sustained_current_mA = (u16)data;
+	of_property_read_u32(np, "min-current", &data);
+	if (data)
+		cfg->min_current_mA = (u16)data;
+	of_property_read_u32(np, "strobe-type", &data);
+	if (data)
+		cfg->strobe_type = (u8)data;
+	of_property_read_u32(np, "pwm-duty", &data);
+	if (data)
+		cfg->inct_pwm = (u8)data;
+	of_property_read_u32(np, "default-flash-time", &data);
+	if (data)
+		cfg->def_ftimer = (u8)data;
+	cfg->synchronized_led = of_property_read_bool(np, "sync-led");
+	cfg->use_tx_mask = of_property_read_bool(np, "use-tx-mask");
+	cfg->freq_switch_on = of_property_read_bool(np, "freq-switch-on");
+	cfg->load_balance_on = of_property_read_bool(np, "load-balance-on");
+	cfg->led_off_when_vin_low =
+		of_property_read_bool(np, "led-off-vin-low");
+	cfg->boost_mode = of_property_read_bool(np, "boost-mode");
+}
+
+static struct as364x_platform_data *as364x_parse_dt(struct i2c_client *client)
+{
+	struct device_node *np = client->dev.of_node;
+	struct as364x_platform_data *pdata;
+	u32 data;
+
+	pdata = devm_kzalloc(&client->dev, sizeof(*pdata), GFP_KERNEL);
+	if (!pdata) {
+		dev_err(&client->dev, "Failed to allocate pdata\n");
+		return NULL;
+	}
+
+	/* init with default platform data values in board file or driver */
+	if (client->dev.platform_data)
+		memcpy(pdata, client->dev.platform_data, sizeof(*pdata));
+	else
+		memcpy(pdata, &as364x_default_pdata, sizeof(*pdata));
+
+	/* generic info */
+	of_property_read_string(np, "dev_name", &pdata->dev_name);
+	of_property_read_u32(np, "num", &pdata->num);
+	of_property_read_u32(np, "flash-type", &pdata->type);
+	if (of_property_read_bool(np, "off-to-standby"))
+		pdata->cfg |= NVC_CFG_OFF2STDBY;
+	if (of_property_read_bool(np, "boot-init"))
+		pdata->cfg |= NVC_CFG_BOOT_INIT;
+	if (of_property_read_bool(np, "nodev-check"))
+		pdata->cfg |= NVC_CFG_NODEV;
+	if (of_property_read_bool(np, "error-free"))
+		pdata->cfg |= NVC_CFG_NOERR;
+	pdata->gpio_strobe = of_get_named_gpio(np, "strobe-gpio", 0);
+	pdata->strobe_low_act = of_property_read_bool(np, "strobe-low-active");
+
+	/* pin state */
+	of_property_read_u32(np, "pin-mask", &data);
+	if (data)
+		pdata->pinstate.mask = (u16)data;
+	of_property_read_u32(np, "pin-value", &data);
+	if (data)
+		pdata->pinstate.values = (u16)data;
+
+	/* configuration info */
+	as364x_parse_caps(np, &pdata->config);
+
+	return pdata;
 }
 
 static int as364x_probe(
@@ -1405,9 +1519,12 @@ static int as364x_probe(
 
 	info->i2c_client = client;
 	info->dev = &client->dev;
-	if (client->dev.platform_data)
+	if (client->dev.of_node)
+		info->pdata = as364x_parse_dt(client);
+	else
 		info->pdata = client->dev.platform_data;
-	else {
+
+	if (info->pdata == NULL) {
 		info->pdata = &as364x_default_pdata;
 		dev_dbg(&client->dev,
 				"%s No platform data.  Using defaults.\n",
@@ -1444,7 +1561,7 @@ static int as364x_probe(
 		dev_info(&client->dev, "%s device %02x found\n",
 			__func__, info->regs.dev_id);
 
-	if (info->pdata->dev_name != 0)
+	if (info->pdata->dev_name != NULL)
 		strncpy(info->devname, info->pdata->dev_name,
 			sizeof(info->devname) - 1);
 	else
@@ -1667,19 +1784,20 @@ static int as364x_debugfs_init(struct as364x_info *info)
 	return -EFAULT;
 }
 
+static const struct dev_pm_ops as364x_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(as364x_suspend, as364x_resume)
+};
+
 static struct i2c_driver as364x_driver = {
 	.driver = {
 		.name = "as364x",
 		.owner = THIS_MODULE,
+		.pm = &as364x_pm_ops,
 	},
 	.id_table = as364x_id,
 	.probe = as364x_probe,
 	.remove = as364x_remove,
-#ifdef CONFIG_PM
 	.shutdown = as364x_shutdown,
-	.suspend  = as364x_suspend,
-	.resume   = as364x_resume,
-#endif
 };
 
 module_i2c_driver(as364x_driver);

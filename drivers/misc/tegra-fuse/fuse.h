@@ -38,6 +38,7 @@
 
 /* fuse registers */
 #define FUSE_CTRL		0x000
+#define FUSE_CTRL_PD		BIT(26)
 #define FUSE_REG_ADDR		0x004
 #define FUSE_REG_READ		0x008
 #define FUSE_REG_WRITE		0x00C
@@ -61,6 +62,10 @@
 #define PMC_OSC_FREQ_MASK	(BIT(2) | BIT(3))
 #define PMC_OSC_FREQ_SHIFT	2
 #define CAR_OSC_FREQ_SHIFT	28
+
+#define PMC_FUSE_CTRL			0x450
+#define PMC_FUSE_CTRL_PS18_LATCH_SET	BIT(8)
+#define PMC_FUSE_CTRL_PS18_LATCH_CLEAR	BIT(9)
 
 #define FUSE_SENSE_DONE_BIT	BIT(30)
 #define START_DATA		BIT(0)
@@ -93,7 +98,7 @@ enum fuse_io_param {
 	VP8_ENABLE, /* 1 bit long */
 	ODM_LOCK, /* 4 bits long */
 	SBK_DEVKEY_STATUS,
-#ifdef CONFIG_AID_FUSE
+#ifdef CONFIG_ARM64
 	AID,
 #endif
 	_PARAMS_U32 = 0x7FFFFFFF
@@ -150,9 +155,11 @@ struct fuse_data {
 	u32 odm_rsvd[8];
 	u32 public_key[8];
 	u32 pkc_disable;
+#ifndef CONFIG_ARCH_TEGRA_21x_SOC
 	u32 vp8_enable;
+#endif
 	u32 odm_lock;
-#ifdef CONFIG_AID_FUSE
+#ifdef CONFIG_ARM64
 	u32 aid;
 #endif
 };
@@ -161,4 +168,7 @@ ssize_t tegra_fuse_show(struct device *dev, struct device_attribute *attr,
 								char *buf);
 ssize_t tegra_fuse_store(struct device *dev, struct device_attribute *attr,
 					const char *buf, size_t count);
+u32 fuse_cmd_read(u32 addr);
+
+int tegra_fuse_tsosc_init(void);
 #endif /* FUSE_H */

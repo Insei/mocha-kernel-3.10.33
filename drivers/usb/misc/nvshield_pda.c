@@ -77,6 +77,21 @@ static struct nvshield_product nvshield_list[] = {
 		.id = 3,
 		.max_voltage_mv = 13000,
 	},
+<<<<<<< HEAD
+=======
+	{
+		.name = "Green Arrow",
+		.dt_name = "nvidia,green-arrow",
+		.id = 4,
+		.max_voltage_mv = 12000,
+	},
+	{
+		.name = "Hawkeye",
+		.dt_name = "nvidia,he2290",
+		.id = 2,
+		.max_voltage_mv = 12000,
+	},
+>>>>>>> update/master
 };
 
 static int send_command(struct nvshield_pda *pda)

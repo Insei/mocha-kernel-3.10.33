@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2013-2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -30,22 +30,18 @@
 #include <linux/regmap.h>
 #include <linux/export.h>
 #include <linux/module.h>
+#include <linux/of_gpio.h>
+#include <linux/sysedp.h>
+#include <media/camera_common.h>
 
 #include <media/ov7695.h>
 
 #define SIZEOF_I2C_TRANSBUF 128
 
-#define	OV7695_TABLE_START	0x01
 #define	OV7695_TABLE_END	0x02
 #define	OV7695_WAIT_MS		0xFFFF
 
-struct ov7695_reg {
-	u16 addr;
-	u16 val;
-};
-
-static struct ov7695_reg mode_640x480_30fps[] = {
-	{OV7695_TABLE_START, 0x01},
+static struct reg_8 mode_640x480_30fps[] = {
 	{0x0100, 0x00},
 	{OV7695_WAIT_MS, 0x0a},
 	{0x0103, 0x01},
@@ -87,15 +83,16 @@ static struct ov7695_reg mode_640x480_30fps[] = {
 	{0x5001, 0x3f},
 	{0x5002, 0x48},
 	{0x5910, 0x00},
-	{0x3a0f, 0x48},
-	{0x3a10, 0x40},
+	{0x3a0f, 0x38},
+	{0x3a10, 0x30},
 	{0x3a11, 0x90},
-	{0x3a1b, 0x4a},
-	{0x3a1e, 0x3e},
+	{0x3a1b, 0x3a},
+	{0x3a1e, 0x2e},
 	{0x3a1f, 0x18},
-	{0x3a18, 0x00},
-	{0x3a19, 0xf8},
+	{0x3a18, 0x01},
+	{0x3a19, 0x7f},
 	{0x3503, 0x00},
+	{0x3a05, 0x28},
 	{0x3a00, 0x7c},
 	{0x382a, 0x08},
 	{0x3a02, 0x03},
@@ -109,7 +106,7 @@ static struct ov7695_reg mode_640x480_30fps[] = {
 	{0x5101, 0x50},
 	{0x5102, 0x00},
 	{0x5103, 0xf8},
-	{0x5104, 0x03},
+	{0x5104, 0x04},
 	{0x5105, 0x00},
 	{0x5106, 0x00},
 	{0x5107, 0x00},
@@ -117,7 +114,7 @@ static struct ov7695_reg mode_640x480_30fps[] = {
 	{0x5109, 0x50},
 	{0x510a, 0x00},
 	{0x510b, 0xf8},
-	{0x510c, 0x02},
+	{0x510c, 0x03},
 	{0x510d, 0x00},
 	{0x510e, 0x00},
 	{0x510f, 0x00},
@@ -125,7 +122,7 @@ static struct ov7695_reg mode_640x480_30fps[] = {
 	{0x5111, 0x50},
 	{0x5112, 0x00},
 	{0x5113, 0xf8},
-	{0x5114, 0x02},
+	{0x5114, 0x03},
 	{0x5115, 0x00},
 	{0x5116, 0x00},
 	{0x5117, 0x00},
@@ -152,7 +149,7 @@ static struct ov7695_reg mode_640x480_30fps[] = {
 	{0x5003, 0x80},
 	{0x5500, 0x08},
 	{0x5501, 0x48},
-	{0x5502, 0x16},
+	{0x5502, 0x26},
 	{0x5503, 0x08},
 	{0x5504, 0x08},
 	{0x5505, 0x48},
@@ -178,25 +175,35 @@ static struct ov7695_reg mode_640x480_30fps[] = {
 	{0x560b, 0x98},
 	{0x5800, 0x02},
 	{0x5803, 0x38},
-	{0x5804, 0x34},
-	{0x5908, 0x62},
-	{0x5909, 0x26},
-	{0x590a, 0xe6},
-	{0x590b, 0x6e},
-	{0x590c, 0xea},
-	{0x590d, 0xae},
-	{0x590e, 0xa6},
-	{0x590f, 0x6a},
+	{0x5804, 0x24},
+	{0x5908, 0x31},
+	{0x5909, 0x13},
+	{0x590a, 0xf3},
+	{0x590b, 0x3f},
+	{0x590c, 0xf3},
+	{0x590d, 0x3f},
+	{0x590e, 0x31},
+	{0x590f, 0x13},
 	{0x0100, 0x01},
 	{OV7695_TABLE_END, 0x01},
 };
 
-static struct ov7695_reg ov7695_Whitebalance_Auto[] = {
+static struct reg_8 ov7695_VFR_On[] = {
+	{0x3a00, 0x7c},
+	{OV7695_TABLE_END, 0x0000}
+};
+
+static struct reg_8 ov7695_VFR_Off[] = {
+	{0x3a00, 0x78},
+	{OV7695_TABLE_END, 0x0000}
+};
+
+static struct reg_8 ov7695_Whitebalance_Auto[] = {
 	{0x5200, 0x00},
 	{OV7695_TABLE_END, 0x0000}
 };
 
-static struct ov7695_reg ov7695_Whitebalance_Daylight[] = {
+static struct reg_8 ov7695_Whitebalance_Daylight[] = {
 	{0x5200, 0x20},
 	{0x5204, 0x05},
 	{0x5205, 0x1e},
@@ -207,7 +214,7 @@ static struct ov7695_reg ov7695_Whitebalance_Daylight[] = {
 	{OV7695_TABLE_END, 0x0000}
 };
 
-static struct ov7695_reg ov7695_Whitebalance_Cloudy[] = {
+static struct reg_8 ov7695_Whitebalance_Cloudy[] = {
 	{0x5200, 0x20},
 	{0x5204, 0x06},
 	{0x5205, 0x00},
@@ -218,7 +225,7 @@ static struct ov7695_reg ov7695_Whitebalance_Cloudy[] = {
 	{OV7695_TABLE_END, 0x0000}
 };
 
-static struct ov7695_reg ov7695_Whitebalance_Incandescent[] = {
+static struct reg_8 ov7695_Whitebalance_Incandescent[] = {
 	{0x5200, 0x20},
 	{0x5204, 0x04},
 	{0x5205, 0x00},
@@ -229,7 +236,7 @@ static struct ov7695_reg ov7695_Whitebalance_Incandescent[] = {
 	{OV7695_TABLE_END, 0x0000}
 };
 
-static struct ov7695_reg ov7695_Whitebalance_Fluorescent[] = {
+static struct reg_8 ov7695_Whitebalance_Fluorescent[] = {
 	{0x5200, 0x20},
 	{0x5204, 0x04},
 	{0x5205, 0x00},
@@ -241,53 +248,53 @@ static struct ov7695_reg ov7695_Whitebalance_Fluorescent[] = {
 };
 
 
-static struct ov7695_reg ov7695_EV_zero[] = {
-	{0x3a0f, 0x48},
-	{0x3a10, 0x40},
+static struct reg_8 ov7695_EV_zero[] = {
+	{0x3a0f, 0x38},
+	{0x3a10, 0x30},
 	{0x3a11, 0x90},
-	{0x3a1b, 0x4a},
-	{0x3a1e, 0x3e},
+	{0x3a1b, 0x3a},
+	{0x3a1e, 0x2e},
 	{0x3a1f, 0x18},
 	{OV7695_TABLE_END, 0x0000}
 };
 
-static struct ov7695_reg ov7695_EV_plus_1[] = {
-	{0x3a0f, 0x50},
-	{0x3a10, 0x48},
-	{0x3a11, 0x98},
-	{0x3a1b, 0x52},
-	{0x3a1e, 0x46},
-	{0x3a1f, 0x20},
-	{OV7695_TABLE_END, 0x0000}
-};
-
-static struct ov7695_reg ov7695_EV_plus_2[] = {
-	{0x3a0f, 0x58},
-	{0x3a10, 0x50},
+static struct reg_8 ov7695_EV_plus_1[] = {
+	{0x3a0f, 0x48},
+	{0x3a10, 0x40},
 	{0x3a11, 0xa0},
-	{0x3a1b, 0x5a},
-	{0x3a1e, 0x4e},
+	{0x3a1b, 0x4a},
+	{0x3a1e, 0x3e},
 	{0x3a1f, 0x28},
 	{OV7695_TABLE_END, 0x0000}
 };
 
-static struct ov7695_reg ov7695_EV_minus_1[] = {
-	{0x3a0f, 0x40},
-	{0x3a10, 0x38},
-	{0x3a11, 0x88},
-	{0x3a1b, 0x42},
-	{0x3a1e, 0x36},
-	{0x3a1f, 0x10},
+static struct reg_8 ov7695_EV_plus_2[] = {
+	{0x3a0f, 0x58},
+	{0x3a10, 0x50},
+	{0x3a11, 0xb0},
+	{0x3a1b, 0x5a},
+	{0x3a1e, 0x4e},
+	{0x3a1f, 0x38},
 	{OV7695_TABLE_END, 0x0000}
 };
 
-static struct ov7695_reg ov7695_EV_minus_2[] = {
-	{0x3a0f, 0x38},
-	{0x3a10, 0x30},
+static struct reg_8 ov7695_EV_minus_1[] = {
+	{0x3a0f, 0x28},
+	{0x3a10, 0x20},
 	{0x3a11, 0x80},
-	{0x3a1b, 0x3a},
-	{0x3a1e, 0x2e},
+	{0x3a1b, 0x2a},
+	{0x3a1e, 0x1e},
 	{0x3a1f, 0x08},
+	{OV7695_TABLE_END, 0x0000}
+};
+
+static struct reg_8 ov7695_EV_minus_2[] = {
+	{0x3a0f, 0x18},
+	{0x3a10, 0x10},
+	{0x3a11, 0x70},
+	{0x3a1b, 0x1a},
+	{0x3a1e, 0x0e},
+	{0x3a1f, 0x04},
 	{OV7695_TABLE_END, 0x0000}
 };
 
@@ -296,11 +303,11 @@ struct ov7695_info {
 	struct ov7695_power_rail	power;
 	struct ov7695_sensordata	sensor_data;
 	struct i2c_client		*i2c_client;
-	struct clk			*mclk;
 	struct ov7695_platform_data	*pdata;
 	struct regmap			*regmap;
+	struct sysedp_consumer		*sysedpc;
 	atomic_t			in_use;
-	const struct ov7695_reg		*mode;
+	const struct reg_8		*mode;
 #ifdef CONFIG_DEBUG_FS
 	struct dentry			*debugfs_root;
 	u32				debug_i2c_offset;
@@ -311,8 +318,8 @@ struct ov7695_info {
 struct ov7695_mode_desc {
 	u16			xres;
 	u16			yres;
-	const struct ov7695_reg *mode_tbl;
-	struct ov7695_modeinfo	mode_info;
+	const struct reg_8 *mode_tbl;
+	struct ov7695_mode	mode_info;
 };
 
 static struct ov7695_mode_desc mode_table[] = {
@@ -343,12 +350,6 @@ static inline int ov7695_read_reg(struct ov7695_info *info, u16 addr, u8 *val)
 	return regmap_read(info->regmap, addr, (unsigned int *) val);
 }
 
-static int ov7695_write_reg8(struct ov7695_info *info, u16 addr, u8 val)
-{
-	dev_dbg(&info->i2c_client->dev, "0x%x = 0x%x\n", addr, val);
-	return regmap_write(info->regmap, addr, val);
-}
-
 static int ov7695_write_reg16(struct ov7695_info *info, u16 addr, u16 val)
 {
 	unsigned char data[2];
@@ -360,38 +361,12 @@ static int ov7695_write_reg16(struct ov7695_info *info, u16 addr, u16 val)
 	return regmap_raw_write(info->regmap, addr, data, sizeof(data));
 }
 
-static int ov7695_write_table(
-	struct ov7695_info *info,
-	const struct ov7695_reg table[])
-{
-	int err;
-	const struct ov7695_reg *next;
-	u16 val;
-
-	dev_dbg(&info->i2c_client->dev, "yuv %s\n", __func__);
-
-	for (next = table; next->addr != OV7695_TABLE_END; next++) {
-		if (next->addr == OV7695_WAIT_MS) {
-			msleep(next->val);
-			continue;
-		}
-
-		val = next->val;
-
-		dev_dbg(&info->i2c_client->dev,
-			"%s: addr = 0x%4x, val = 0x%2x\n",
-			__func__, next->addr, val);
-		err = ov7695_write_reg8(info, next->addr, val);
-		if (err)
-			return err;
-	}
-	return 0;
-}
-
 static void ov7695_mclk_disable(struct ov7695_info *info)
 {
 	dev_dbg(&info->i2c_client->dev, "%s: disable MCLK\n", __func__);
-	clk_disable_unprepare(info->mclk);
+	if (!(info->power.mclk))
+		return;
+	clk_disable_unprepare(info->power.mclk);
 }
 
 static int ov7695_mclk_enable(struct ov7695_info *info)
@@ -402,20 +377,96 @@ static int ov7695_mclk_enable(struct ov7695_info *info)
 	dev_dbg(&info->i2c_client->dev, "%s: enable MCLK with %lu Hz\n",
 		__func__, mclk_init_rate);
 
-	err = clk_set_rate(info->mclk, mclk_init_rate);
+	if (!(info->power.mclk))
+		return 0;
+	err = clk_set_rate(info->power.mclk, mclk_init_rate);
 	if (!err)
-		err = clk_prepare_enable(info->mclk);
+		err = clk_prepare_enable(info->power.mclk);
 	return err;
+}
+
+static int ov7695_power_on(struct ov7695_info *info)
+{
+	struct ov7695_power_rail *pw = &info->power;
+	int err;
+
+	err = ov7695_mclk_enable(info);
+	if (err)
+		return err;
+
+	if (info->pdata && info->pdata->power_on)
+		return info->pdata->power_on(&info->power);
+
+	if (pw->cam_pwdn) {
+		gpio_set_value(pw->cam_pwdn, 0);
+		usleep_range(1000, 1020);
+	}
+
+	if (pw->avdd) {
+		err = regulator_enable(pw->avdd);
+		if (unlikely(err))
+			goto ov7695_avdd_fail;
+		usleep_range(300, 320);
+	}
+
+	if (pw->iovdd) {
+		err = regulator_enable(pw->iovdd);
+		if (unlikely(err))
+			goto ov7695_iovdd_fail;
+		usleep_range(1000, 1020);
+	}
+
+	if (pw->cam_pwdn) {
+		gpio_set_value(pw->cam_pwdn, 1);
+		usleep_range(1000, 1020);
+	}
+
+	return 0;
+
+ov7695_iovdd_fail:
+	regulator_disable(pw->avdd);
+ov7695_avdd_fail:
+	dev_err(&info->i2c_client->dev, "%s FAILED!\n", __func__);
+	return -ENODEV;
+}
+
+static int ov7695_power_off(struct ov7695_info *info)
+{
+	struct ov7695_power_rail *pw = &info->power;
+
+	if (info->pdata && info->pdata->power_off) {
+		info->pdata->power_off(&info->power);
+		goto ov7695_pwr_off_end;
+	}
+
+	usleep_range(100, 120);
+
+	if (pw->cam_pwdn) {
+		gpio_set_value(pw->cam_pwdn, 0);
+		usleep_range(100, 120);
+	}
+
+	if (pw->iovdd) {
+		regulator_disable(pw->iovdd);
+		usleep_range(100, 120);
+	}
+
+	if (pw->avdd)
+		regulator_disable(pw->avdd);
+
+ov7695_pwr_off_end:
+	ov7695_mclk_disable(info);
+	return 0;
 }
 
 static int ov7695_open(struct inode *inode, struct file *file)
 {
 	int err = 0;
 	struct miscdevice	*miscdev = file->private_data;
-	struct ov7695_info *info = dev_get_drvdata(miscdev->parent);
+	struct ov7695_info	*info =
+		container_of(miscdev, struct ov7695_info, miscdev_info);
 
-	dev_dbg(&info->i2c_client->dev, "ov7695: open.\n");
-	info = container_of(miscdev, struct ov7695_info, miscdev_info);
+	dev_dbg(&info->i2c_client->dev, "%s\n", __func__);
 	/* check if the device is in use */
 	if (atomic_xchg(&info->in_use, 1)) {
 		dev_err(&info->i2c_client->dev, "%s:BUSY!\n", __func__);
@@ -424,29 +475,17 @@ static int ov7695_open(struct inode *inode, struct file *file)
 
 	file->private_data = info;
 
-	if (info->mclk)
-		err = ov7695_mclk_enable(info);
-	if (!err && info->pdata && info->pdata->power_on) {
-		err = info->pdata->power_on(&info->power);
-	} else {
-		dev_err(&info->i2c_client->dev,
-			"%s:no valid power_on function.\n", __func__);
-		err = -EFAULT;
-	}
-	if (err < 0 && info->mclk)
-		ov7695_mclk_disable(info);
+	err = ov7695_power_on(info);
 	return err;
 }
 
-int ov7695_release(struct inode *inode, struct file *file)
+static int ov7695_release(struct inode *inode, struct file *file)
 {
 	struct ov7695_info *info = file->private_data;
 
-	if (info->pdata && info->pdata->power_off)
-		info->pdata->power_off(&info->power);
-	if (info->mclk)
-		ov7695_mclk_disable(info);
+	ov7695_power_off(info);
 	file->private_data = NULL;
+	sysedp_set_state(info->sysedpc, 0);
 
 	/* warn if device is already released */
 	WARN_ON(!atomic_xchg(&info->in_use, 0));
@@ -461,9 +500,9 @@ static int ov7695_regulator_get(struct ov7695_info *info,
 
 	reg = devm_regulator_get(&info->i2c_client->dev, vreg_name);
 	if (unlikely(IS_ERR(reg))) {
-		dev_err(&info->i2c_client->dev, "%s %s ERR: %d\n",
-			__func__, vreg_name, (int)reg);
 		err = PTR_ERR(reg);
+		dev_err(&info->i2c_client->dev, "%s %s ERR: %d\n",
+			__func__, vreg_name, err);
 		reg = NULL;
 	} else {
 		dev_dbg(&info->i2c_client->dev, "%s: %s\n",
@@ -477,9 +516,11 @@ static int ov7695_regulator_get(struct ov7695_info *info,
 static int ov7695_power_get(struct ov7695_info *info)
 {
 	struct ov7695_power_rail *pw = &info->power;
+	struct ov7695_platform_data *pdata = info->pdata;
+	struct clk *mclk;
 	int err;
 
-	dev_dbg(&info->i2c_client->dev, "ov7695: %s\n", __func__);
+	dev_dbg(&info->i2c_client->dev, "%s\n", __func__);
 
 	/* note: ov7695 uses i2c address 0x42,
 	 *
@@ -501,6 +542,23 @@ static int ov7695_power_get(struct ov7695_info *info)
 	err = ov7695_regulator_get(info, &pw->avdd, "vana");
 	if (unlikely(IS_ERR(ERR_PTR(err))))
 		return err;
+
+	if (pdata) {
+		if (pdata->mclk_name) {
+			mclk = devm_clk_get(&info->i2c_client->dev,
+				pdata->mclk_name);
+			if (IS_ERR(mclk)) {
+				dev_err(&info->i2c_client->dev,
+					"%s: unable to get clock %s\n",
+					__func__, pdata->mclk_name);
+				return PTR_ERR(mclk);
+			}
+			pw->mclk = mclk;
+		}
+		pw->cam_pwdn = pdata->cam_pwdn;
+		dev_dbg(&info->i2c_client->dev, "%s: mclk - %p, gpio - %d\n",
+			__func__, pw->mclk, pw->cam_pwdn);
+	}
 
 	return 0;
 }
@@ -643,7 +701,7 @@ err_out:
 }
 #endif	/* CONFIG_DEBUG_FS */
 
-static struct ov7695_modeinfo def_modeinfo = {
+static struct ov7695_mode def_modeinfo = {
 	.xres = 640,
 	.yres = 480,
 };
@@ -668,8 +726,8 @@ static struct ov7695_mode_desc *ov7695_get_mode(
 static int ov7695_mode_info_init(struct ov7695_info *info)
 {
 	struct ov7695_mode_desc *md = mode_table;
-	const struct ov7695_reg *mt;
-	struct ov7695_modeinfo *mi;
+	const struct reg_8 *mt;
+	struct ov7695_mode *mi;
 
 	dev_dbg(&info->i2c_client->dev, "%s", __func__);
 	while (md->xres) {
@@ -702,8 +760,13 @@ static int ov7695_set_mode(struct ov7695_info *info,
 		return -EINVAL;
 	}
 
-	err = ov7695_write_table(
-		info, sensor_mode->mode_tbl);
+	/* request highest edp state */
+	sysedp_set_state(info->sysedpc, 1);
+
+	err = regmap_util_write_table_8(info->regmap,
+				sensor_mode->mode_tbl,
+				NULL, 0, OV7695_WAIT_MS,
+				OV7695_TABLE_END);
 	if (err)
 		return err;
 
@@ -743,24 +806,34 @@ static long ov7695_ioctl(struct file *file,
 		}
 		switch (whitebalance) {
 		case OV7695_YUV_Whitebalance_Auto:
-			err = ov7695_write_table(info,
-					ov7695_Whitebalance_Auto);
+			err = regmap_util_write_table_8(info->regmap,
+					ov7695_Whitebalance_Auto,
+					NULL, 0, OV7695_WAIT_MS,
+					OV7695_TABLE_END);
 			break;
 		case OV7695_YUV_Whitebalance_Daylight:
-			err = ov7695_write_table(info,
-					ov7695_Whitebalance_Daylight);
+			err = regmap_util_write_table_8(info->regmap,
+					ov7695_Whitebalance_Daylight,
+					NULL, 0, OV7695_WAIT_MS,
+					OV7695_TABLE_END);
 			break;
 		case OV7695_YUV_Whitebalance_CloudyDaylight:
-			err = ov7695_write_table(info,
-					ov7695_Whitebalance_Cloudy);
+			err = regmap_util_write_table_8(info->regmap,
+					ov7695_Whitebalance_Cloudy,
+					NULL, 0, OV7695_WAIT_MS,
+					OV7695_TABLE_END);
 			break;
 		case OV7695_YUV_Whitebalance_Incandescent:
-			err = ov7695_write_table(info,
-					ov7695_Whitebalance_Incandescent);
+			err = regmap_util_write_table_8(info->regmap,
+					ov7695_Whitebalance_Incandescent,
+					NULL, 0, OV7695_WAIT_MS,
+					OV7695_TABLE_END);
 			break;
 		case OV7695_YUV_Whitebalance_Fluorescent:
-			err = ov7695_write_table(info,
-					ov7695_Whitebalance_Fluorescent);
+			err = regmap_util_write_table_8(info->regmap,
+					ov7695_Whitebalance_Fluorescent,
+					NULL, 0, OV7695_WAIT_MS,
+					OV7695_TABLE_END);
 			break;
 		default:
 			/* unsupported white balance mode*/
@@ -783,19 +856,34 @@ static long ov7695_ioctl(struct file *file,
 			return -EFAULT;
 		switch (ev) {
 		case 0:
-			err = ov7695_write_table(info, ov7695_EV_zero);
+			err = regmap_util_write_table_8(info->regmap,
+						ov7695_EV_zero,
+						NULL, 0, OV7695_WAIT_MS,
+						OV7695_TABLE_END);
 			break;
 		case 1:
-			err = ov7695_write_table(info, ov7695_EV_plus_1);
+			err = regmap_util_write_table_8(info->regmap,
+						ov7695_EV_plus_1,
+						NULL, 0, OV7695_WAIT_MS,
+						OV7695_TABLE_END);
 			break;
 		case 2:
-			err = ov7695_write_table(info, ov7695_EV_plus_2);
+			err = regmap_util_write_table_8(info->regmap,
+						ov7695_EV_plus_2,
+						NULL, 0, OV7695_WAIT_MS,
+						OV7695_TABLE_END);
 			break;
 		case -1:
-			err = ov7695_write_table(info, ov7695_EV_minus_1);
+			err = regmap_util_write_table_8(info->regmap,
+						ov7695_EV_minus_1,
+						NULL, 0, OV7695_WAIT_MS,
+						OV7695_TABLE_END);
 			break;
 		case -2:
-			err = ov7695_write_table(info, ov7695_EV_minus_2);
+			err = regmap_util_write_table_8(info->regmap,
+						ov7695_EV_minus_2,
+						NULL, 0, OV7695_WAIT_MS,
+						OV7695_TABLE_END);
 			break;
 		default:
 			/* unsupported EV setting */
@@ -838,6 +926,50 @@ static long ov7695_ioctl(struct file *file,
 		return 0;
 	}
 
+	case _IOC_NR(OV7695_SENSOR_IOCTL_SET_VFR):
+	{
+		u8	vfr_enable;
+
+		if (copy_from_user(&vfr_enable, (const void __user *)arg,
+			sizeof(vfr_enable))) {
+			return -EFAULT;
+		}
+		if (vfr_enable) {
+			err = regmap_util_write_table_8(info->regmap,
+					ov7695_VFR_On,
+					NULL, 0, OV7695_WAIT_MS,
+					OV7695_TABLE_END);
+		} else {
+			err = regmap_util_write_table_8(info->regmap,
+					ov7695_VFR_Off,
+					NULL, 0, OV7695_WAIT_MS,
+					OV7695_TABLE_END);
+		}
+		break;
+	}
+
+	case _IOC_NR(OV7695_SENSOR_IOCTL_GET_PROP):
+	{
+		struct ov7695_regs regs;
+
+		err = ov7695_read_reg(info, 0x3500, &regs.exp0);
+		err |= ov7695_read_reg(info, 0x3501, &regs.exp1);
+		err |= ov7695_read_reg(info, 0x3502, &regs.exp2);
+
+		err |= ov7695_read_reg(info, 0x350a, &regs.gain0);
+		err |= ov7695_read_reg(info, 0x350b, &regs.gain1);
+
+		if (copy_to_user((void __user *)arg,
+				&regs,
+				sizeof(struct ov7695_regs))) {
+			dev_info(&info->i2c_client->dev, "%s:Fail copy prop to user space\n",
+				__func__);
+			return -EFAULT;
+		}
+
+		break;
+	}
+
 	default:
 		dev_dbg(&info->i2c_client->dev, "INVALID IOCTL\n");
 		err = -EINVAL;
@@ -849,14 +981,39 @@ static long ov7695_ioctl(struct file *file,
 	return err;
 }
 
+static struct ov7695_platform_data *ov7695_parse_dt(struct i2c_client *client)
+{
+	struct device_node *np = client->dev.of_node;
+	struct ov7695_platform_data *pdata;
+
+	pdata = devm_kzalloc(&client->dev, sizeof(*pdata), GFP_KERNEL);
+	if (!pdata) {
+		dev_err(&client->dev, "Failed to allocate pdata\n");
+		return ERR_PTR(-ENOMEM);
+	}
+
+	/* init with default platform data values in board file */
+	if (client->dev.platform_data)
+		memcpy(pdata, client->dev.platform_data, sizeof(*pdata));
+
+	pdata->cam_pwdn = of_get_named_gpio_flags(np, "cam1-gpio", 0, NULL);
+	if (pdata->cam_pwdn < 0)
+		pdata->cam_pwdn = 0;
+	/* MCLK clock info */
+	of_property_read_string(np, "clocks", &pdata->mclk_name);
+
+	dev_dbg(&client->dev, "%s: mclk - %s, gpio - %d\n",
+		__func__, pdata->mclk_name, pdata->cam_pwdn);
+	return pdata;
+}
+
 static int ov7695_probe(struct i2c_client *client,
 			const struct i2c_device_id *id)
 {
-	int err;
 	struct ov7695_info *info;
-	const char *mclk_name;
-	dev_dbg(&client->dev, "ov7695: probing sensor.\n");
+	int err;
 
+	dev_dbg(&client->dev, "ov7695: probing sensor.\n");
 	info = devm_kzalloc(&client->dev, sizeof(*info), GFP_KERNEL);
 	if (info == NULL) {
 		dev_err(&client->dev, "%s: kzalloc error\n", __func__);
@@ -870,7 +1027,16 @@ static int ov7695_probe(struct i2c_client *client,
 		return -ENODEV;
 	}
 
-	info->pdata = client->dev.platform_data;
+	if (client->dev.of_node) {
+		info->pdata = ov7695_parse_dt(client);
+		if (IS_ERR(info->pdata)) {
+			err = PTR_ERR(info->pdata);
+			dev_err(&client->dev,
+				"Failed to parse OF node: %d\n", err);
+			return err;
+		}
+	} else
+		info->pdata = client->dev.platform_data;
 	info->i2c_client = client;
 	atomic_set(&info->in_use, 0);
 	info->mode = NULL;
@@ -880,7 +1046,7 @@ static int ov7695_probe(struct i2c_client *client,
 	err = ov7695_power_get(info);
 	if (err) {
 		dev_err(&info->i2c_client->dev,
-			"ov7695: Unable to get regulators\n");
+			"ov7695: Unable to config power\n");
 		return err;
 	}
 	ov7695_mode_info_init(info);
@@ -896,20 +1062,8 @@ static int ov7695_probe(struct i2c_client *client,
 		return err;
 	}
 
-	mclk_name = info->pdata && info->pdata->mclk_name ?
-		info->pdata->mclk_name : "default_mclk";
-	if (!strncmp(mclk_name, "ext_mclk", 8))
-		/* use external mclk */
-		info->mclk = NULL;
-	else {
-		info->mclk = devm_clk_get(&client->dev, mclk_name);
-		if (IS_ERR(info->mclk)) {
-			dev_err(&client->dev, "%s: unable to get clock %s\n",
-				__func__, mclk_name);
-			return PTR_ERR(info->mclk);
-		}
-	}
-
+	info->sysedpc = sysedp_create_consumer(
+			"ov7695", info->miscdev_info.name);
 
 #ifdef CONFIG_DEBUG_FS
 	ov7695_debug_init(info);
@@ -924,6 +1078,7 @@ static int ov7695_remove(struct i2c_client *client)
 	info = i2c_get_clientdata(client);
 	misc_deregister(&ov7695_device);
 
+	sysedp_free_consumer(info->sysedpc);
 #ifdef CONFIG_DEBUG_FS
 	debugfs_remove_recursive(info->debugfs_root);
 #endif

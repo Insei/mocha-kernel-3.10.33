@@ -28,7 +28,7 @@
 #include <asm/cputype.h>
 #include <asm/pgtable.h>
 
-extern unsigned int max_asid_bits;
+#define MAX_ASID_BITS	16
 
 extern unsigned int cpu_last_asid;
 
@@ -55,7 +55,7 @@ static inline void contextidr_thread_switch(struct task_struct *next)
  */
 static inline void cpu_set_reserved_ttbr0(void)
 {
-	unsigned long ttbr = page_to_phys(empty_zero_page);
+	unsigned long ttbr = page_to_phys(virt_to_page(empty_zero_page));
 
 	asm(
 	"	msr	ttbr0_el1, %0			// set TTBR0\n"
@@ -84,7 +84,7 @@ static inline void check_and_switch_context(struct mm_struct *mm,
 	 */
 	cpu_set_reserved_ttbr0();
 
-	if (!((mm->context.id ^ cpu_last_asid) >> max_asid_bits))
+	if (!((mm->context.id ^ cpu_last_asid) >> MAX_ASID_BITS))
 		/*
 		 * The ASID is from the current generation, just switch to the
 		 * new pgd. This condition is only true for calls from

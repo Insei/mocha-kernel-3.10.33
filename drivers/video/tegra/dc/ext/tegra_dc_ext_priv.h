@@ -1,7 +1,7 @@
 /*
  * drivers/video/tegra/dc/ext/tegra_dc_ext_priv.h
  *
- * Copyright (c) 2011-2014, NVIDIA CORPORATION, All rights reserved.
+ * Copyright (c) 2011-2016, NVIDIA CORPORATION, All rights reserved.
  *
  * Author: Robert Morell <rmorell@nvidia.com>
  *
@@ -21,6 +21,7 @@
 
 #include <linux/cdev.h>
 #include <linux/dma-buf.h>
+#include <linux/kthread.h>
 #include <linux/list.h>
 #include <linux/mutex.h>
 #include <linux/poll.h>
@@ -45,6 +46,7 @@ enum {
 	TEGRA_DC_Y,
 	TEGRA_DC_U,
 	TEGRA_DC_V,
+	TEGRA_DC_CDE,
 	TEGRA_DC_NUM_PLANES,
 };
 
@@ -60,11 +62,14 @@ struct tegra_dc_ext_win {
 	/* Current dmabuf (if any) for Y, U, V planes */
 	struct tegra_dc_dmabuf	*cur_handle[TEGRA_DC_NUM_PLANES];
 
-	struct workqueue_struct	*flip_wq;
+	struct task_struct	*flip_kthread;
+	struct kthread_worker	flip_worker;
 
 	atomic_t		nr_pending_flips;
 
 	struct mutex		queue_lock;
+
+	struct mutex		unpin_dma_lock;
 
 	struct list_head	timestamp_queue;
 
@@ -130,7 +135,7 @@ struct tegra_dc_ext_control {
 	struct mutex			lock;
 };
 
-extern int tegra_dc_ext_devno;
+extern dev_t tegra_dc_ext_devno;
 extern struct class *tegra_dc_ext_class;
 
 extern int tegra_dc_ext_pin_window(struct tegra_dc_ext_user *user, u32 id,
@@ -146,17 +151,14 @@ extern int tegra_dc_ext_set_cursor(struct tegra_dc_ext_user *user,
 extern int tegra_dc_ext_cursor_clip(struct tegra_dc_ext_user *user,
 					int *args);
 
-extern int tegra_dc_ext_set_cursor_image_low_latency(
-		struct tegra_dc_ext_user *user,
-		struct tegra_dc_ext_cursor_image *);
-
-extern int tegra_dc_ext_set_cursor_low_latency(struct tegra_dc_ext_user *user,
-					struct tegra_dc_ext_cursor_image *);
-
 extern int tegra_dc_ext_control_init(void);
 
 extern int tegra_dc_ext_queue_hotplug(struct tegra_dc_ext_control *,
+<<<<<<< HEAD
 				      int output);
+=======
+				      int output, bool connected);
+>>>>>>> update/master
 extern int tegra_dc_ext_queue_vblank(struct tegra_dc_ext_control *,
 				      int output, ktime_t timestamp);
 extern int tegra_dc_ext_queue_bandwidth_renegotiate(

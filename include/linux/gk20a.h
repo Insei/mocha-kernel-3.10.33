@@ -19,10 +19,13 @@
 #ifndef __GK20A_H
 #define __GK20A_H
 
+#include <linux/errno.h>
+
 struct channel_gk20a;
 struct platform_device;
 
 #ifdef CONFIG_GK20A
+<<<<<<< HEAD
 void gk20a_channel_update(struct channel_gk20a *c, int nr_completed);
 int nvhost_vpr_info_fetch(void);
 void gk20a_debug_dump_device(struct platform_device *pdev);
@@ -32,11 +35,22 @@ int gk20a_do_unidle(void);
 static inline void gk20a_channel_update(struct channel_gk20a *c,
 					int nr_completed) {}
 static inline void gk20a_debug_dump_device(struct platform_device *pdev) {}
+=======
+int nvhost_vpr_info_fetch(void);
+int gk20a_do_idle(void);
+int gk20a_do_unidle(void);
+#else
+>>>>>>> update/master
 static inline int nvhost_vpr_info_fetch(void)
 {
 	return -ENOSYS;
 }
+<<<<<<< HEAD
 int gk20a_do_idle(void) { return -ENOSYS; }
 int gk20a_do_unidle(void) { return -ENOSYS; }
+=======
+static inline int gk20a_do_idle(void) { return -ENOSYS; }
+static inline int gk20a_do_unidle(void) { return -ENOSYS; }
+>>>>>>> update/master
 #endif
 #endif

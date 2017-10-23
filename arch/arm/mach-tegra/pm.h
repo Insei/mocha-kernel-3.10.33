@@ -29,72 +29,21 @@
 #include <linux/init.h>
 #include <linux/errno.h>
 #include <linux/clkdev.h>
+#include <linux/tegra-pmc.h>
+#include <linux/tegra-pm.h>
+#include <linux/tegra_cluster_control.h>
 
 #include "iomap.h"
 
-#include "pmc.h"
 
 #define PMC_SCRATCH0		0x50
 #define PMC_SCRATCH1		0x54
 #define PMC_SCRATCH4		0x60
-
-enum suspend_stage {
-	TEGRA_SUSPEND_BEFORE_PERIPHERAL,
-	TEGRA_SUSPEND_BEFORE_CPU,
-};
-
-enum resume_stage {
-	TEGRA_RESUME_AFTER_PERIPHERAL,
-	TEGRA_RESUME_AFTER_CPU,
-};
-
-struct tegra_suspend_platform_data {
-	unsigned long cpu_timer;   /* CPU power good time in us,  LP2/LP1 */
-	unsigned long cpu_off_timer;	/* CPU power off time us, LP2/LP1 */
-	unsigned long core_timer;  /* core power good time in ticks,  LP0 */
-	unsigned long core_off_timer;	/* core power off time ticks, LP0 */
-	bool corereq_high;         /* Core power request active-high */
-	bool sysclkreq_high;       /* System clock request is active-high */
-	bool sysclkreq_gpio;       /* if System clock request is set to gpio */
-	bool combined_req;         /* if core & CPU power requests are combined */
-	enum tegra_suspend_mode suspend_mode;
-	unsigned long cpu_lp2_min_residency; /* Min LP2 state residency in us */
-	void (*board_suspend)(int lp_state, enum suspend_stage stg);
-	/* lp_state = 0 for LP0 state, 1 for LP1 state, 2 for LP2 state */
-	void (*board_resume)(int lp_state, enum resume_stage stg);
-	unsigned int cpu_resume_boost;	/* CPU frequency resume boost in kHz */
-#ifdef CONFIG_TEGRA_LP1_LOW_COREVOLTAGE
-	bool lp1_lowvolt_support;
-	unsigned int i2c_base_addr;
-	unsigned int pmuslave_addr;
-	unsigned int core_reg_addr;
-	unsigned int lp1_core_volt_low_cold;
-	unsigned int lp1_core_volt_low;
-	unsigned int lp1_core_volt_high;
-#endif
-	unsigned int lp1bb_core_volt_min;
-	unsigned long lp1bb_emc_rate_min;
-	unsigned long lp1bb_emc_rate_max;
-#ifdef CONFIG_ARCH_TEGRA_HAS_SYMMETRIC_CPU_PWR_GATE
-	unsigned long min_residency_vmin_fmin;
-	unsigned long min_residency_ncpu_slow;
-	unsigned long min_residency_ncpu_fast;
-	unsigned long min_residency_crail;
-	bool crail_up_early;
-#endif
-	unsigned long min_residency_mclk_stop;
-	bool usb_vbus_internal_wake; /* support for internal vbus wake */
-	bool usb_id_internal_wake; /* support for internal id wake */
-
-	void (*suspend_dfll_bypass)(void);
-	void (*resume_dfll_bypass)(void);
-};
-
-/* clears io dpd settings before kernel code */
-void tegra_bl_io_dpd_cleanup(void);
+#define PMC_SCRATCH203		0x84c
 
 unsigned long tegra_cpu_power_good_time(void);
 unsigned long tegra_cpu_power_off_time(void);
+unsigned int tegra_cpu_suspend_freq(void);
 unsigned long tegra_cpu_lp2_min_residency(void);
 unsigned long tegra_mc_clk_stop_min_residency(void);
 #ifdef CONFIG_ARCH_TEGRA_HAS_SYMMETRIC_CPU_PWR_GATE
@@ -112,24 +61,13 @@ bool tegra_set_cpu_in_pd(int cpu);
 
 void tegra_mc_clk_prepare(void);
 void tegra_mc_clk_finish(void);
-int tegra_suspend_dram(enum tegra_suspend_mode mode, unsigned int flags);
-#ifdef CONFIG_TEGRA_LP0_IN_IDLE
-int tegra_enter_lp0(unsigned long sleep_time);
-#else
-static inline int tegra_enter_lp0(unsigned long sleep_time)
-{ return 0; }
-#endif
 #ifdef CONFIG_TEGRA_LP1_LOW_COREVOLTAGE
 int tegra_is_lp1_suspend_mode(void);
 #endif
+int tegra_is_lp0_suspend_mode(void);
 void tegra_lp1bb_suspend_emc_rate(unsigned long emc_min, unsigned long emc_max);
 void tegra_lp1bb_suspend_mv_set(int mv);
 unsigned long tegra_lp1bb_emc_min_rate_get(void);
-
-#ifdef CONFIG_ARCH_TEGRA_14x_SOC
-#define FLOW_CTRL_CLUSTER_CONTROL \
-	(IO_ADDRESS(TEGRA_FLOW_CTRL_BASE) + 0x2c)
-#endif
 
 #define FLOW_CTRL_CPU_PWR_CSR \
 	(IO_ADDRESS(TEGRA_FLOW_CTRL_BASE) + 0x38)
@@ -149,14 +87,7 @@ unsigned long tegra_lp1bb_emc_min_rate_get(void);
 #define FUSE_SKU_DISABLE_ALL_CPUS	(1<<5)
 #define FUSE_SKU_NUM_DISABLED_CPUS(x)	(((x) >> 3) & 3)
 
-void __init tegra_init_suspend(struct tegra_suspend_platform_data *plat);
-
 u64 tegra_rtc_read_ms(void);
-
-/*
- * Callbacks for platform drivers to implement.
- */
-extern void (*tegra_deep_sleep)(int);
 
 unsigned int tegra_idle_power_down_last(unsigned int us, unsigned int flags);
 
@@ -194,58 +125,19 @@ static inline bool is_g_cluster_present(void)
 		return false;
 	return true;
 }
-static inline unsigned int is_lp_cluster(void)
-{
-	unsigned int reg;
-#ifdef CONFIG_ARCH_TEGRA_14x_SOC
-	reg = readl(FLOW_CTRL_CLUSTER_CONTROL);
-	return reg & 1; /* 0 == G, 1 == LP*/
-#else
-#ifdef CONFIG_ARM64
-	asm("mrs	%0, mpidr_el1\n"
-	    "ubfx	%0, %0, #8, #4"
-	    : "=r" (reg)
-	    :
-	    : "cc","memory");
-#else
-	asm("mrc	p15, 0, %0, c0, c0, 5\n"
-	    "ubfx	%0, %0, #8, #4"
-	    : "=r" (reg)
-	    :
-	    : "cc","memory");
-#endif
-	return reg ; /* 0 == G, 1 == LP*/
-#endif
-}
-int tegra_cluster_control(unsigned int us, unsigned int flags);
-void tegra_cluster_switch_prolog(unsigned int flags);
-void tegra_cluster_switch_epilog(unsigned int flags);
 int tegra_switch_to_g_cluster(void);
 int tegra_switch_to_lp_cluster(void);
-int tegra_cluster_switch(struct clk *cpu_clk, struct clk *new_cluster_clk);
 #else
 #define INSTRUMENT_CLUSTER_SWITCH 0	/* Must be zero for ARCH_TEGRA_2x_SOC */
 #define DEBUG_CLUSTER_SWITCH 0		/* Must be zero for ARCH_TEGRA_2x_SOC */
 #define PARAMETERIZE_CLUSTER_SWITCH 0	/* Must be zero for ARCH_TEGRA_2x_SOC */
 
 static inline bool is_g_cluster_present(void)   { return true; }
-static inline unsigned int is_lp_cluster(void)  { return 0; }
-static inline int tegra_cluster_control(unsigned int us, unsigned int flags)
-{
-	return -EPERM;
-}
-static inline void tegra_cluster_switch_prolog(unsigned int flags) {}
-static inline void tegra_cluster_switch_epilog(unsigned int flags) {}
 static inline int tegra_switch_to_g_cluster(void)
 {
 	return -EPERM;
 }
 static inline int tegra_switch_to_lp_cluster(void)
-{
-	return -EPERM;
-}
-static inline int tegra_cluster_switch(struct clk *cpu_clk,
-				       struct clk *new_cluster_clk)
 {
 	return -EPERM;
 }
@@ -336,6 +228,7 @@ void tegra_smp_clear_power_mask(void);
 static inline void tegra_smp_clear_power_mask(void){}
 #endif
 
+<<<<<<< HEAD
 #if defined(CONFIG_ARCH_TEGRA_14x_SOC)
 void tegra_smp_save_power_mask(void);
 void tegra_smp_restore_power_mask(void);
@@ -350,5 +243,8 @@ extern struct clk *debug_uart_clk;
 void tegra_console_uart_suspend(void);
 void tegra_console_uart_resume(void);
 
+=======
+u32 tegra_register_suspend_vectors(u32, u32);
+>>>>>>> update/master
 
 #endif /* _MACH_TEGRA_PM_H_ */

@@ -730,13 +730,6 @@ static int max97236_jacksw_active(struct max97236_priv *max97236)
 #endif
 	int ret;
 
-	/* Overwrite above code using board id */
-	if (board_info.board_id == BOARD_E1690) {
-		test_value = 0;
-	} else { /* ERS */
-		test_value = 4;
-	}
-
 	regmap_read(max97236->regmap, M97236_REG_00_STATUS1, &reg);
 	ret = (reg & M97236_JACKSW_MASK) == test_value;
 
@@ -1161,12 +1154,6 @@ static int test_jack_presence(struct max97236_priv *max97236, int delay)
 #else
 	test_value = 0;
 #endif
-		/* Overwrite above code using board id */
-		if (board_info.board_id == BOARD_E1690) {
-			test_value = 0;
-		} else { /* ERS */
-			test_value = 4;
-		}
 
 	if ((reg & M97236_JACKSW_MASK) == test_value) {
 		schedule_delayed_work(&max97236->jack_work,
@@ -1224,13 +1211,9 @@ static int max97236_probe(struct snd_soc_codec *codec)
 	int ret;
 
 #ifdef MAX97236_AUTOMODE1_JACK_DETECTION
-	dev_info(codec->dev, "built on %s at %s, mode is DETECT1\n",
-		__DATE__,
-		__TIME__);
+	dev_info(codec->dev, "mode is DETECT1\n");
 #else
-	dev_info(codec->dev, "built on %s at %s, mode is DETECT0\n",
-		__DATE__,
-		__TIME__);
+	dev_info(codec->dev, "mode is DETECT0\n");
 #endif
 
 	dev_info(codec->dev, "build number %s\n", MAX97236_REVISION);

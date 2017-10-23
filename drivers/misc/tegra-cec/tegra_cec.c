@@ -1,7 +1,11 @@
 /*
  * drivers/misc/tegra-cec/tegra_cec.c
  *
+<<<<<<< HEAD
  * Copyright (c) 2012-2014, NVIDIA CORPORATION.  All rights reserved.
+=======
+ * Copyright (c) 2012-2017, NVIDIA CORPORATION.  All rights reserved.
+>>>>>>> update/master
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -35,8 +39,29 @@
 #include <linux/platform_device.h>
 #include <linux/miscdevice.h>
 #include <linux/clk/tegra.h>
+#include <linux/of.h>
 
 #include "tegra_cec.h"
+
+#include <mach/dc.h>
+
+#define LOGICAL_ADDRESS_RESERVED2 0xD
+#define LOGICAL_ADDRESS_TV 0x0
+#define LOGICAL_ADDRESS_BROADCAST 0xF
+#define TEXT_VIEW_ON 0x0D
+#define ACTIVE_SOURCE 0x82
+
+static bool previous_reboot_reason_is_recovery, text_view_on_sent;
+static u8 text_view_on_command[] = {
+	LOGICAL_ADDRESS_RESERVED2 << 4 | LOGICAL_ADDRESS_TV,
+	TEXT_VIEW_ON
+};
+static u8 active_source_command[] = {
+	LOGICAL_ADDRESS_RESERVED2 << 4 | LOGICAL_ADDRESS_BROADCAST,
+	ACTIVE_SOURCE,
+	0x00,
+	0x00
+};
 
 static ssize_t cec_logical_addr_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count);
@@ -47,7 +72,7 @@ static ssize_t cec_logical_addr_show(struct device *dev,
 static DEVICE_ATTR(cec_logical_addr_config, S_IWUSR | S_IRUGO,
 		cec_logical_addr_show, cec_logical_addr_store);
 
-int tegra_cec_open(struct inode *inode, struct file *file)
+static int tegra_cec_open(struct inode *inode, struct file *file)
 {
 	struct miscdevice *miscdev = file->private_data;
 	struct tegra_cec *cec = container_of(miscdev,
@@ -65,7 +90,7 @@ int tegra_cec_open(struct inode *inode, struct file *file)
 	return ret;
 }
 
-int tegra_cec_release(struct inode *inode, struct file *file)
+static int tegra_cec_release(struct inode *inode, struct file *file)
 {
 	struct tegra_cec *cec = file->private_data;
 
@@ -123,7 +148,11 @@ int tegra_cec_native_write_l(struct tegra_cec *cec, const u8 *buf, size_t cnt)
 	return ret;
 }
 
+<<<<<<< HEAD
 ssize_t tegra_cec_write(struct file *file, const char __user *buf,
+=======
+static ssize_t tegra_cec_write(struct file *file, const char __user *buf,
+>>>>>>> update/master
 	size_t count, loff_t *ppos)
 {
 	u8 tx_buf[TEGRA_CEC_FRAME_MAX_LENGTH];
@@ -150,14 +179,20 @@ ssize_t tegra_cec_write(struct file *file, const char __user *buf,
 		return count;
 }
 
-ssize_t tegra_cec_read(struct file *file, char  __user *buffer,
+static ssize_t tegra_cec_read(struct file *file, char  __user *buffer,
 	size_t count, loff_t *ppos)
 {
 	struct tegra_cec *cec = file->private_data;
 	ssize_t ret;
+<<<<<<< HEAD
 
 	count = sizeof(cec->rx_buffer);
 
+=======
+
+	count = sizeof(cec->rx_buffer);
+
+>>>>>>> update/master
 	ret = wait_event_interruptible(cec->init_waitq,
 	    atomic_read(&cec->init_done) == 1);
 	if (ret)
@@ -221,6 +256,7 @@ static irqreturn_t tegra_cec_irq_handler(int irq, void *data)
 		tegra_cec_error_recovery(cec);
 		writel(mask & ~TEGRA_CEC_INT_MASK_TX_REGISTER_EMPTY,
 			cec->cec_base + TEGRA_CEC_INT_MASK);
+<<<<<<< HEAD
 
 		cec->tx_error = -ECOMM;
 		cec->tx_wake = 1;
@@ -232,6 +268,19 @@ static irqreturn_t tegra_cec_irq_handler(int irq, void *data)
 		writel((TEGRA_CEC_INT_STAT_TX_FRAME_TRANSMITTED),
 			cec->cec_base + TEGRA_CEC_INT_STAT);
 
+=======
+
+		cec->tx_error = -ECOMM;
+		cec->tx_wake = 1;
+
+		wake_up_interruptible(&cec->tx_waitq);
+
+		goto out;
+	} else if (status & TEGRA_CEC_INT_STAT_TX_FRAME_TRANSMITTED) {
+		writel((TEGRA_CEC_INT_STAT_TX_FRAME_TRANSMITTED),
+			cec->cec_base + TEGRA_CEC_INT_STAT);
+
+>>>>>>> update/master
 		if (status & TEGRA_CEC_INT_STAT_TX_FRAME_OR_BLOCK_NAKD) {
 			tegra_cec_error_recovery(cec);
 
@@ -276,13 +325,73 @@ out:
 	return IRQ_HANDLED;
 }
 
+static long tegra_cec_ioctl(struct file *file, unsigned int cmd,
+		 unsigned long arg)
+{
+	struct tegra_cec *cec = file->private_data;
+
+	if (_IOC_TYPE(cmd) != TEGRA_CEC_IOC_MAGIC)
+		return  -EINVAL;
+
+	switch (cmd) {
+	case TEGRA_CEC_IOCTL_ERROR_RECOVERY:
+		mutex_lock(&cec->recovery_lock);
+		tegra_cec_error_recovery(cec);
+		mutex_unlock(&cec->recovery_lock);
+		break;
+	default:
+		dev_err(cec->dev, "unsupported ioctl\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static const struct file_operations tegra_cec_fops = {
 	.owner = THIS_MODULE,
 	.open = tegra_cec_open,
 	.release = tegra_cec_release,
 	.read = tegra_cec_read,
 	.write = tegra_cec_write,
+	.unlocked_ioctl = tegra_cec_ioctl,
+#ifdef CONFIG_COMPAT
+	.compat_ioctl =  tegra_cec_ioctl,
+#endif
 };
+
+static int tegra_cec_send_one_touch_play(struct tegra_cec *cec)
+{
+	int res = 0;
+	u8 phy_address[2] = {0};
+
+	text_view_on_sent = true;
+
+	res = tegra_dc_get_source_physical_address(phy_address);
+	if (res) {
+		dev_warn(cec->dev, "Can't find physical addresse.\n");
+		return res;
+	}
+
+	dev_info(cec->dev, "physical address: %02x:%02x.\n",
+		phy_address[0], phy_address[1]);
+
+	active_source_command[2] = phy_address[0];
+	active_source_command[3] = phy_address[1];
+
+	mutex_lock(&cec->tx_lock);
+	res = tegra_cec_native_write_l(cec, text_view_on_command,
+		sizeof(text_view_on_command));
+	dev_notice(cec->dev, "Sent <Text View On> res: %d.\n", res);
+	if (!res) {
+		res = tegra_cec_native_write_l(cec, active_source_command,
+			sizeof(active_source_command));
+		dev_notice(cec->dev,
+			"Broadcast <Active Source> res: %d.\n", res);
+	}
+	mutex_unlock(&cec->tx_lock);
+
+	return res;
+}
 
 static void tegra_cec_init(struct tegra_cec *cec)
 {
@@ -297,7 +406,15 @@ static void tegra_cec_init(struct tegra_cec *cec)
 	writel(0x00, cec->cec_base + TEGRA_CEC_HW_CONTROL);
 	writel(0x00, cec->cec_base + TEGRA_CEC_INT_MASK);
 	writel(0xffffffff, cec->cec_base + TEGRA_CEC_INT_STAT);
+
+#ifdef CONFIG_PM
+	if (wait_event_interruptible_timeout(cec->suspend_waitq,
+				atomic_xchg(&cec->init_cancel, 0) == 1,
+				msecs_to_jiffies(1000)) > 0)
+		return;
+#else
 	msleep(1000);
+#endif
 
 	writel(0x00, cec->cec_base + TEGRA_CEC_SW_CONTROL);
 
@@ -307,7 +424,7 @@ static void tegra_cec_init(struct tegra_cec *cec)
 		TEGRA_CEC_HWCTRL_TX_RX_MODE,
 		cec->cec_base + TEGRA_CEC_HW_CONTROL);
 
-	writel(0x00, cec->cec_base + TEGRA_CEC_INPUT_FILTER);
+	writel((1U << 31) | 0x20, cec->cec_base + TEGRA_CEC_INPUT_FILTER);
 
 	writel((0x7a << TEGRA_CEC_RX_TIMING_0_RX_START_BIT_MAX_LO_TIME_MASK) |
 	   (0x6d << TEGRA_CEC_RX_TIMING_0_RX_START_BIT_MIN_LO_TIME_MASK) |
@@ -353,6 +470,8 @@ static void tegra_cec_init(struct tegra_cec *cec)
 	atomic_set(&cec->init_done, 1);
 	wake_up_interruptible(&cec->init_waitq);
 
+	if (!text_view_on_sent && !previous_reboot_reason_is_recovery)
+		tegra_cec_send_one_touch_play(cec);
 	dev_notice(cec->dev, "%s Done.\n", __func__);
 }
 
@@ -396,7 +515,7 @@ static ssize_t cec_logical_addr_store(struct device *dev,
 		return ret;
 
 
-	dev_info(dev, "tegra_cec: set logical address: %x\n", (u32)addr);
+	dev_info(dev, "tegra_cec: set logical address: 0x%x\n", (u32)addr);
 	cec->logical_addr = addr;
 	state = readl(cec->cec_base + TEGRA_CEC_HW_CONTROL);
 	state &= ~TEGRA_CEC_HWCTRL_RX_LADDR_MASK;
@@ -450,8 +569,17 @@ static int tegra_cec_probe(struct platform_device *pdev)
 		goto cec_error;
 	}
 
+	dev_info(&pdev->dev, "dt=%d start=0x%08llX end=0x%08llX irq=%d\n",
+		(pdev->dev.of_node != NULL),
+		res->start, res->end,
+		cec->tegra_cec_irq);
+
 	atomic_set(&cec->init_done, 0);
 	mutex_init(&cec->tx_lock);
+<<<<<<< HEAD
+=======
+	mutex_init(&cec->recovery_lock);
+>>>>>>> update/master
 
 	cec->clk = clk_get(&pdev->dev, "cec");
 
@@ -468,6 +596,11 @@ static int tegra_cec_probe(struct platform_device *pdev)
 	init_waitqueue_head(&cec->rx_waitq);
 	init_waitqueue_head(&cec->tx_waitq);
 	init_waitqueue_head(&cec->init_waitq);
+
+#ifdef CONFIG_PM
+	init_waitqueue_head(&cec->suspend_waitq);
+	atomic_set(&cec->init_cancel, 0);
+#endif
 
 	platform_set_drvdata(pdev, cec);
 	/* clear out the hardware. */
@@ -533,10 +666,16 @@ static int tegra_cec_suspend(struct platform_device *pdev, pm_message_t state)
 {
 	struct tegra_cec *cec = platform_get_drvdata(pdev);
 
+	atomic_set(&cec->init_cancel, 1);
+	wmb();
+
+	wake_up_interruptible(&cec->suspend_waitq);
+
 	/* cancel the work queue */
 	cancel_work_sync(&cec->work);
 
 	atomic_set(&cec->init_done, 0);
+	atomic_set(&cec->init_cancel, 0);
 
 	clk_disable(cec->clk);
 
@@ -557,10 +696,31 @@ static int tegra_cec_resume(struct platform_device *pdev)
 }
 #endif
 
+static int __init check_previous_reboot_reason_is_recovery(char *options)
+{
+	previous_reboot_reason_is_recovery = true;
+
+	pr_info("tegra_cec: the previous_reboot_reason is%s recovery.\n",
+		previous_reboot_reason_is_recovery ? "" : " not");
+
+	return 0;
+}
+
+early_param("post_recovery", check_previous_reboot_reason_is_recovery);
+
+static struct of_device_id tegra_cec_of_match[] = {
+	{ .compatible = "nvidia,tegra114-cec", },
+	{ .compatible = "nvidia,tegra124-cec", },
+	{ .compatible = "nvidia,tegra210-cec", },
+	{},
+};
+
 static struct platform_driver tegra_cec_driver = {
 	.driver = {
 		.name = TEGRA_CEC_NAME,
 		.owner = THIS_MODULE,
+
+		.of_match_table = of_match_ptr(tegra_cec_of_match),
 	},
 	.probe = tegra_cec_probe,
 	.remove = tegra_cec_remove,

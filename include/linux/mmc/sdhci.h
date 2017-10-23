@@ -2,7 +2,7 @@
  *  linux/include/linux/mmc/sdhci.h - Secure Digital Host Controller Interface
  *
  *  Copyright (C) 2005-2008 Pierre Ossman, All Rights Reserved.
- *  Copyright (c) 2013-2014, NVIDIA CORPORATION. All Rights Reserved.
+ *  Copyright (c) 2013-2015, NVIDIA CORPORATION. All Rights Reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,11 +25,13 @@ struct data_stat_entry {
 	u32 min_kbps;
 	ktime_t start_ktime;
 	u32 duration_usecs;
-	u32 total_usecs;
+	u64 total_usecs;
+	u32 total_transfers;
 	u32 current_transferred_bytes;
 	u64 total_bytes;
 	u32 stat_blk_size;
 	u32 stat_blks_per_transfer;
+	bool is_read;
 	struct data_stat_entry *next;
 };
 
@@ -51,6 +53,7 @@ struct data_stat {
 #endif
 
 struct sdhci_host {
+	bool is_sdio;
 	/* Data set by hardware interface driver */
 	const char *hw_name;	/* Hardware bus name */
 #ifdef CONFIG_DEBUG_FS
@@ -151,6 +154,18 @@ struct sdhci_host {
 #define SDHCI_QUIRK2_USE_64BIT_ADDR			(1<<10)
 /* delayed clock gate */
 #define SDHCI_QUIRK2_DELAYED_CLK_GATE			(1<<11)
+<<<<<<< HEAD
+=======
+/* Enable pm domain */
+#define SDHCI_QUIRK2_MMC_RTPM				(1<<12)
+/* Turn off/on card clock before sending/after tuning command*/
+#define SDHCI_QUIRK2_NON_STD_TUN_CARD_CLOCK		(1<<13)
+#define SDHCI_QUIRK2_NON_STD_TUNING_LOOP_CNTR		(1<<14)
+#define SDHCI_QUIRK2_NON_STD_RTPM			(1<<15)
+#define SDHCI_QUIRK2_PERIODIC_CALIBRATION		(1<<16)
+/*Controller skips tuning if it is already done*/
+#define SDHCI_QUIRK2_SKIP_TUNING			(1<<17)
+>>>>>>> update/master
 
 	unsigned int  acmd12_ctrl;
 	unsigned int  ier;
@@ -198,14 +213,18 @@ struct sdhci_host {
 	u8 pwr;			/* Current voltage */
 
 	bool runtime_suspended;	/* Host is runtime suspended */
+	bool detect_resume;     /* Detect card during resume */
 
-	struct mmc_request *mrq;	/* Current request */
+	struct mmc_request *mrq_cmd;	/* Current request */
+	struct mmc_request *mrq_dat;	/* Current request with data*/
 	struct mmc_command *cmd;	/* Current command */
 	struct mmc_data *data;	/* Current data request */
 	unsigned int data_early:1;	/* Data finished before cmd */
 
 	struct sg_mapping_iter sg_miter;	/* SG state for PIO */
 	unsigned int blocks;	/* remaining PIO blocks */
+	unsigned int max_pio_size;
+	unsigned int max_pio_blocks;
 
 	int sg_count;		/* Mapped sg entries */
 
@@ -218,12 +237,15 @@ struct sdhci_host {
 
 	struct tasklet_struct card_tasklet;	/* Tasklet structures */
 	struct tasklet_struct finish_tasklet;
+	struct tasklet_struct finish_dat_tasklet;
+	struct tasklet_struct finish_cmd_tasklet;
 
 	struct timer_list timer;	/* Timer for timeouts */
 	unsigned int card_int_set;	/* card int status */
 
 	u32 caps;		/* Alternative CAPABILITY_0 */
 	u32 caps1;		/* Alternative CAPABILITY_1 */
+	u32 caps_timing_orig;	/* Save the original host timing caps*/
 
 	unsigned int            ocr_avail_sdio;	/* OCR bit masks */
 	unsigned int            ocr_avail_sd;
@@ -241,10 +263,16 @@ struct sdhci_host {
 
 	struct delayed_work	delayed_clk_gate_wrk;
 	bool			is_clk_on;
+	bool			runtime_pm_init_done;
+	bool			runtime_pm_enable_dcg;
 #ifdef CONFIG_DEBUG_FS
-	bool			enable_sdhci_perf_stats;
+	unsigned int		enable_sdhci_perf_stats;
 #endif
 	int			clk_gate_tmout_ticks;
+	ktime_t timestamp;
+	bool is_calibration_done;
+
+	struct task_struct *suspend_task;
 
 	unsigned long private[0] ____cacheline_aligned;
 };

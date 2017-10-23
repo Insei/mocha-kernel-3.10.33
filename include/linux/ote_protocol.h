@@ -21,5 +21,10 @@
 
 int te_set_vpr_params(void *vpr_base, size_t vpr_size);
 void te_restore_keyslots(void);
+<<<<<<< HEAD
+=======
+int  te_vrr_set_buf(phys_addr_t addr);
+void te_vrr_sec(void);
+>>>>>>> update/master
 
 #endif

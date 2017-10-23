@@ -4,8 +4,10 @@
 
 # Each configuration option enables a list of files.
 
+ccflags-y += -Werror
 wm97xx-ts-y := wm97xx-core.o
 
+obj-$(CONFIG_TOUCHSCREEN_NVTOUCH)	+= nvtouch/
 obj-$(CONFIG_TOUCHSCREEN_88PM860X)	+= 88pm860x-ts.o
 obj-$(CONFIG_TOUCHSCREEN_AD7877)	+= ad7877.o
 obj-$(CONFIG_TOUCHSCREEN_AD7879)	+= ad7879.o
@@ -77,3 +79,4 @@ obj-$(CONFIG_TOUCHSCREEN_TPS6507X)	+= tps6507x-ts.o
 obj-$(CONFIG_TOUCHSCREEN_RM31080A)	+= rm31080a_ts.o rm31080a_ctrl.o
 obj-$(CONFIG_TOUCHSCREEN_SYN_RMI4_SPI)  += rmi4/
 obj-$(CONFIG_TOUCHSCREEN_MAXIM_STI)     += maxim_sti.o
+obj-$(CONFIG_TOUCHSCREEN_LR388K7)	+= lr388k7_ts.o

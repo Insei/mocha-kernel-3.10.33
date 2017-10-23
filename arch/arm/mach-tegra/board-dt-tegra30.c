@@ -34,7 +34,7 @@
 #include <asm/mach/arch.h>
 
 #include "board.h"
-#include "common.h"
+#include <linux/platform/tegra/common.h>
 #include "iomap.h"
 
 #ifdef CONFIG_USE_OF
@@ -86,7 +86,6 @@ DT_MACHINE_START(TEGRA30_DT, "NVIDIA Tegra30 (Flattened Device Tree)")
 	.init_time	= tegra_init_timer,
 	.init_machine	= tegra30_dt_init,
 	.init_late	= tegra_init_late,
-	.restart	= tegra_assert_system_reset,
 	.dt_compat	= tegra30_dt_board_compat,
 MACHINE_END
 

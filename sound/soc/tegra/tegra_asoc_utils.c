@@ -27,23 +27,9 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/clk/tegra.h>
-
-#include <mach/pinmux.h>
-#ifdef CONFIG_ARCH_TEGRA_2x_SOC
-#include <mach/pinmux-tegra20.h>
-#endif
-#ifdef CONFIG_ARCH_TEGRA_3x_SOC
-#include <mach/pinmux-tegra30.h>
-#endif
-#ifdef CONFIG_ARCH_TEGRA_11x_SOC
-#include <mach/pinmux-t11.h>
-#endif
-#ifdef CONFIG_ARCH_TEGRA_12x_SOC
-#include <mach/pinmux-t12.h>
-#endif
-#ifdef CONFIG_ARCH_TEGRA_14x_SOC
-#include <mach/pinmux-t14.h>
-#endif
+#include <linux/pinctrl/pinctrl.h>
+#include <linux/pinctrl/consumer.h>
+#include <linux/pinctrl/pinconf-tegra.h>
 
 #include <sound/soc.h>
 #include <sound/dmaengine_pcm.h>
@@ -52,8 +38,10 @@
 #include "tegra_asoc_utils.h"
 
 int g_is_call_mode;
+EXPORT_SYMBOL(g_is_call_mode);
 static atomic_t dap_ref_count[5];
 int tegra_i2sloopback_func;
+EXPORT_SYMBOL(tegra_i2sloopback_func);
 
 static const char * const loopback_function[] = {
 	"Off",
@@ -73,28 +61,57 @@ enum headset_state {
 };
 #endif
 
+#ifdef CONFIG_ARCH_TEGRA_12x_SOC
+static const char *tegra_dap_group_names[4][4] = {
+	{"dap1_fs_pn0", "dap1_din_pn1", "dap1_dout_pn2", "dap1_sclk_pn3"},
+	{"dap2_fs_pa2", "dap2_din_pa4", "dap2_dout_pa5", "dap2_sclk_pa3"},
+	{"dap3_fs_pp0", "dap3_din_pp1", "dap3_dout_pp2", "dap3_sclk_pp3"},
+	{"dap4_fs_pp4", "dap4_din_pp5", "dap4_dout_pp6", "dap4_sclk_pp7"},
+};
+#define tegra_pinmux_driver "nvidia,tegra124-pinmux"
+#else
+static const char *tegra_dap_group_names[2][4] = {
+	{"dap1_fs_pb0", "dap1_din_pb1", "dap1_dout_pb2", "dap1_sclk_pb3"},
+	{"dap2_fs_paa0", "dap2_din_paa1", "dap2_dout_paa2", "dap2_sclk_paa3"},
+};
+#define tegra_pinmux_driver "nvidia,tegra210-pinmux"
+#endif
+
+static inline void tristate_dap(int dap_nr, int tristate)
+{
+	static struct pinctrl_dev *pinctrl_dev = NULL;
+	unsigned long config;
+	int i;
+	int ret;
+
+	if (!pinctrl_dev)
+		pinctrl_dev = pinctrl_get_dev_from_of_compatible(
+					tegra_pinmux_driver);
+	if (!pinctrl_dev) {
+		pr_err("%s(): Pincontrol for Tegra not found\n", __func__);
+		return;
+	}
+
+	config = TEGRA_PINCONF_PACK(TEGRA_PINCONF_PARAM_TRISTATE, tristate);
+	for (i = 0; i < 4; ++i) {
+		ret = pinctrl_set_config_for_group_name(pinctrl_dev,
+				tegra_dap_group_names[dap_nr][i], config);
+		if (ret < 0)
+			pr_err("%s(): Pinconfig for pin %s failed: %d\n",
+				__func__, tegra_dap_group_names[dap_nr][i],
+				ret);
+	}
+}
+
 #define TRISTATE_DAP_PORT(n) \
 static void tristate_dap_##n(bool tristate) \
 { \
-	enum tegra_pingroup fs, sclk, din, dout; \
-	fs = TEGRA_PINGROUP_DAP##n##_FS; \
-	sclk = TEGRA_PINGROUP_DAP##n##_SCLK; \
-	din = TEGRA_PINGROUP_DAP##n##_DIN; \
-	dout = TEGRA_PINGROUP_DAP##n##_DOUT; \
 	if (tristate) { \
-		if (atomic_dec_return(&dap_ref_count[n-1]) == 0) {\
-			tegra_pinmux_set_tristate(fs, TEGRA_TRI_TRISTATE); \
-			tegra_pinmux_set_tristate(sclk, TEGRA_TRI_TRISTATE); \
-			tegra_pinmux_set_tristate(din, TEGRA_TRI_TRISTATE); \
-			tegra_pinmux_set_tristate(dout, TEGRA_TRI_TRISTATE); \
-		} \
+		if (atomic_dec_return(&dap_ref_count[n-1]) == 0) \
+			tristate_dap(n - 1, TEGRA_PIN_ENABLE);	\
 	} else { \
-		if (atomic_inc_return(&dap_ref_count[n-1]) == 1) {\
-			tegra_pinmux_set_tristate(fs, TEGRA_TRI_NORMAL); \
-			tegra_pinmux_set_tristate(sclk, TEGRA_TRI_NORMAL); \
-			tegra_pinmux_set_tristate(din, TEGRA_TRI_NORMAL); \
-			tegra_pinmux_set_tristate(dout, TEGRA_TRI_NORMAL); \
-		} \
+		if (atomic_inc_return(&dap_ref_count[n-1]) == 1) \
+			tristate_dap(n - 1, TEGRA_PIN_DISABLE);	\
 	} \
 }
 
@@ -103,9 +120,7 @@ TRISTATE_DAP_PORT(2)
 /*I2S2 and I2S3 for other chips do not map to DAP3 and DAP4 (also
 these pinmux dont exist for other chips), they map to some
 other pinmux*/
-#if defined(CONFIG_ARCH_TEGRA_11x_SOC)\
-		|| defined(CONFIG_ARCH_TEGRA_12x_SOC)\
-		|| defined(CONFIG_ARCH_TEGRA_3x_SOC)
+#if defined(CONFIG_ARCH_TEGRA_12x_SOC)
 	TRISTATE_DAP_PORT(3)
 	TRISTATE_DAP_PORT(4)
 #endif
@@ -122,9 +137,7 @@ int tegra_asoc_utils_tristate_dap(int id, bool tristate)
 /*I2S2 and I2S3 for other chips do not map to DAP3 and DAP4 (also
 these pinmux dont exist for other chips), they map to some
 other pinmux*/
-#if defined(CONFIG_ARCH_TEGRA_11x_SOC)\
-	|| defined(CONFIG_ARCH_TEGRA_12x_SOC)\
-	|| defined(CONFIG_ARCH_TEGRA_3x_SOC)
+#if defined(CONFIG_ARCH_TEGRA_12x_SOC)
 	case 2:
 		tristate_dap_3(tristate);
 		break;
@@ -321,8 +334,15 @@ static int tegra_set_i2sloopback(struct snd_kcontrol *kcontrol,
 struct snd_kcontrol_new tegra_avp_controls[] = {
 	SOC_SINGLE_EXT("AVP alsa device select", 0, 0, TEGRA_ALSA_MAX_DEVICES, \
 			0, tegra_get_avp_device, tegra_set_avp_device),
-	SOC_SINGLE_EXT("AVP DMA channel id", 0, 0, TEGRA_DMA_MAX_CHANNELS, \
-			0, tegra_get_dma_ch_id, NULL),
+	{
+		.name = "AVP DMA channel id", \
+		.iface = SNDRV_CTL_ELEM_IFACE_MIXER, \
+		.info = snd_soc_info_volsw, \
+		.access = SNDRV_CTL_ELEM_ACCESS_READ, \
+		.get = tegra_get_dma_ch_id, \
+		.private_value = SOC_SINGLE_VALUE(0, 0, \
+			TEGRA_DMA_MAX_CHANNELS, 0)
+	},
 	SOC_SINGLE_EXT("AVP DMA address", 0, 0, 0xFFFFFFFF, \
 			0, tegra_get_dma_addr, tegra_set_dma_addr),
 };
@@ -560,6 +580,8 @@ int tegra_asoc_utils_init(struct tegra_asoc_utils_data *data,
 	else if (of_machine_is_compatible("nvidia,tegra148"))
 		data->soc = TEGRA_ASOC_UTILS_SOC_TEGRA14x;
 	else if (of_machine_is_compatible("nvidia,tegra124"))
+		data->soc = TEGRA_ASOC_UTILS_SOC_TEGRA12x;
+	else if (of_machine_is_compatible("nvidia,tegra132"))
 		data->soc = TEGRA_ASOC_UTILS_SOC_TEGRA12x;
 	else if (!dev->of_node) {
 		/* non-DT is always Tegra20 */

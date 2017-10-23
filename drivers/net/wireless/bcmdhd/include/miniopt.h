@@ -1,7 +1,11 @@
 /*
  * Command line options parser.
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+>>>>>>> update/master
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -20,7 +24,7 @@
  *      Notwithstanding the above, under no circumstances may you combine this
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
- * $Id: miniopt.h 241182 2011-02-17 21:50:03Z $
+ * $Id: miniopt.h 530513 2015-01-30 07:01:41Z $
  */
 
 
@@ -32,6 +36,8 @@ extern "C" {
 #endif
 
 /* ---- Include Files ---------------------------------------------------- */
+
+
 /* ---- Constants and Types ---------------------------------------------- */
 
 #define MINIOPT_MAXKEY	128	/* Max options */

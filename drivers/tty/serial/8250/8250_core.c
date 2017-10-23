@@ -1601,6 +1601,41 @@ static int serial8250_tegra_handle_irq(struct uart_port *port)
 	return 1;
 }
 
+static void serial8250_tegra_rx_poll_timer(unsigned long _data)
+{
+	struct uart_8250_port *up = (struct uart_8250_port *)_data;
+	unsigned char status;
+	unsigned long flags;
+	struct uart_port *port = &up->port;
+
+	spin_lock_irqsave(&port->lock, flags);
+	status = serial_port_in(port, UART_LSR);
+
+	if (status & (UART_LSR_DR | UART_LSR_BI))
+		status = serial8250_rx_chars(up, status);
+
+	mod_timer(&up->rx_poll_timer, jiffies + up->rx_poll_timeout_jiffies);
+	spin_unlock_irqrestore(&port->lock, flags);
+}
+
+#ifdef CONFIG_ARCH_TEGRA
+void tegra_serial_handle_break(struct uart_port *p)
+{
+	unsigned int status, tmout = 10000;
+
+	do {
+		status = p->serial_in(p, UART_LSR);
+		if (status & (UART_LSR_FIFOE | UART_LSR_BRK_ERROR_BITS))
+			status = p->serial_in(p, UART_RX);
+		else
+			break;
+		if (--tmout == 0)
+			break;
+		udelay(1);
+	} while (1);
+}
+#endif
+
 /*
  * These Exar UARTs have an extra interrupt indicator that could
  * fire for a few unimplemented interrupts.  One of which is a
@@ -1624,6 +1659,44 @@ static int exar_handle_irq(struct uart_port *port)
 	}
 
 	return ret;
+}
+
+void serial8250_save_port_stats(struct uart_port *port,
+		struct uart_icount *stats)
+{
+	stats->rx          = port->icount.rx;
+	stats->tx          = port->icount.tx;
+	stats->frame       = port->icount.frame;
+	stats->overrun     = port->icount.overrun;
+	stats->parity      = port->icount.parity;
+	stats->brk         = port->icount.brk;
+	stats->buf_overrun = port->icount.buf_overrun;
+	stats->cts         = port->icount.cts;
+	stats->dsr         = port->icount.dsr;
+	stats->rng         = port->icount.rng;
+	stats->dcd         = port->icount.dcd;
+}
+
+void serial8250_dump_port_stats(struct uart_port *port,
+	struct uart_icount stats)
+{
+	pr_err_ratelimited(
+		"old_stats: rx %d, tx %d frame %d ovrun %d parity %d\n",
+		stats.rx, stats.tx, stats.frame, stats.overrun,
+		stats.parity);
+	pr_err_ratelimited(
+		"old_stats: brk %d ovrun %d cts %d, dsr %d rng %d dcd %d\n",
+		stats.brk, stats.buf_overrun, stats.cts, stats.dsr,
+		stats.rng, stats.dcd);
+
+	pr_err_ratelimited(
+		"curr_stats: rx %d, tx %d frame %d ovrun %d parity %d\n",
+		port->icount.rx, port->icount.tx, port->icount.frame,
+		port->icount.overrun, port->icount.parity);
+	pr_err_ratelimited(
+		"curr_stats: brk %d ovrun %d cts %d, dsr %d rng %d dcd %d\n",
+		port->icount.brk, port->icount.buf_overrun, port->icount.cts,
+		port->icount.dsr, port->icount.rng, port->icount.dcd);
 }
 
 /*
@@ -1654,9 +1727,11 @@ static irqreturn_t serial8250_interrupt(int irq, void *dev_id)
 	do {
 		struct uart_8250_port *up;
 		struct uart_port *port;
+		struct uart_icount old_stats;
 
 		up = list_entry(l, struct uart_8250_port, list);
 		port = &up->port;
+		serial8250_save_port_stats(port, &old_stats);
 
 		if (port->handle_irq(port)) {
 			handled = 1;
@@ -1674,6 +1749,7 @@ static irqreturn_t serial8250_interrupt(int irq, void *dev_id)
 			/* If we hit this, we're dead. */
 			printk_ratelimited(KERN_ERR
 				"serial8250: too much work for irq%d\n", irq);
+			serial8250_dump_port_stats(port, old_stats);
 			break;
 		}
 	} while (l != end);
@@ -2265,6 +2341,10 @@ dont_test_tx_en:
 		inb_p(icp);
 	}
 
+	if (port->enable_rx_poll_timer)
+		mod_timer(&up->rx_poll_timer,
+				jiffies + up->rx_poll_timeout_jiffies);
+
 	return 0;
 }
 
@@ -2313,6 +2393,9 @@ static void serial8250_shutdown(struct uart_port *port)
 	 * the IRQ chain.
 	 */
 	serial_port_in(port, UART_RX);
+
+	if (port->enable_rx_poll_timer)
+		del_timer_sync(&up->rx_poll_timer);
 
 	del_timer_sync(&up->timer);
 	up->timer.function = serial8250_timeout;
@@ -2760,7 +2843,17 @@ static void serial8250_config_port(struct uart_port *port, int flags)
 
 	if (port->type == PORT_TEGRA) {
 		up->bugs |= UART_BUG_NOMSR;
-		port->handle_irq = serial8250_tegra_handle_irq;
+#if defined CONFIG_ARCH_TEGRA
+		port->handle_break = tegra_serial_handle_break;
+#endif
+		if (port->flags & UPF_BUGGY_UART)
+			port->handle_irq = serial8250_tegra_handle_irq;
+
+		if (port->enable_rx_poll_timer) {
+			setup_timer(&up->rx_poll_timer, serial8250_tegra_rx_poll_timer,
+					(unsigned long) up);
+			up->rx_poll_timeout_jiffies = msecs_to_jiffies(1000);
+		}
 	}
 
 	if (port->type != PORT_UNKNOWN && flags & UART_CONFIG_IRQ)
@@ -3371,6 +3464,8 @@ int serial8250_register_8250_port(struct uart_8250_port *up)
 			uart->dl_write = up->dl_write;
 		if (up->dma)
 			uart->dma = up->dma;
+		if (up->port.enable_rx_poll_timer)
+			uart->port.enable_rx_poll_timer = true;
 
 		if (serial8250_isa_config != NULL)
 			serial8250_isa_config(0, &uart->port,

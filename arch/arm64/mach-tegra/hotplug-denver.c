@@ -22,47 +22,15 @@
 #include <linux/clockchips.h>
 #include <linux/completion.h>
 #include <linux/cpu.h>
+#include <linux/platform/tegra/common.h>
 
 #include <asm/suspend.h>
+
+#include "../../../drivers/platform/tegra/nvdumper/nvdumper-footprint.h"
 
 #include "sleep.h"
 #include "pm-soc.h"
 #include "pm-tegra132.h"
-
-extern volatile ulong secondary_holding_pen_release;
-
-extern bool tegra_suspend_in_progress();
-
-/*
- * platform-specific code to shutdown a CPU
- *
- * Called with IRQs disabled
- */
-void tegra_cpu_die(unsigned int cpu)
-{
-	static unsigned long pmstate;
-
-	if (tegra_suspend_in_progress()) {
-		/*
-		 * Only secondary cores should be killed here. The
-		 * main/boot core should die in pm.c during LP0.
-		 */
-		BUG_ON(cpu == 0);
-
-		/* 2nd cores must be in C7 for LP0/LP1 */
-		tegra_tear_down_cpu();
-	} else {
-		pmstate = T132_CORE_C6;
-
-		do {
-			asm volatile(
-			"	msr actlr_el1, %0\n"
-			"	wfi\n"
-			:
-			: "r" (pmstate));
-		} while (secondary_holding_pen_release != cpu);
-	}
-}
 
 noinline void setup_mca(void *info)
 {
@@ -74,7 +42,8 @@ noinline int mca_cpu_callback(struct notifier_block *nfb,
 				unsigned long action, void *hcpu)
 {
 	if(action == CPU_ONLINE || action == CPU_ONLINE_FROZEN)
-		smp_call_function_single((int) hcpu, setup_mca, NULL, 1);
+		smp_call_function_single((int)(uintptr_t) hcpu,
+						setup_mca, NULL, 1);
 	return 0;
 }
 

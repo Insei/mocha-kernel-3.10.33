@@ -1181,10 +1181,14 @@ imx179_probe(struct i2c_client *client,
 
 	i2c_set_clientdata(client, info);
 
+<<<<<<< HEAD
 	info->sysedpc = sysedp_create_consumer("imx179", "imx179");
 
 	mutex_init(&info->imx179_camera_lock);
 
+=======
+	mutex_init(&info->imx179_camera_lock);
+>>>>>>> update/master
 	pr_err("[IMX179]: end of probing sensor.\n");
 	return 0;
 

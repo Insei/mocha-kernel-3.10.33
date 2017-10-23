@@ -3,7 +3,11 @@
  *
  * NVIDIA Tegra Sysfs for BCMDHD driver
  *
+<<<<<<< HEAD
  * Copyright (C) 2014 NVIDIA Corporation. All rights reserved.
+=======
+ * Copyright (C) 2014-2016 NVIDIA Corporation. All rights reserved.
+>>>>>>> update/master
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -17,6 +21,10 @@
  */
 
 #include "dhd_custom_sysfs_tegra.h"
+<<<<<<< HEAD
+=======
+#include "dhd_custom_sysfs_tegra_stat.h"
+>>>>>>> update/master
 #include "wlioctl.h"
 #include "wldev_common.h"
 
@@ -38,6 +46,11 @@ rssi_work_func(struct work_struct *work)
 	int err;
 	int i;
 
+<<<<<<< HEAD
+=======
+	UNUSED_PARAMETER(dwork);
+
+>>>>>>> update/master
 //	pr_info("%s\n", __func__);
 
 	/* create rssi request */
@@ -63,6 +76,25 @@ rssi_work_func(struct work_struct *work)
 			0);
 	}
 
+<<<<<<< HEAD
+=======
+	/* save rssi value for statistics */
+	if (((int) scb_val.val) < 0) {
+		TEGRA_SYSFS_HISTOGRAM_STAT_SET(rssi, scb_val.val);
+		if (bcmdhd_stat.gen_stat.rssi < -67) {
+			if (bcmdhd_stat.gen_stat.channel_stat)
+				TEGRA_SYSFS_HISTOGRAM_STAT_INC
+					(channel_stat->rssi_low);
+			TEGRA_SYSFS_HISTOGRAM_STAT_INC(rssi_low);
+		} else {
+			if (bcmdhd_stat.gen_stat.channel_stat)
+				TEGRA_SYSFS_HISTOGRAM_STAT_INC
+					(channel_stat->rssi_high);
+			TEGRA_SYSFS_HISTOGRAM_STAT_INC(rssi_high);
+		}
+	}
+
+>>>>>>> update/master
 	/* schedule next rssi */
 fail:
 	schedule_delayed_work(&rssi_work,

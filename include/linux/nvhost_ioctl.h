@@ -3,7 +3,7 @@
  *
  * Tegra graphics host driver
  *
- * Copyright (c) 2009-2014, NVIDIA Corporation.  All rights reserved.
+ * Copyright (c) 2009-2015, NVIDIA Corporation.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -74,11 +74,6 @@ struct nvhost_waitchk {
 	__u32 thresh;
 };
 
-struct nvhost_gpfifo {
-	__u32 entry0; /* first word of gpfifo entry */
-	__u32 entry1; /* second word of gpfifo entry */
-};
-
 struct nvhost_syncpt_incr {
 	__u32 syncpt_id;
 	__u32 syncpt_incrs;
@@ -93,6 +88,17 @@ struct nvhost_get_param_arg {
 	__u32 value;
 };
 
+struct nvhost_get_client_managed_syncpt_arg {
+	__u64 name;
+	__u32 param;
+	__u32 value;
+};
+
+struct nvhost_free_client_managed_syncpt_arg {
+	__u32 param;
+	__u32 value;
+};
+
 struct nvhost_channel_open_args {
 	__s32 channel_fd;
 };
@@ -101,103 +107,16 @@ struct nvhost_set_nvmap_fd_args {
 	__u32 fd;
 } __packed;
 
-struct nvhost_alloc_obj_ctx_args {
-	__u32 class_num; /* kepler3d, 2d, compute, etc       */
-	__u32 padding;
-	__u64 obj_id;    /* output, used to free later       */
-};
-
-struct nvhost_free_obj_ctx_args {
-	__u64 obj_id; /* obj ctx to free */
-};
-
-struct nvhost_alloc_gpfifo_args {
-	__u32 num_entries;
-#define NVHOST_ALLOC_GPFIFO_FLAGS_VPR_ENABLED	(1 << 0) /* set owner channel of this gpfifo as a vpr channel */
-	__u32 flags;
-
-};
-
 struct nvhost_fence {
-	__u32 syncpt_id; /* syncpoint id */
-	__u32 value;     /* syncpoint value to wait or value for other to wait */
-};
-
-/* insert a wait on the fance before submitting gpfifo */
-#define NVHOST_SUBMIT_GPFIFO_FLAGS_FENCE_WAIT	BIT(0)
- /* insert an fence update after submitting gpfifo and
-    return the new fence for other to wait on */
-#define NVHOST_SUBMIT_GPFIFO_FLAGS_FENCE_GET	BIT(1)
-/* choose between different gpfifo entry format */
-#define NVHOST_SUBMIT_GPFIFO_FLAGS_HW_FORMAT	BIT(2)
-/* create a sync fence fd instead of raw fence */
-#define NVHOST_SUBMIT_GPFIFO_FLAGS_SYNC_FENCE	BIT(3)
-
-struct nvhost_submit_gpfifo_args {
-	__u64 gpfifo;
-	__u32 num_entries;
-	__u32 flags;
-	struct nvhost_fence fence;
-};
-
-struct nvhost_map_buffer_args {
-	__u32 flags;
-#define NVHOST_MAP_BUFFER_FLAGS_ALIGN		0x0
-#define NVHOST_MAP_BUFFER_FLAGS_OFFSET		BIT(0)
-#define NVHOST_MAP_BUFFER_FLAGS_KIND_PITCH	0x0
-#define NVHOST_MAP_BUFFER_FLAGS_KIND_SPECIFIED	BIT(1)
-#define NVHOST_MAP_BUFFER_FLAGS_CACHEABLE_FALSE	0x0
-#define NVHOST_MAP_BUFFER_FLAGS_CACHEABLE_TRUE	BIT(2)
-	__u32 nvmap_handle;
-	union {
-		__u64 offset; /* valid if _offset flag given (in|out) */
-		__u64 align;  /* alignment multiple (0:={1 or n/a})   */
-	} offset_alignment;
-	__u32 kind;
-#define NVHOST_MAP_BUFFER_KIND_GENERIC_16BX2 0xfe
-};
-
-struct nvhost_unmap_buffer_args {
-	__u64 offset;
-};
-
-struct nvhost_wait_args {
-#define NVHOST_WAIT_TYPE_NOTIFIER	0x0
-#define NVHOST_WAIT_TYPE_SEMAPHORE	0x1
-	__u32 type;
-	__u32 timeout;
-	union {
-		struct {
-			/* handle and offset for notifier memory */
-			__u32 nvmap_handle;
-			__u32 offset;
-			__u32 padding1;
-			__u32 padding2;
-		} notifier;
-		struct {
-			/* handle and offset for semaphore memory */
-			__u32 nvmap_handle;
-			__u32 offset;
-			/* semaphore payload to wait for */
-			__u32 payload;
-			__u32 padding;
-		} semaphore;
-	} condition; /* determined by type field */
-};
-
-/* cycle stats support */
-struct nvhost_cycle_stats_args {
-	__u32 nvmap_handle;
-} __packed;
-
-struct nvhost_read_3d_reg_args {
-	__u32 offset;
-	__u32 value;
+	__u32 syncpt_id; /* syncpoint id or sync fence fd */
+	__u32 value;     /* syncpoint value (discarded when using sync fence) */
 };
 
 enum nvhost_clk_attr {
 	NVHOST_CLOCK = 0,
 	NVHOST_BW,
+	NVHOST_PIXELRATE,
+	NVHOST_BW_KHZ,
 };
 
 /*
@@ -225,17 +144,6 @@ struct nvhost_set_timeout_ex_args {
 struct nvhost_set_priority_args {
 	__u32 priority;
 } __packed;
-
-#define NVHOST_ZCULL_MODE_GLOBAL		0
-#define NVHOST_ZCULL_MODE_NO_CTXSW		1
-#define NVHOST_ZCULL_MODE_SEPARATE_BUFFER	2
-#define NVHOST_ZCULL_MODE_PART_OF_REGULAR_BUF	3
-
-struct nvhost_zcull_bind_args {
-	__u64 gpu_va;
-	__u32 mode;
-	__u32 padding;
-};
 
 struct nvhost_set_error_notifier {
 	__u64 offset;
@@ -326,6 +234,25 @@ struct nvhost_set_ctxswitch_args {
 	__u32 pad;
 };
 
+struct nvhost_channel_buffer {
+	__u32 dmabuf_fd;	/* in */
+	__u32 reserved0;	/* reserved, must be 0 */
+	__u64 reserved1[2];	/* reserved, must be 0 */
+	__u64 address;		/* out, device view to the buffer */
+};
+
+struct nvhost_channel_unmap_buffer_args {
+	__u32 num_buffers;	/* in, number of buffers to unmap */
+	__u32 reserved;		/* reserved, must be 0 */
+	__u64 table_address;	/* pointer to beginning of buffer */
+};
+
+struct nvhost_channel_map_buffer_args {
+	__u32 num_buffers;	/* in, number of buffers to map */
+	__u32 reserved;		/* reserved, must be 0 */
+	__u64 table_address;	/* pointer to beginning of buffer */
+};
+
 #define NVHOST_IOCTL_CHANNEL_GET_SYNCPOINTS	\
 	_IOR(NVHOST_IOCTL_MAGIC, 2, struct nvhost_get_param_args)
 #define NVHOST_IOCTL_CHANNEL_GET_WAITBASES	\
@@ -336,10 +263,8 @@ struct nvhost_set_ctxswitch_args {
 	_IOW(NVHOST_IOCTL_MAGIC, 5, struct nvhost_set_nvmap_fd_args)
 #define NVHOST_IOCTL_CHANNEL_NULL_KICKOFF	\
 	_IOR(NVHOST_IOCTL_MAGIC, 6, struct nvhost_get_param_args)
-#define NVHOST_IOCTL_CHANNEL_READ_3D_REG \
-	_IOWR(NVHOST_IOCTL_MAGIC, 8, struct nvhost_read_3d_reg_args)
 #define NVHOST_IOCTL_CHANNEL_GET_CLK_RATE		\
-	_IOR(NVHOST_IOCTL_MAGIC, 9, struct nvhost_clk_rate_args)
+	_IOWR(NVHOST_IOCTL_MAGIC, 9, struct nvhost_clk_rate_args)
 #define NVHOST_IOCTL_CHANNEL_SET_CLK_RATE		\
 	_IOW(NVHOST_IOCTL_MAGIC, 10, struct nvhost_clk_rate_args)
 #define NVHOST_IOCTL_CHANNEL_SET_TIMEOUT	\
@@ -358,6 +283,10 @@ struct nvhost_set_ctxswitch_args {
 	_IOWR(NVHOST_IOCTL_MAGIC, 17, struct nvhost_get_param_arg)
 #define NVHOST_IOCTL_CHANNEL_SET_TIMEOUT_EX	\
 	_IOWR(NVHOST_IOCTL_MAGIC, 18, struct nvhost_set_timeout_ex_args)
+#define NVHOST_IOCTL_CHANNEL_GET_CLIENT_MANAGED_SYNCPOINT	\
+	_IOWR(NVHOST_IOCTL_MAGIC, 19, struct nvhost_get_client_managed_syncpt_arg)
+#define NVHOST_IOCTL_CHANNEL_FREE_CLIENT_MANAGED_SYNCPOINT	\
+	_IOWR(NVHOST_IOCTL_MAGIC, 20, struct nvhost_free_client_managed_syncpt_arg)
 #define NVHOST_IOCTL_CHANNEL_GET_MODMUTEX	\
 	_IOWR(NVHOST_IOCTL_MAGIC, 23, struct nvhost_get_param_arg)
 #define NVHOST_IOCTL_CHANNEL_SET_CTXSWITCH	\
@@ -369,21 +298,11 @@ struct nvhost_set_ctxswitch_args {
 #define	NVHOST_IOCTL_CHANNEL_MODULE_REGRDWR	\
 	_IOWR(NVHOST_IOCTL_MAGIC, 27, struct nvhost_ctrl_module_regrdwr_args)
 
-/* START of T124 IOCTLS */
-#define NVHOST_IOCTL_CHANNEL_ALLOC_GPFIFO	\
-	_IOW(NVHOST_IOCTL_MAGIC,  100, struct nvhost_alloc_gpfifo_args)
-#define NVHOST_IOCTL_CHANNEL_WAIT		\
-	_IOWR(NVHOST_IOCTL_MAGIC, 102, struct nvhost_wait_args)
-#define NVHOST_IOCTL_CHANNEL_CYCLE_STATS	\
-	_IOWR(NVHOST_IOCTL_MAGIC, 106, struct nvhost_cycle_stats_args)
-#define NVHOST_IOCTL_CHANNEL_SUBMIT_GPFIFO	\
-	_IOWR(NVHOST_IOCTL_MAGIC, 107, struct nvhost_submit_gpfifo_args)
-#define NVHOST_IOCTL_CHANNEL_ALLOC_OBJ_CTX	\
-	_IOWR(NVHOST_IOCTL_MAGIC, 108, struct nvhost_alloc_obj_ctx_args)
-#define NVHOST_IOCTL_CHANNEL_FREE_OBJ_CTX	\
-	_IOR(NVHOST_IOCTL_MAGIC,  109, struct nvhost_free_obj_ctx_args)
-#define NVHOST_IOCTL_CHANNEL_ZCULL_BIND		\
-	_IOWR(NVHOST_IOCTL_MAGIC, 110, struct nvhost_zcull_bind_args)
+#define	NVHOST_IOCTL_CHANNEL_MAP_BUFFER	\
+	_IOWR(NVHOST_IOCTL_MAGIC, 28, struct nvhost_channel_map_buffer_args)
+#define	NVHOST_IOCTL_CHANNEL_UNMAP_BUFFER	\
+	_IOWR(NVHOST_IOCTL_MAGIC, 29, struct nvhost_channel_unmap_buffer_args)
+
 #define NVHOST_IOCTL_CHANNEL_SET_ERROR_NOTIFIER  \
 	_IOWR(NVHOST_IOCTL_MAGIC, 111, struct nvhost_set_error_notifier)
 #define NVHOST_IOCTL_CHANNEL_OPEN	\
@@ -466,6 +385,30 @@ enum nvhost_module_id {
 	NVHOST_MODULE_TSEC,
 	NVHOST_MODULE_GPU,
 	NVHOST_MODULE_VIC,
+	NVHOST_MODULE_NVDEC,
+	NVHOST_MODULE_NVJPG,
+	NVHOST_MODULE_VII2C,
+};
+
+struct nvhost_characteristics {
+#define NVHOST_CHARACTERISTICS_GFILTER (1 << 0)
+#define NVHOST_CHARACTERISTICS_RESOURCE_PER_CHANNEL_INSTANCE (1 << 1)
+#define NVHOST_CHARACTERISTICS_SUPPORT_PREFENCES (1 << 2)
+	__u64 flags;
+
+	__u32 num_mlocks;
+	__u32 num_syncpts;
+
+	__u32 syncpts_base;
+	__u32 syncpts_limit;
+
+	__u32 num_hw_pts;
+	__u32 padding;
+};
+
+struct nvhost_ctrl_get_characteristics {
+	__u64 nvhost_characteristics_buf_size;
+	__u64 nvhost_characteristics_buf_addr;
 };
 
 #define NVHOST_IOCTL_CTRL_SYNCPT_READ		\
@@ -500,9 +443,17 @@ enum nvhost_module_id {
 	_IOWR(NVHOST_IOCTL_MAGIC, 12, struct nvhost_ctrl_module_regrdwr_args)
 #define NVHOST_IOCTL_CTRL_SYNC_FENCE_SET_NAME  \
 	_IOWR(NVHOST_IOCTL_MAGIC, 13, struct nvhost_ctrl_sync_fence_name_args)
+<<<<<<< HEAD
 
 #define NVHOST_IOCTL_CTRL_LAST			\
 	_IOC_NR(NVHOST_IOCTL_CTRL_SYNC_FENCE_SET_NAME)
+=======
+#define NVHOST_IOCTL_CTRL_GET_CHARACTERISTICS  \
+	_IOWR(NVHOST_IOCTL_MAGIC, 14, struct nvhost_ctrl_get_characteristics)
+
+#define NVHOST_IOCTL_CTRL_LAST			\
+	_IOC_NR(NVHOST_IOCTL_CTRL_GET_CHARACTERISTICS)
+>>>>>>> update/master
 #define NVHOST_IOCTL_CTRL_MAX_ARG_SIZE	\
 	sizeof(struct nvhost_ctrl_syncpt_waitmex_args)
 

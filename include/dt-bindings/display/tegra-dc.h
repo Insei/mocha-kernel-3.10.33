@@ -1,7 +1,7 @@
 /*
  * include/dt-bindings/display/tegra-dc.h
  *
- * Copyright (c) 2014, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2015, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -20,12 +20,19 @@
 #define __TEGRA_DC_H
 
 /* tegra_dc_out.type */
-#define TEGRA_DC_OUT_RGB	0
-#define TEGRA_DC_OUT_HDMI	1
-#define TEGRA_DC_OUT_DSI	2
-#define TEGRA_DC_OUT_DP		3
-#define TEGRA_DC_OUT_LVDS	4
-#define TEGRA_DC_OUT_NVSR_DP	5
+#define TEGRA_DC_OUT_RGB		0
+#define TEGRA_DC_OUT_HDMI		1
+#define TEGRA_DC_OUT_DSI		2
+#define TEGRA_DC_OUT_DP			3
+#define TEGRA_DC_OUT_LVDS		4
+#define TEGRA_DC_OUT_NVSR_DP		5
+#define TEGRA_DC_OUT_FAKE_DP		6
+#define TEGRA_DC_OUT_FAKE_DSIA		7
+#define TEGRA_DC_OUT_FAKE_DSIB		8
+#define TEGRA_DC_OUT_FAKE_DSI_GANGED	9
+#define TEGRA_DC_OUT_NULL		10
+/* Keep as the last dc_out_define*/
+#define TEGRA_DC_OUT_MAX		11
 
 /* tegra_dc_out.dither */
 #define TEGRA_DC_UNDEFINED_DITHER	0
@@ -47,6 +54,11 @@
 /* Makes hotplug GPIO a LP0 wakeup source */
 #define TEGRA_DC_OUT_HOTPLUG_WAKE_LP0		(1 << 7)
 
+/* bots for tegra_dc_out.hdcp_policy */
+#define TEGRA_DC_HDCP_POLICY_ALWAYS_ON	0
+#define TEGRA_DC_HDCP_POLICY_ON_DEMAND	1
+#define TEGRA_DC_HDCP_POLICY_ALWAYS_OFF	2
+
 /* tegra_dc_out.align */
 #define TEGRA_DC_ALIGN_MSB		0
 #define TEGRA_DC_ALIGN_LSB		1
@@ -60,6 +72,7 @@
 
 /* tegra_dc_platform_data.flags */
 #define TEGRA_DC_FLAG_ENABLED		(1 << 0)
+#define TEGRA_DC_FLAG_SET_EARLY_MODE		(1 << 1)
 
 /* tegra_dc_out_pin.name */
 #define TEGRA_DC_OUT_PIN_DATA_ENABLE	0

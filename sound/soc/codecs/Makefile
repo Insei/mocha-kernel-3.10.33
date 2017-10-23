@@ -126,11 +126,16 @@ snd-soc-wm-hubs-objs := wm_hubs.o
 snd-soc-rt5639-objs := rt5639.o rt56xx_ioctl.o rt5639_ioctl.o
 snd-soc-rt5640-objs := rt5640.o
 snd-soc-rt5645-objs := rt5645.o rt5645_ioctl.o rt_codec_ioctl.o
+<<<<<<< HEAD
 snd-soc-rt5671-objs := rt5671.o rt5671_ioctl.o rt_codec_ioctl.o rt5671-dsp.o
+=======
+snd-soc-rt5659-objs := rt5659.o
+>>>>>>> update/master
 
 # Amp
 snd-soc-max9877-objs := max9877.o
 snd-soc-max97236-objs := max97236.o
+snd-soc-tas2552-objs := tas2552.o
 snd-soc-tpa6130a2-objs := tpa6130a2.o
 
 obj-$(CONFIG_SND_SOC_88PM860X)	+= snd-soc-88pm860x.o
@@ -260,9 +265,15 @@ obj-$(CONFIG_SND_SOC_WM_HUBS)	+= snd-soc-wm-hubs.o
 obj-$(CONFIG_SND_SOC_RT5639)	+= snd-soc-rt5639.o
 obj-$(CONFIG_SND_SOC_RT5640)	+= snd-soc-rt5640.o
 obj-$(CONFIG_SND_SOC_RT5645)	+= snd-soc-rt5645.o
+<<<<<<< HEAD
 obj-$(CONFIG_SND_SOC_RT5671)	+= snd-soc-rt5671.o
+=======
+obj-$(CONFIG_SND_SOC_RT5659)	+= snd-soc-rt5659.o
+obj-$(CONFIG_SND_SOC_ES755)     += audience/
+>>>>>>> update/master
 
 # Amp
 obj-$(CONFIG_SND_SOC_MAX9877)	+= snd-soc-max9877.o
 obj-$(CONFIG_SND_SOC_MAX97236)	+= snd-soc-max97236.o
+obj-$(CONFIG_SND_SOC_TAS2552)	+= snd-soc-tas2552.o
 obj-$(CONFIG_SND_SOC_TPA6130A2)	+= snd-soc-tpa6130a2.o

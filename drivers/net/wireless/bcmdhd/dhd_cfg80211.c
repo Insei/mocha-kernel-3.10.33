@@ -1,8 +1,12 @@
 /*
  * Linux cfg80211 driver - Dongle Host Driver (DHD) related
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+>>>>>>> update/master
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -53,9 +57,11 @@ static int dhd_dongle_up = FALSE;
 #include <dhd.h>
 #include <dhdioctl.h>
 #include <wlioctl.h>
+#include <brcm_nl80211.h>
 #include <dhd_cfg80211.h>
 
-static s32 wl_dongle_up(struct net_device *ndev, u32 up);
+static s32 wl_dongle_up(struct net_device *ndev);
+static s32 wl_dongle_down(struct net_device *ndev);
 
 /**
  * Function implementations
@@ -75,6 +81,17 @@ s32 dhd_cfg80211_deinit(struct bcm_cfg80211 *cfg)
 
 s32 dhd_cfg80211_down(struct bcm_cfg80211 *cfg)
 {
+	struct net_device *ndev;
+	s32 err = 0;
+
+	WL_TRACE(("In\n"));
+	if (!dhd_dongle_up) {
+		WL_ERR(("Dongle is already down\n"));
+		return err;
+	}
+
+	ndev = bcmcfg_to_prmry_ndev(cfg);
+	wl_dongle_down(ndev);
 	dhd_dongle_up = FALSE;
 	return 0;
 }
@@ -112,6 +129,7 @@ s32 dhd_cfg80211_clean_p2p_info(struct bcm_cfg80211 *cfg)
 	return 0;
 }
 
+<<<<<<< HEAD
 struct net_device *wl_cfg80211_allocate_if(struct bcm_cfg80211 *cfg, int ifidx, char *name,
 	uint8 *mac, uint8 bssidx)
 {
@@ -129,15 +147,14 @@ int wl_cfg80211_remove_if(struct bcm_cfg80211 *cfg, int ifidx, struct net_device
 }
 
 static s32 wl_dongle_up(struct net_device *ndev, u32 up)
+=======
+struct net_device* wl_cfg80211_allocate_if(struct bcm_cfg80211 *cfg, int ifidx, char *name,
+	uint8 *mac, uint8 bssidx)
+>>>>>>> update/master
 {
-	s32 err = 0;
-
-	err = wldev_ioctl(ndev, WLC_UP, &up, sizeof(up), true);
-	if (unlikely(err)) {
-		WL_ERR(("WLC_UP error (%d)\n", err));
-	}
-	return err;
+	return dhd_allocate_if(cfg->pub, ifidx, name, mac, bssidx, FALSE);
 }
+<<<<<<< HEAD
 s32 dhd_config_dongle(struct bcm_cfg80211 *cfg)
 {
 #ifndef DHD_SDALIGN
@@ -259,3 +276,99 @@ done:
 	return err;
 }
 #endif /* CONFIG_NL80211_TESTMODE */
+=======
+
+int wl_cfg80211_register_if(struct bcm_cfg80211 *cfg, int ifidx, struct net_device* ndev)
+{
+	return dhd_register_if(cfg->pub, ifidx, FALSE);
+}
+
+int wl_cfg80211_remove_if(struct bcm_cfg80211 *cfg, int ifidx, struct net_device* ndev)
+{
+	return dhd_remove_if(cfg->pub, ifidx, FALSE);
+}
+
+int wl_cfg80211_remove_p2p_if(struct bcm_cfg80211 *cfg, int ifidx, struct net_device* ndev)
+{
+	return dhd_remove_p2p_if(cfg->pub, ifidx, FALSE);
+}
+
+struct net_device * dhd_cfg80211_netdev_free(struct net_device *ndev)
+{
+	if (ndev) {
+		if (ndev->ieee80211_ptr) {
+			kfree(ndev->ieee80211_ptr);
+			ndev->ieee80211_ptr = NULL;
+		}
+		free_netdev(ndev);
+		return NULL;
+	}
+
+	return ndev;
+}
+
+void dhd_netdev_free(struct net_device *ndev)
+{
+#ifdef WL_CFG80211
+	ndev = dhd_cfg80211_netdev_free(ndev);
+#endif
+	if (ndev)
+		free_netdev(ndev);
+}
+
+static s32
+wl_dongle_up(struct net_device *ndev)
+{
+	s32 err = 0;
+	u32 up = 0;
+
+	err = wldev_ioctl(ndev, WLC_UP, &up, sizeof(up), true);
+	if (unlikely(err)) {
+		WL_ERR(("WLC_UP error (%d)\n", err));
+	}
+	return err;
+}
+
+static s32
+wl_dongle_down(struct net_device *ndev)
+{
+	s32 err = 0;
+	u32 down = 0;
+
+	err = wldev_ioctl(ndev, WLC_DOWN, &down, sizeof(down), true);
+	if (unlikely(err)) {
+		WL_ERR(("WLC_DOWN error (%d)\n", err));
+	}
+	return err;
+}
+
+
+s32 dhd_config_dongle(struct bcm_cfg80211 *cfg)
+{
+#ifndef DHD_SDALIGN
+#define DHD_SDALIGN	32
+#endif
+	struct net_device *ndev;
+	s32 err = 0;
+
+	WL_TRACE(("In\n"));
+	if (dhd_dongle_up) {
+		WL_ERR(("Dongle is already up\n"));
+		return err;
+	}
+
+	ndev = bcmcfg_to_prmry_ndev(cfg);
+
+	err = wl_dongle_up(ndev);
+	if (unlikely(err)) {
+		WL_ERR(("wl_dongle_up failed\n"));
+		goto default_conf_out;
+	}
+	dhd_dongle_up = true;
+
+default_conf_out:
+
+	return err;
+
+}
+>>>>>>> update/master

@@ -1,8 +1,12 @@
 /*
  * Driver O/S-independent utility routines
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+>>>>>>> update/master
  * 
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
@@ -21,7 +25,11 @@
  *      Notwithstanding the above, under no circumstances may you combine this
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
+<<<<<<< HEAD
  * $Id: bcmutils.c 457888 2014-02-25 03:34:39Z $
+=======
+ * $Id: bcmutils.c 530650 2015-01-30 13:06:35Z $
+>>>>>>> update/master
  */
 
 #include <bcm_cfg.h>
@@ -60,7 +68,11 @@
 #include <proto/bcmip.h>
 #include <proto/802.1d.h>
 #include <proto/802.11.h>
+
+
 void *_bcmutils_dummy_fn = NULL;
+
+
 
 
 #ifdef BCMDRIVER
@@ -105,6 +117,7 @@ pktfrombuf(osl_t *osh, void *p, uint offset, int len, uchar *buf)
 {
 	uint n, ret = 0;
 
+
 	/* skip 'offset' bytes */
 	for (; p && offset; p = PKTNEXT(osh, p)) {
 		if (offset < (uint)PKTLEN(osh, p))
@@ -143,9 +156,15 @@ pkttotlen(osl_t *osh, void *p)
 		total += len;
 #ifdef BCMLFRAG
 		if (BCMLFRAG_ENAB()) {
+<<<<<<< HEAD
 			if (PKTISFRAG(osh, p))
 				total += PKTFRAGTOTLEN(osh, p);
 
+=======
+			if (PKTISFRAG(osh, p)) {
+				total += PKTFRAGTOTLEN(osh, p);
+			}
+>>>>>>> update/master
 		}
 #endif
 	}
@@ -173,9 +192,15 @@ pktsegcnt(osl_t *osh, void *p)
 		cnt++;
 #ifdef BCMLFRAG
 		if (BCMLFRAG_ENAB()) {
+<<<<<<< HEAD
 			if (PKTISFRAG(osh, p))
 				cnt += PKTFRAGTOTNUM(osh, p);
 
+=======
+			if (PKTISFRAG(osh, p)) {
+				cnt += PKTFRAGTOTNUM(osh, p);
+			}
+>>>>>>> update/master
 		}
 #endif
 	}
@@ -253,6 +278,7 @@ pktoffset(osl_t *osh, void *p,  uint offset)
 	return p;
 }
 
+<<<<<<< HEAD
 /*
  * osl multiple-precedence packet queue
  * hi_prec is always >= the number of the highest non-empty precedence
@@ -735,6 +761,8 @@ pktq_mdeq(struct pktq *pq, uint prec_bmp, int *prec_out)
 	return p;
 }
 
+=======
+>>>>>>> update/master
 #endif /* BCMDRIVER */
 
 #if !defined(BCMROMOFFLOAD_EXCLUDE_BCMUTILS_FUNCS)
@@ -845,13 +873,23 @@ bcmstrstr(const char *haystack, const char *needle)
 	if ((haystack == NULL) || (needle == NULL))
 		return DISCARD_QUAL(haystack, char);
 
-	nlen = strlen(needle);
-	len = strlen(haystack) - nlen + 1;
+	nlen = (int)strlen(needle);
+	len = (int)strlen(haystack) - nlen + 1;
 
 	for (i = 0; i < len; i++)
 		if (memcmp(needle, &haystack[i], nlen) == 0)
 			return DISCARD_QUAL(&haystack[i], char);
 	return (NULL);
+}
+
+char *
+bcmstrnstr(const char *s, uint s_len, const char *substr, uint substr_len)
+{
+	for (; s_len >= substr_len; s++, s_len--)
+		if (strncmp(s, substr, substr_len) == 0)
+			return DISCARD_QUAL(s, char);
+
+	return NULL;
 }
 
 char *
@@ -1131,6 +1169,7 @@ bcm_ip_ntoa(struct ipv4_addr *ia, char *buf)
 
 char *
 bcm_ipv6_ntoa(void *ipv6, char *buf)
+<<<<<<< HEAD
 {
 	/* Implementing RFC 5952 Sections 4 + 5 */
 	/* Not thoroughly tested */
@@ -1164,6 +1203,61 @@ bcm_ipv6_ntoa(void *ipv6, char *buf)
 
 	for (i = 0; i < IPV6_ADDR_LEN/2; i++) {
 		if ((uint8 *) (a + i) == a4) {
+			snprintf(p, 16, ":%u.%u.%u.%u", a4[0], a4[1], a4[2], a4[3]);
+			break;
+		} else if (i == i_max) {
+			*p++ = ':';
+			i += cnt_max - 1;
+			p[0] = ':';
+			p[1] = '\0';
+		} else {
+			if (i)
+				*p++ = ':';
+			p += snprintf(p, 8, "%x", ntoh16(a[i]));
+		}
+	}
+
+	return buf;
+}
+#ifdef BCMDRIVER
+
+void
+bcm_mdelay(uint ms)
+=======
+>>>>>>> update/master
+{
+	/* Implementing RFC 5952 Sections 4 + 5 */
+	/* Not thoroughly tested */
+	uint16 tmp[8];
+	uint16 *a = &tmp[0];
+	char *p = buf;
+	int i, i_max = -1, cnt = 0, cnt_max = 1;
+	uint8 *a4 = NULL;
+	memcpy((uint8 *)&tmp[0], (uint8 *)ipv6, IPV6_ADDR_LEN);
+
+	for (i = 0; i < IPV6_ADDR_LEN/2; i++) {
+		if (a[i]) {
+			if (cnt > cnt_max) {
+				cnt_max = cnt;
+				i_max = i - cnt;
+			}
+			cnt = 0;
+		} else
+			cnt++;
+	}
+	if (cnt > cnt_max) {
+		cnt_max = cnt;
+		i_max = i - cnt;
+	}
+	if (i_max == 0 &&
+		/* IPv4-translated: ::ffff:0:a.b.c.d */
+		((cnt_max == 4 && a[4] == 0xffff && a[5] == 0) ||
+		/* IPv4-mapped: ::ffff:a.b.c.d */
+		(cnt_max == 5 && a[5] == 0xffff)))
+		a4 = (uint8*) (a + 6);
+
+	for (i = 0; i < IPV6_ADDR_LEN/2; i++) {
+		if ((uint8*) (a + i) == a4) {
 			snprintf(p, 16, ":%u.%u.%u.%u", a4[0], a4[1], a4[2], a4[3]);
 			break;
 		} else if (i == i_max) {
@@ -1238,7 +1332,8 @@ pktsetprio(void *pkt, bool update_vtag)
 		vlan_tag = ntoh16(evh->vlan_tag);
 		vlan_prio = (int) (vlan_tag >> VLAN_PRI_SHIFT) & VLAN_PRI_MASK;
 
-		if (evh->ether_type == hton16(ETHER_TYPE_IP)) {
+		if ((evh->ether_type == hton16(ETHER_TYPE_IP)) ||
+			(evh->ether_type == hton16(ETHER_TYPE_IPV6))) {
 			uint8 *ip_body = pktdata + sizeof(struct ethervlan_header);
 			uint8 tos_tc = IP_TOS46(ip_body);
 			dscp_prio = (int)(tos_tc >> IPV4_TOS_PREC_SHIFT);
@@ -1265,7 +1360,8 @@ pktsetprio(void *pkt, bool update_vtag)
 			evh->vlan_tag = hton16(vlan_tag);
 			rc |= PKTPRIO_UPD;
 		}
-	} else if (eh->ether_type == hton16(ETHER_TYPE_IP)) {
+	} else if ((eh->ether_type == hton16(ETHER_TYPE_IP)) ||
+		(eh->ether_type == hton16(ETHER_TYPE_IPV6))) {
 		uint8 *ip_body = pktdata + sizeof(struct ether_header);
 		uint8 tos_tc = IP_TOS46(ip_body);
 		uint8 dscp = tos_tc >> IPV4_TOS_DSCP_SHIFT;
@@ -1299,6 +1395,90 @@ pktsetprio(void *pkt, bool update_vtag)
 	return (rc | priority);
 }
 
+/* lookup user priority for specified DSCP */
+static uint8
+dscp2up(uint8 *up_table, uint8 dscp)
+{
+	uint8 up = 255;
+
+	/* lookup up from table if parameters valid */
+	if (up_table != NULL && dscp < UP_TABLE_MAX) {
+		up = up_table[dscp];
+	}
+
+	/* 255 is unused value so return up from dscp */
+	if (up == 255) {
+		up = dscp >> (IPV4_TOS_PREC_SHIFT - IPV4_TOS_DSCP_SHIFT);
+	}
+
+	return up;
+}
+
+/* set user priority by QoS Map Set table (UP table), table size is UP_TABLE_MAX */
+uint BCMFASTPATH
+pktsetprio_qms(void *pkt, uint8* up_table, bool update_vtag)
+{
+	if (up_table) {
+		uint8 *pktdata;
+		uint pktlen;
+		uint8 dscp;
+		uint up = 0;
+		uint rc = 0;
+
+		pktdata = (uint8 *)PKTDATA(OSH_NULL, pkt);
+		pktlen = PKTLEN(OSH_NULL, pkt);
+
+		if (pktgetdscp(pktdata, pktlen, &dscp)) {
+			rc = PKTPRIO_DSCP;
+			up = dscp2up(up_table, dscp);
+			PKTSETPRIO(pkt, up);
+			printf("dscp=%d, up=%d\n", dscp, up);
+		}
+
+		return (rc | up);
+	}
+	else {
+		return pktsetprio(pkt, update_vtag);
+	}
+}
+
+/* Returns TRUE and DSCP if IP header found, FALSE otherwise.
+ */
+bool BCMFASTPATH
+pktgetdscp(uint8 *pktdata, uint pktlen, uint8 *dscp)
+{
+	struct ether_header *eh;
+	struct ethervlan_header *evh;
+	uint8 *ip_body;
+	bool rc = FALSE;
+
+	/* minimum length is ether header and IP header */
+	if (pktlen < sizeof(struct ether_header) + IPV4_MIN_HEADER_LEN)
+		return FALSE;
+
+	eh = (struct ether_header *) pktdata;
+
+	if (eh->ether_type == HTON16(ETHER_TYPE_IP)) {
+		ip_body = pktdata + sizeof(struct ether_header);
+		*dscp = IP_DSCP46(ip_body);
+		rc = TRUE;
+	}
+	else if (eh->ether_type == HTON16(ETHER_TYPE_8021Q)) {
+		evh = (struct ethervlan_header *)eh;
+
+		/* minimum length is ethervlan header and IP header */
+		if (pktlen >= sizeof(struct ethervlan_header) + IPV4_MIN_HEADER_LEN &&
+			evh->ether_type == HTON16(ETHER_TYPE_IP)) {
+			ip_body = pktdata + sizeof(struct ethervlan_header);
+			*dscp = IP_DSCP46(ip_body);
+			rc = TRUE;
+		}
+	}
+
+	return rc;
+}
+
+/* The 0.5KB string table is not removed by compiler even though it's unused */
 
 static char bcm_undeferrstr[32];
 static const char *bcmerrorstrtable[] = BCMERRSTRINGTABLE;
@@ -1323,6 +1503,7 @@ bcmerrorstr(int bcmerror)
 
 
 /* iovar table lookup */
+/* could mandate sorted tables and do a binary search */
 const bcm_iovar_t*
 bcm_iovar_lookup(const bcm_iovar_t *table, const char *name)
 {
@@ -1423,9 +1604,15 @@ bcm_write_tlv(int type, const void *data, int datalen, uint8 *dst)
 	    ((datalen >= 0) && (datalen <= BCM_TLV_MAX_DATA_SIZE)) &&
 	    ((data != NULL) || (datalen == 0))) {
 
+<<<<<<< HEAD
 		/* write type, len fields */
 		dst_tlv->id = (uint8)type;
 		dst_tlv->len = (uint8)datalen;
+=======
+	        /* write type, len fields */
+		dst_tlv->id = (uint8)type;
+	        dst_tlv->len = (uint8)datalen;
+>>>>>>> update/master
 
 		/* if data is present, copy to the output buffer and update
 		 * pointer to output buffer
@@ -1454,9 +1641,16 @@ bcm_write_tlv_safe(int type, const void *data, int datalen, uint8 *dst, int dst_
 		/* if len + tlv hdr len is more than destlen, don't do anything
 		 * just return the buffer untouched
 		 */
+<<<<<<< HEAD
 		if ((int)(datalen + BCM_TLV_HDR_SIZE) <= dst_maxlen)
 			new_dst = bcm_write_tlv(type, data, datalen, dst);
 
+=======
+		if ((int)(datalen + BCM_TLV_HDR_SIZE) <= dst_maxlen) {
+
+			new_dst = bcm_write_tlv(type, data, datalen, dst);
+		}
+>>>>>>> update/master
 	}
 
 	return (new_dst);
@@ -1775,8 +1969,9 @@ bcm_next_tlv(bcm_tlv_t *elt, int *buflen)
 	int len;
 
 	/* validate current elt */
-	if (!bcm_valid_tlv(elt, *buflen))
+	if (!bcm_valid_tlv(elt, *buflen)) {
 		return NULL;
+	}
 
 	/* advance to next elt */
 	len = elt->len;
@@ -1784,8 +1979,9 @@ bcm_next_tlv(bcm_tlv_t *elt, int *buflen)
 	*buflen -= (TLV_HDR_LEN + len);
 
 	/* validate next elt */
-	if (!bcm_valid_tlv(elt, *buflen))
+	if (!bcm_valid_tlv(elt, *buflen)) {
 		return NULL;
+	}
 
 	return elt;
 }
@@ -1801,7 +1997,9 @@ bcm_parse_tlvs(void *buf, int buflen, uint key)
 	bcm_tlv_t *elt;
 	int totlen;
 
-	elt = (bcm_tlv_t*)buf;
+	if ((elt = (bcm_tlv_t*)buf) == NULL) {
+		return NULL;
+	}
 	totlen = buflen;
 
 	/* find tagged parameter */
@@ -1809,14 +2007,36 @@ bcm_parse_tlvs(void *buf, int buflen, uint key)
 		int len = elt->len;
 
 		/* validate remaining totlen */
+<<<<<<< HEAD
 		if ((elt->id == key) && (totlen >= (int)(len + TLV_HDR_LEN)))
+=======
+		if ((elt->id == key) && (totlen >= (int)(len + TLV_HDR_LEN))) {
+
+>>>>>>> update/master
 			return (elt);
+		}
 
 		elt = (bcm_tlv_t*)((uint8*)elt + (len + TLV_HDR_LEN));
 		totlen -= (len + TLV_HDR_LEN);
 	}
 
 	return NULL;
+}
+
+/*
+ * Traverse a string of 1-byte tag/1-byte length/variable-length value
+ * triples, returning a pointer to the substring whose first element
+ * matches tag
+ * return NULL if not found or length field < min_varlen
+ */
+bcm_tlv_t *
+bcm_parse_tlvs_min_bodylen(void *buf, int buflen, uint key, int min_bodylen)
+{
+	bcm_tlv_t * ret = bcm_parse_tlvs(buf, buflen, key);
+	if (ret == NULL || ret->len < min_bodylen) {
+		return NULL;
+	}
+	return ret;
 }
 
 /*
@@ -1840,12 +2060,18 @@ bcm_parse_ordered_tlvs(void *buf, int buflen, uint key)
 		int len = elt->len;
 
 		/* Punt if we start seeing IDs > than target key */
-		if (id > key)
+		if (id > key) {
 			return (NULL);
+		}
 
 		/* validate remaining totlen */
+<<<<<<< HEAD
 		if ((id == key) && (totlen >= (int)(len + TLV_HDR_LEN)))
+=======
+		if ((id == key) && (totlen >= (int)(len + TLV_HDR_LEN))) {
+>>>>>>> update/master
 			return (elt);
+		}
 
 		elt = (bcm_tlv_t*)((uint8*)elt + (len + TLV_HDR_LEN));
 		totlen -= (len + TLV_HDR_LEN);
@@ -1925,13 +2151,12 @@ bcm_format_flags(const bcm_bit_desc_t *bd, uint32 flags, char* buf, int len)
 
 	/* indicate the str was too short */
 	if (flags != 0) {
-		if (len < 2)
-			p -= 2 - len;	/* overwrite last char */
 		p += snprintf(p, 2, ">");
 	}
 
 	return (int)(p - buf);
 }
+#endif 
 
 /* print bytes formatted as hex to a string. return the resulting string length */
 int
@@ -1947,7 +2172,6 @@ bcm_format_hex(char *str, const void *bytes, int len)
 	}
 	return (int)(p - str);
 }
-#endif 
 
 /* pretty hex print a contiguous buffer */
 void
@@ -2048,7 +2272,7 @@ printbig(char *buf)
 	uint len, max_len;
 	char c;
 
-	len = strlen(buf);
+	len = (uint)strlen(buf);
 
 	max_len = BUFSIZE_TODUMP_ATONCE;
 
@@ -2099,7 +2323,7 @@ bcm_mkiovar(char *name, char *data, uint datalen, char *buf, uint buflen)
 {
 	uint len;
 
-	len = strlen(name) + 1;
+	len = (uint)strlen(name) + 1;
 
 	if ((len + datalen) > buflen)
 		return 0;
@@ -2107,9 +2331,10 @@ bcm_mkiovar(char *name, char *data, uint datalen, char *buf, uint buflen)
 	strncpy(buf, name, buflen);
 
 	/* append data onto the end of the name string */
-	memcpy(&buf[len], data, datalen);
-	len += datalen;
-
+	if (data && datalen != 0) {
+		memcpy(&buf[len], data, datalen);
+		len += datalen;
+	}
 	return len;
 }
 
@@ -2320,8 +2545,13 @@ bcm_find_vendor_ie(void *tlvs, int tlvs_len, const char *voui, uint8 *type, int 
 	ie = (bcm_tlv_t*)tlvs;
 
 	/* make sure we are looking at a valid IE */
+<<<<<<< HEAD
 	if (ie == NULL || !bcm_valid_tlv(ie, tlvs_len))
+=======
+	if (ie == NULL || !bcm_valid_tlv(ie, tlvs_len)) {
+>>>>>>> update/master
 		return NULL;
+	}
 
 	/* Walk through the IEs looking for an OUI match */
 	do {
@@ -2520,17 +2750,77 @@ isclr(const void *array, uint bit)
 #endif /* setbit */
 
 void
+<<<<<<< HEAD
+=======
+set_bitrange(void *array, uint start, uint end, uint maxbit)
+{
+	uint startbyte = start/NBBY;
+	uint endbyte = end/NBBY;
+	uint i, startbytelastbit, endbytestartbit;
+
+	if (end >= start) {
+		if (endbyte - startbyte > 1)
+		{
+			startbytelastbit = (startbyte+1)*NBBY - 1;
+			endbytestartbit = endbyte*NBBY;
+			for (i = startbyte+1; i < endbyte; i++)
+				((uint8 *)array)[i] = 0xFF;
+			for (i = start; i <= startbytelastbit; i++)
+				setbit(array, i);
+			for (i = endbytestartbit; i <= end; i++)
+				setbit(array, i);
+		} else {
+			for (i = start; i <= end; i++)
+				setbit(array, i);
+		}
+	}
+	else {
+		set_bitrange(array, start, maxbit, maxbit);
+		set_bitrange(array, 0, end, maxbit);
+	}
+}
+
+void
+>>>>>>> update/master
 bcm_bitprint32(const uint32 u32)
 {
 	int i;
 	for (i = NBITS(uint32) - 1; i >= 0; i--) {
 		isbitset(u32, i) ? printf("1") : printf("0");
+<<<<<<< HEAD
 		if ((i % NBBY) == 0)
 			printf(" ");
+=======
+		if ((i % NBBY) == 0) printf(" ");
+>>>>>>> update/master
 	}
 	printf("\n");
 }
 
+<<<<<<< HEAD
+=======
+/* calculate checksum for ip header, tcp / udp header / data */
+uint16
+bcm_ip_cksum(uint8 *buf, uint32 len, uint32 sum)
+{
+	while (len > 1) {
+		sum += (buf[0] << 8) | buf[1];
+		buf += 2;
+		len -= 2;
+	}
+
+	if (len > 0) {
+		sum += (*buf) << 8;
+	}
+
+	while (sum >> 16) {
+		sum = (sum & 0xffff) + (sum >> 16);
+	}
+
+	return ((uint16)~sum);
+}
+
+>>>>>>> update/master
 #ifdef BCMDRIVER
 /*
  * Hierarchical Multiword bitmap based small id allocator.
@@ -2599,7 +2889,11 @@ typedef struct bcm_mwbmap {     /* Hierarchical multiword bitmap allocator    */
 	int16  ifree;               /* Count of free indices. Used only in audits */
 	uint16 total;               /* Total indices managed by multiword bitmap  */
 
+<<<<<<< HEAD
 	void *magic;               /* Audit handle parameter from user           */
+=======
+	void * magic;               /* Audit handle parameter from user           */
+>>>>>>> update/master
 
 	uint32 wd_bitmap[BCM_MWBMAP_WDMAP_MAX]; /* 1st level bitmap of            */
 #if !defined(BCM_MWBMAP_USE_CNTSETBITS)
@@ -2613,7 +2907,11 @@ typedef struct bcm_mwbmap {     /* Hierarchical multiword bitmap allocator    */
 struct bcm_mwbmap *
 bcm_mwbmap_init(osl_t *osh, uint32 items_max)
 {
+<<<<<<< HEAD
 	struct bcm_mwbmap *mwbmap_p;
+=======
+	struct bcm_mwbmap * mwbmap_p;
+>>>>>>> update/master
 	uint32 wordix, size, words, extra;
 
 	/* Implementation Constraint: Uses 32bit word bitmap */
@@ -2657,7 +2955,11 @@ bcm_mwbmap_init(osl_t *osh, uint32 items_max)
 
 	/* Ensure that extra indices are tagged as un-available */
 	if (extra) { /* fixup the free ids in last bitmap and wd_count */
+<<<<<<< HEAD
 		uint32 *bmap_p = &mwbmap_p->id_bitmap[mwbmap_p->imaps - 1];
+=======
+		uint32 * bmap_p = &mwbmap_p->id_bitmap[mwbmap_p->imaps - 1];
+>>>>>>> update/master
 		*bmap_p ^= (uint32)(~0U << extra); /* fixup bitmap */
 #if !defined(BCM_MWBMAP_USE_CNTSETBITS)
 		mwbmap_p->wd_count[mwbmap_p->imaps - 1] = (int8)extra; /* fixup count */
@@ -2673,7 +2975,11 @@ bcm_mwbmap_init(osl_t *osh, uint32 items_max)
 	for (wordix = 0U; wordix < mwbmap_p->wmaps; wordix++)
 		mwbmap_p->wd_bitmap[wordix] = (uint32)(~0U);
 	if (extra) {
+<<<<<<< HEAD
 		uint32 *bmap_p = &mwbmap_p->wd_bitmap[mwbmap_p->wmaps - 1];
+=======
+		uint32 * bmap_p = &mwbmap_p->wd_bitmap[mwbmap_p->wmaps - 1];
+>>>>>>> update/master
 		*bmap_p ^= (uint32)(~0U << extra); /* fixup bitmap */
 	}
 
@@ -2685,23 +2991,40 @@ error1:
 
 /* Release resources used by multiword bitmap based small index allocator. */
 void
+<<<<<<< HEAD
 bcm_mwbmap_fini(osl_t *osh, struct bcm_mwbmap *mwbmap_hdl)
 {
 	bcm_mwbmap_t *mwbmap_p;
+=======
+bcm_mwbmap_fini(osl_t * osh, struct bcm_mwbmap * mwbmap_hdl)
+{
+	bcm_mwbmap_t * mwbmap_p;
+>>>>>>> update/master
 
 	BCM_MWBMAP_AUDIT(mwbmap_hdl);
 	mwbmap_p = BCM_MWBMAP_PTR(mwbmap_hdl);
 
 	MFREE(osh, mwbmap_p, sizeof(struct bcm_mwbmap)
+<<<<<<< HEAD
 					 + (sizeof(uint32) * mwbmap_p->imaps));
+=======
+	                     + (sizeof(uint32) * mwbmap_p->imaps));
+>>>>>>> update/master
 	return;
 }
 
 /* Allocate a unique small index using a multiword bitmap index allocator.    */
+<<<<<<< HEAD
 uint32
 bcm_mwbmap_alloc(struct bcm_mwbmap *mwbmap_hdl)
 {
 	bcm_mwbmap_t *mwbmap_p;
+=======
+uint32 BCMFASTPATH
+bcm_mwbmap_alloc(struct bcm_mwbmap * mwbmap_hdl)
+{
+	bcm_mwbmap_t * mwbmap_p;
+>>>>>>> update/master
 	uint32 wordix, bitmap;
 
 	BCM_MWBMAP_AUDIT(mwbmap_hdl);
@@ -2721,9 +3044,15 @@ bcm_mwbmap_alloc(struct bcm_mwbmap *mwbmap_hdl)
 			/* clear all except trailing 1 */
 			bitmap   = (uint32)(((int)(bitmap)) & (-((int)(bitmap))));
 			MWBMAP_ASSERT(C_bcm_count_leading_zeros(bitmap) ==
+<<<<<<< HEAD
 					bcm_count_leading_zeros(bitmap));
 			bitix    = (BCM_MWBMAP_BITS_WORD - 1)
 					- bcm_count_leading_zeros(bitmap); /* use asm clz */
+=======
+			              bcm_count_leading_zeros(bitmap));
+			bitix    = (BCM_MWBMAP_BITS_WORD - 1)
+			         - bcm_count_leading_zeros(bitmap); /* use asm clz */
+>>>>>>> update/master
 			wordix   = BCM_MWBMAP_MULOP(wordix) + bitix;
 
 			/* Clear bit if wd count is 0, without conditional branch */
@@ -2733,7 +3062,11 @@ bcm_mwbmap_alloc(struct bcm_mwbmap *mwbmap_hdl)
 			mwbmap_p->wd_count[wordix]--;
 			count = mwbmap_p->wd_count[wordix];
 			MWBMAP_ASSERT(count ==
+<<<<<<< HEAD
 					(bcm_cntsetbits(mwbmap_p->id_bitmap[wordix]) - 1));
+=======
+			              (bcm_cntsetbits(mwbmap_p->id_bitmap[wordix]) - 1));
+>>>>>>> update/master
 #endif /* ! BCM_MWBMAP_USE_CNTSETBITS */
 			MWBMAP_ASSERT(count >= 0);
 
@@ -2755,10 +3088,17 @@ bcm_mwbmap_alloc(struct bcm_mwbmap *mwbmap_hdl)
 			/* clear all except trailing 1 */
 			bitmap   = (uint32)(((int)(bitmap)) & (-((int)(bitmap))));
 			MWBMAP_ASSERT(C_bcm_count_leading_zeros(bitmap) ==
+<<<<<<< HEAD
 					bcm_count_leading_zeros(bitmap));
 			bitix    = BCM_MWBMAP_MULOP(wordix)
 					+ (BCM_MWBMAP_BITS_WORD - 1)
 					- bcm_count_leading_zeros(bitmap); /* use asm clz */
+=======
+			              bcm_count_leading_zeros(bitmap));
+			bitix    = BCM_MWBMAP_MULOP(wordix)
+			         + (BCM_MWBMAP_BITS_WORD - 1)
+			         - bcm_count_leading_zeros(bitmap); /* use asm clz */
+>>>>>>> update/master
 
 			mwbmap_p->ifree--; /* decrement system wide free count */
 			MWBMAP_ASSERT(mwbmap_p->ifree >= 0);
@@ -2781,9 +3121,15 @@ bcm_mwbmap_alloc(struct bcm_mwbmap *mwbmap_hdl)
 
 /* Force an index at a specified position to be in use */
 void
+<<<<<<< HEAD
 bcm_mwbmap_force(struct bcm_mwbmap *mwbmap_hdl, uint32 bitix)
 {
 	bcm_mwbmap_t *mwbmap_p;
+=======
+bcm_mwbmap_force(struct bcm_mwbmap * mwbmap_hdl, uint32 bitix)
+{
+	bcm_mwbmap_t * mwbmap_p;
+>>>>>>> update/master
 	uint32 count, wordix, bitmap, *bitmap_p;
 
 	BCM_MWBMAP_AUDIT(mwbmap_hdl);
@@ -2802,8 +3148,13 @@ bcm_mwbmap_force(struct bcm_mwbmap *mwbmap_hdl, uint32 bitix)
 	ASSERT(mwbmap_p->ifree >= 0);
 
 	MWBMAP_DBG(("Lvl2: bitix<%u> wordix<%u>: %08x ^ %08x = %08x ifree %d",
+<<<<<<< HEAD
 			bitix, wordix, *bitmap_p, bitmap, (*bitmap_p) ^ bitmap,
 			mwbmap_p->ifree));
+=======
+	           bitix, wordix, *bitmap_p, bitmap, (*bitmap_p) ^ bitmap,
+	           mwbmap_p->ifree));
+>>>>>>> update/master
 
 	*bitmap_p ^= bitmap; /* mark as in use */
 
@@ -2825,8 +3176,13 @@ bcm_mwbmap_force(struct bcm_mwbmap *mwbmap_hdl, uint32 bitix)
 	bitmap   = (count == 0) << BCM_MWBMAP_MODOP(bitix);
 
 	MWBMAP_DBG(("Lvl1: bitix<%02lu> wordix<%02u>: %08x ^ %08x = %08x wfree %d",
+<<<<<<< HEAD
 			BCM_MWBMAP_MODOP(bitix), wordix, *bitmap_p, bitmap,
 			(*bitmap_p) ^ bitmap, count));
+=======
+	           BCM_MWBMAP_MODOP(bitix), wordix, *bitmap_p, bitmap,
+	           (*bitmap_p) ^ bitmap, count));
+>>>>>>> update/master
 
 	*bitmap_p ^= bitmap; /* mark as in use */
 
@@ -2834,10 +3190,17 @@ bcm_mwbmap_force(struct bcm_mwbmap *mwbmap_hdl, uint32 bitix)
 }
 
 /* Free a previously allocated index back into the multiword bitmap allocator */
+<<<<<<< HEAD
 void
 bcm_mwbmap_free(struct bcm_mwbmap *mwbmap_hdl, uint32 bitix)
 {
 	bcm_mwbmap_t *mwbmap_p;
+=======
+void BCMFASTPATH
+bcm_mwbmap_free(struct bcm_mwbmap * mwbmap_hdl, uint32 bitix)
+{
+	bcm_mwbmap_t * mwbmap_p;
+>>>>>>> update/master
 	uint32 wordix, bitmap, *bitmap_p;
 
 	BCM_MWBMAP_AUDIT(mwbmap_hdl);
@@ -2856,8 +3219,13 @@ bcm_mwbmap_free(struct bcm_mwbmap *mwbmap_hdl, uint32 bitix)
 	ASSERT(mwbmap_p->ifree <= mwbmap_p->total);
 
 	MWBMAP_DBG(("Lvl2: bitix<%02u> wordix<%02u>: %08x | %08x = %08x ifree %d",
+<<<<<<< HEAD
 			bitix, wordix, *bitmap_p, bitmap, (*bitmap_p) | bitmap,
 			mwbmap_p->ifree));
+=======
+	           bitix, wordix, *bitmap_p, bitmap, (*bitmap_p) | bitmap,
+	           mwbmap_p->ifree));
+>>>>>>> update/master
 
 	*bitmap_p |= bitmap; /* mark as available */
 
@@ -2886,7 +3254,11 @@ bcm_mwbmap_free(struct bcm_mwbmap *mwbmap_hdl, uint32 bitix)
 		MWBMAP_ASSERT(count <= BCM_MWBMAP_BITS_WORD);
 
 		MWBMAP_DBG(("Lvl1: bitix<%02u> wordix<%02u>: %08x | %08x = %08x wfree %d",
+<<<<<<< HEAD
 					bitix, wordix, *bitmap_p, bitmap, (*bitmap_p) | bitmap, count));
+=======
+		            bitix, wordix, *bitmap_p, bitmap, (*bitmap_p) | bitmap, count));
+>>>>>>> update/master
 	}
 #endif /* BCM_MWBMAP_DEBUG */
 
@@ -2897,9 +3269,15 @@ bcm_mwbmap_free(struct bcm_mwbmap *mwbmap_hdl, uint32 bitix)
 
 /* Fetch the toal number of free indices in the multiword bitmap allocator */
 uint32
+<<<<<<< HEAD
 bcm_mwbmap_free_cnt(struct bcm_mwbmap *mwbmap_hdl)
 {
 	bcm_mwbmap_t *mwbmap_p;
+=======
+bcm_mwbmap_free_cnt(struct bcm_mwbmap * mwbmap_hdl)
+{
+	bcm_mwbmap_t * mwbmap_p;
+>>>>>>> update/master
 
 	BCM_MWBMAP_AUDIT(mwbmap_hdl);
 	mwbmap_p = BCM_MWBMAP_PTR(mwbmap_hdl);
@@ -2911,9 +3289,15 @@ bcm_mwbmap_free_cnt(struct bcm_mwbmap *mwbmap_hdl)
 
 /* Determine whether an index is inuse or free */
 bool
+<<<<<<< HEAD
 bcm_mwbmap_isfree(struct bcm_mwbmap *mwbmap_hdl, uint32 bitix)
 {
 	bcm_mwbmap_t *mwbmap_p;
+=======
+bcm_mwbmap_isfree(struct bcm_mwbmap * mwbmap_hdl, uint32 bitix)
+{
+	bcm_mwbmap_t * mwbmap_p;
+>>>>>>> update/master
 	uint32 wordix, bitmap;
 
 	BCM_MWBMAP_AUDIT(mwbmap_hdl);
@@ -2929,10 +3313,17 @@ bcm_mwbmap_isfree(struct bcm_mwbmap *mwbmap_hdl, uint32 bitix)
 
 /* Debug dump a multiword bitmap allocator */
 void
+<<<<<<< HEAD
 bcm_mwbmap_show(struct bcm_mwbmap *mwbmap_hdl)
 {
 	uint32 ix, count;
 	bcm_mwbmap_t *mwbmap_p;
+=======
+bcm_mwbmap_show(struct bcm_mwbmap * mwbmap_hdl)
+{
+	uint32 ix, count;
+	bcm_mwbmap_t * mwbmap_p;
+>>>>>>> update/master
 
 	BCM_MWBMAP_AUDIT(mwbmap_hdl);
 	mwbmap_p = BCM_MWBMAP_PTR(mwbmap_hdl);
@@ -2961,9 +3352,15 @@ bcm_mwbmap_show(struct bcm_mwbmap *mwbmap_hdl)
 
 /* Audit a hierarchical multiword bitmap */
 void
+<<<<<<< HEAD
 bcm_mwbmap_audit(struct bcm_mwbmap *mwbmap_hdl)
 {
 	bcm_mwbmap_t *mwbmap_p;
+=======
+bcm_mwbmap_audit(struct bcm_mwbmap * mwbmap_hdl)
+{
+	bcm_mwbmap_t * mwbmap_p;
+>>>>>>> update/master
 	uint32 count, free_cnt = 0U, wordix, idmap_ix, bitix, *bitmap_p;
 
 	mwbmap_p = BCM_MWBMAP_PTR(mwbmap_hdl);
@@ -2987,15 +3384,281 @@ bcm_mwbmap_audit(struct bcm_mwbmap *mwbmap_hdl)
 		}
 	}
 
+<<<<<<< HEAD
 	ASSERT(free_cnt == mwbmap_p->ifree);
 }
 /* END : Multiword bitmap based 64bit to Unique 32bit Id allocator. */
 
+=======
+	ASSERT((int)free_cnt == mwbmap_p->ifree);
+}
+/* END : Multiword bitmap based 64bit to Unique 32bit Id allocator. */
+
+/* Simple 16bit Id allocator using a stack implementation. */
+typedef struct id16_map {
+	uint16  total;     /* total number of ids managed by allocator */
+	uint16  start;     /* start value of 16bit ids to be managed */
+	uint32  failures;  /* count of failures */
+	void    *dbg;      /* debug placeholder */
+	int     stack_idx; /* index into stack of available ids */
+	uint16  stack[0];  /* stack of 16 bit ids */
+} id16_map_t;
+
+#define ID16_MAP_SZ(items)      (sizeof(id16_map_t) + \
+	                             (sizeof(uint16) * (items)))
+
+#if defined(BCM_DBG)
+
+/* Uncomment BCM_DBG_ID16 to debug double free */
+/* #define BCM_DBG_ID16 */
+
+typedef struct id16_map_dbg {
+	uint16  total;
+	bool    avail[0];
+} id16_map_dbg_t;
+#define ID16_MAP_DBG_SZ(items)  (sizeof(id16_map_dbg_t) + \
+	                             (sizeof(bool) * (items)))
+#define ID16_MAP_MSG(x)         print x
+#else
+#define ID16_MAP_MSG(x)
+#endif /* BCM_DBG */
+
+void * /* Construct an id16 allocator: [start_val16 .. start_val16+total_ids) */
+id16_map_init(osl_t *osh, uint16 total_ids, uint16 start_val16)
+{
+	uint16 idx, val16;
+	id16_map_t * id16_map;
+
+	ASSERT(total_ids > 0);
+	ASSERT((start_val16 + total_ids) < ID16_INVALID);
+
+	id16_map = (id16_map_t *) MALLOC(osh, ID16_MAP_SZ(total_ids));
+	if (id16_map == NULL) {
+		return NULL;
+	}
+
+	id16_map->total = total_ids;
+	id16_map->start = start_val16;
+	id16_map->failures = 0;
+	id16_map->dbg = NULL;
+
+	/* Populate stack with 16bit id values, commencing with start_val16 */
+	id16_map->stack_idx = 0;
+	val16 = start_val16;
+
+	for (idx = 0; idx < total_ids; idx++, val16++) {
+		id16_map->stack_idx = idx;
+		id16_map->stack[id16_map->stack_idx] = val16;
+	}
+
+#if defined(BCM_DBG) && defined(BCM_DBG_ID16)
+	id16_map->dbg = MALLOC(osh, ID16_MAP_DBG_SZ(total_ids));
+
+	if (id16_map->dbg) {
+		id16_map_dbg_t *id16_map_dbg = (id16_map_dbg_t *)id16_map->dbg;
+
+		id16_map_dbg->total = total_ids;
+		for (idx = 0; idx < total_ids; idx++) {
+			id16_map_dbg->avail[idx] = TRUE;
+		}
+	}
+#endif /* BCM_DBG && BCM_DBG_ID16 */
+
+	return (void *)id16_map;
+}
+
+void * /* Destruct an id16 allocator instance */
+id16_map_fini(osl_t *osh, void * id16_map_hndl)
+{
+	uint16 total_ids;
+	id16_map_t * id16_map;
+
+	if (id16_map_hndl == NULL)
+		return NULL;
+
+	id16_map = (id16_map_t *)id16_map_hndl;
+
+	total_ids = id16_map->total;
+	ASSERT(total_ids > 0);
+
+#if defined(BCM_DBG) && defined(BCM_DBG_ID16)
+	if (id16_map->dbg) {
+		MFREE(osh, id16_map->dbg, ID16_MAP_DBG_SZ(total_ids));
+		id16_map->dbg = NULL;
+	}
+#endif /* BCM_DBG && BCM_DBG_ID16 */
+
+	id16_map->total = 0;
+	MFREE(osh, id16_map, ID16_MAP_SZ(total_ids));
+
+	return NULL;
+}
+
+void
+id16_map_clear(void * id16_map_hndl, uint16 total_ids, uint16 start_val16)
+{
+	uint16 idx, val16;
+	id16_map_t * id16_map;
+
+	ASSERT(total_ids > 0);
+	ASSERT((start_val16 + total_ids) < ID16_INVALID);
+
+	id16_map = (id16_map_t *)id16_map_hndl;
+	if (id16_map == NULL) {
+		return;
+	}
+
+	id16_map->total = total_ids;
+	id16_map->start = start_val16;
+	id16_map->failures = 0;
+
+	/* Populate stack with 16bit id values, commencing with start_val16 */
+	id16_map->stack_idx = 0;
+	val16 = start_val16;
+
+	for (idx = 0; idx < total_ids; idx++, val16++) {
+		id16_map->stack_idx = idx;
+		id16_map->stack[id16_map->stack_idx] = val16;
+	}
+
+#if defined(BCM_DBG) && defined(BCM_DBG_ID16)
+	if (id16_map->dbg) {
+		id16_map_dbg_t *id16_map_dbg = (id16_map_dbg_t *)id16_map->dbg;
+
+		id16_map_dbg->total = total_ids;
+		for (idx = 0; idx < total_ids; idx++) {
+			id16_map_dbg->avail[idx] = TRUE;
+		}
+	}
+#endif /* BCM_DBG && BCM_DBG_ID16 */
+}
+
+uint16 BCMFASTPATH /* Allocate a unique 16bit id */
+id16_map_alloc(void * id16_map_hndl)
+{
+	uint16 val16;
+	id16_map_t * id16_map;
+
+	ASSERT(id16_map_hndl != NULL);
+
+	id16_map = (id16_map_t *)id16_map_hndl;
+
+	ASSERT(id16_map->total > 0);
+
+	if (id16_map->stack_idx < 0) {
+		id16_map->failures++;
+		return ID16_INVALID;
+	}
+
+	val16 = id16_map->stack[id16_map->stack_idx];
+	id16_map->stack_idx--;
+
+#if defined(BCM_DBG) && defined(BCM_DBG_ID16)
+
+	ASSERT(val16 < (id16_map->start + id16_map->total));
+
+	if (id16_map->dbg) { /* Validate val16 */
+		id16_map_dbg_t *id16_map_dbg = (id16_map_dbg_t *)id16_map->dbg;
+
+		ASSERT(id16_map_dbg->avail[val16 - id16_map->start] == TRUE);
+		id16_map_dbg->avail[val16 - id16_map->start] = FALSE;
+	}
+#endif /* BCM_DBG && BCM_DBG_ID16 */
+
+	return val16;
+}
+
+
+void BCMFASTPATH /* Free a 16bit id value into the id16 allocator */
+id16_map_free(void * id16_map_hndl, uint16 val16)
+{
+	id16_map_t * id16_map;
+
+	ASSERT(id16_map_hndl != NULL);
+
+	id16_map = (id16_map_t *)id16_map_hndl;
+
+#if defined(BCM_DBG) && defined(BCM_DBG_ID16)
+
+	ASSERT(val16 < (id16_map->start + id16_map->total));
+
+	if (id16_map->dbg) { /* Validate val16 */
+		id16_map_dbg_t *id16_map_dbg = (id16_map_dbg_t *)id16_map->dbg;
+
+		ASSERT(id16_map_dbg->avail[val16 - id16_map->start] == FALSE);
+		id16_map_dbg->avail[val16 - id16_map->start] = TRUE;
+	}
+#endif /* BCM_DBG && BCM_DBG_ID16 */
+
+	id16_map->stack_idx++;
+	id16_map->stack[id16_map->stack_idx] = val16;
+}
+
+uint32 /* Returns number of failures to allocate an unique id16 */
+id16_map_failures(void * id16_map_hndl)
+{
+	ASSERT(id16_map_hndl != NULL);
+	return ((id16_map_t *)id16_map_hndl)->failures;
+}
+
+bool
+id16_map_audit(void * id16_map_hndl)
+{
+	int idx;
+	int insane = 0;
+	id16_map_t * id16_map;
+
+	ASSERT(id16_map_hndl != NULL);
+
+	id16_map = (id16_map_t *)id16_map_hndl;
+
+	ASSERT((id16_map->stack_idx > 0) && (id16_map->stack_idx < id16_map->total));
+	for (idx = 0; idx <= id16_map->stack_idx; idx++) {
+		ASSERT(id16_map->stack[idx] >= id16_map->start);
+		ASSERT(id16_map->stack[idx] < (id16_map->start + id16_map->total));
+
+#if defined(BCM_DBG) && defined(BCM_DBG_ID16)
+		if (id16_map->dbg) {
+			uint16 val16 = id16_map->stack[idx];
+			if (((id16_map_dbg_t *)(id16_map->dbg))->avail[val16] != TRUE) {
+				insane |= 1;
+				ID16_MAP_MSG(("id16_map<%p>: stack_idx %u invalid val16 %u\n",
+				              id16_map_hndl, idx, val16));
+			}
+		}
+#endif /* BCM_DBG && BCM_DBG_ID16 */
+	}
+
+#if defined(BCM_DBG) && defined(BCM_DBG_ID16)
+	if (id16_map->dbg) {
+		uint16 avail = 0; /* Audit available ids counts */
+		for (idx = 0; idx < id16_map_dbg->total; idx++) {
+			if (((id16_map_dbg_t *)(id16_map->dbg))->avail[idx16] == TRUE)
+				avail++;
+		}
+		if (avail && (avail != (id16_map->stack_idx + 1))) {
+			insane |= 1;
+			ID16_MAP_MSG(("id16_map<%p>: avail %u stack_idx %u\n",
+			              id16_map_hndl, avail, id16_map->stack_idx));
+		}
+	}
+#endif /* BCM_DBG && BCM_DBG_ID16 */
+
+	return (!!insane);
+}
+/* END: Simple id16 allocator */
+
+
+>>>>>>> update/master
 #endif /* BCMDRIVER */
 
 /* calculate a >> b; and returns only lower 32 bits */
 void
+<<<<<<< HEAD
 bcm_uint64_right_shift(uint32 *r, uint32 a_high, uint32 a_low, uint32 b)
+=======
+bcm_uint64_right_shift(uint32* r, uint32 a_high, uint32 a_low, uint32 b)
+>>>>>>> update/master
 {
 	uint32 a1 = a_high, a0 = a_low, r0 = 0;
 
@@ -3022,22 +3685,38 @@ bcm_uint64_right_shift(uint32 *r, uint32 a_high, uint32 a_low, uint32 b)
 
 /* calculate a + b where a is a 64 bit number and b is a 32 bit number */
 void
+<<<<<<< HEAD
 bcm_add_64(uint32 *r_hi, uint32* r_lo, uint32 offset)
+=======
+bcm_add_64(uint32* r_hi, uint32* r_lo, uint32 offset)
+>>>>>>> update/master
 {
 	uint32 r1_lo = *r_lo;
 	(*r_lo) += offset;
 	if (*r_lo < r1_lo)
+<<<<<<< HEAD
 		(*r_hi)++;
+=======
+		(*r_hi) ++;
+>>>>>>> update/master
 }
 
 /* calculate a - b where a is a 64 bit number and b is a 32 bit number */
 void
+<<<<<<< HEAD
 bcm_sub_64(uint32 *r_hi, uint32* r_lo, uint32 offset)
+=======
+bcm_sub_64(uint32* r_hi, uint32* r_lo, uint32 offset)
+>>>>>>> update/master
 {
 	uint32 r1_lo = *r_lo;
 	(*r_lo) -= offset;
 	if (*r_lo > r1_lo)
+<<<<<<< HEAD
 		(*r_hi)--;
+=======
+		(*r_hi) --;
+>>>>>>> update/master
 }
 
 #ifdef DEBUG_COUNTER
@@ -3069,3 +3748,87 @@ void counter_printlog(counter_tbl_t *ctr_tbl)
 #define counter_printlog(a) do {} while (0)
 #endif /* OSL_SYSUPTIME_SUPPORT == TRUE */
 #endif /* DEBUG_COUNTER */
+<<<<<<< HEAD
+=======
+
+#ifdef BCMDRIVER
+void
+dll_pool_detach(void * osh, dll_pool_t * pool, uint16 elems_max, uint16 elem_size)
+{
+	uint32 mem_size;
+	mem_size = sizeof(dll_pool_t) + (elems_max * elem_size);
+	if (pool)
+		MFREE(osh, pool, mem_size);
+}
+dll_pool_t *
+dll_pool_init(void * osh, uint16 elems_max, uint16 elem_size)
+{
+	uint32 mem_size, i;
+	dll_pool_t * dll_pool_p;
+	dll_t * elem_p;
+
+	ASSERT(elem_size > sizeof(dll_t));
+
+	mem_size = sizeof(dll_pool_t) + (elems_max * elem_size);
+
+	if ((dll_pool_p = (dll_pool_t *)MALLOC(osh, mem_size)) == NULL) {
+		printf("dll_pool_init: elems_max<%u> elem_size<%u> malloc failure\n",
+			elems_max, elem_size);
+		ASSERT(0);
+		return dll_pool_p;
+	}
+
+	bzero(dll_pool_p, mem_size);
+
+	dll_init(&dll_pool_p->free_list);
+	dll_pool_p->elems_max = elems_max;
+	dll_pool_p->elem_size = elem_size;
+
+	elem_p = dll_pool_p->elements;
+	for (i = 0; i < elems_max; i++) {
+		dll_append(&dll_pool_p->free_list, elem_p);
+		elem_p = (dll_t *)((uintptr)elem_p + elem_size);
+	}
+
+	dll_pool_p->free_count = elems_max;
+
+	return dll_pool_p;
+}
+
+
+void *
+dll_pool_alloc(dll_pool_t * dll_pool_p)
+{
+	dll_t * elem_p;
+
+	if (dll_pool_p->free_count == 0) {
+		ASSERT(dll_empty(&dll_pool_p->free_list));
+		return NULL;
+	}
+
+	elem_p = dll_head_p(&dll_pool_p->free_list);
+	dll_delete(elem_p);
+	dll_pool_p->free_count -= 1;
+
+	return (void *)elem_p;
+}
+
+void
+dll_pool_free(dll_pool_t * dll_pool_p, void * elem_p)
+{
+	dll_t * node_p = (dll_t *)elem_p;
+	dll_prepend(&dll_pool_p->free_list, node_p);
+	dll_pool_p->free_count += 1;
+}
+
+
+void
+dll_pool_free_tail(dll_pool_t * dll_pool_p, void * elem_p)
+{
+	dll_t * node_p = (dll_t *)elem_p;
+	dll_append(&dll_pool_p->free_list, node_p);
+	dll_pool_p->free_count += 1;
+}
+
+#endif /* BCMDRIVER */
+>>>>>>> update/master

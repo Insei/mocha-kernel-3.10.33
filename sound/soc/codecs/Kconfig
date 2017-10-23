@@ -62,7 +62,11 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_RT5639 if I2C
 	select SND_SOC_RT5640 if I2C
 	select SND_SOC_RT5645 if I2C
+<<<<<<< HEAD
 	select SND_SOC_RT5671 if I2C
+=======
+	select SND_SOC_RT5659 if I2C
+>>>>>>> update/master
 	select SND_SOC_SGTL5000 if I2C
 	select SND_SOC_SI476X if MFD_SI476X_CORE
 	select SND_SOC_SN95031 if INTEL_SCU_IPC
@@ -71,6 +75,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_STA32X if I2C
 	select SND_SOC_STA529 if I2C
 	select SND_SOC_STAC9766 if SND_SOC_AC97_BUS
+	select SND_SOC_TAS2552 if I2C
 	select SND_SOC_TAS5086 if I2C
 	select SND_SOC_TFA98XX if I2C
 	select SND_SOC_TLV320AIC23 if I2C
@@ -318,7 +323,11 @@ config SND_SOC_RT5640
 config SND_SOC_RT5645
 	tristate
 
+<<<<<<< HEAD
 config SND_SOC_RT5671
+=======
+config SND_SOC_RT5659
+>>>>>>> update/master
 	tristate
 
 #Freescale sgtl5000 codec
@@ -579,6 +588,9 @@ config SND_SOC_MC13783
 	tristate
 
 config SND_SOC_ML26124
+	tristate
+
+config SND_SOC_TAS2552
 	tristate
 
 config SND_SOC_TPA6130A2

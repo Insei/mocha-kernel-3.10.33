@@ -1,3 +1,19 @@
+/*
+ * Copyright (c) 2014, NVIDIA CORPORATION.  All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ * arch/arm/boot/dts/tegra124-platforms/tegra124-pm359-pmic.dtsi
+ *
+ */
+
 / {
 	i2c@7000d000 {
 		as3722: as3722@40 {
@@ -14,12 +30,6 @@
 			ams,major-rev = <1>;
 			ams,minor-rev = <2>;
 			ams,system-power-controller;
-			ams,extcon-name = "as3722-extcon";
-			ams,enable-adc1-continuous-mode;
-			ams,enable-low-voltage-range;
-			ams,adc-channel = <12>;
-			ams,hi-threshold = <256>;
-			ams,low-threshold = <128>;
 			ams,enable-clock32k-out;
 
 			pinctrl-names = "default";
@@ -57,8 +67,17 @@
 				};
 			};
 
+			adc_extcon: adc_extcon {
+				ams,enable-adc1-continuous-mode;
+				ams,enable-low-voltage-range;
+				ams,adc-channel = <12>;
+				ams,hi-threshold = <256>;
+				ams,low-threshold = <128>;
+				#extcon-cells = <1>;
+				#io-channel-cells = <1>;
+			};
+
 		     	regulators {
-			     compatible = "ams,as3722";
 			     ldo0-in-supply = <&as3722_sd2>;
 			     ldo2-in-supply = <&as3722_sd5>;
 			     ldo5-in-supply = <&as3722_sd5>;
@@ -66,9 +85,8 @@
 
 				as3722_sd0: sd0 {
 				    regulator-name = "vdd-cpu";
-				    regulator-min-microvolt = <700000>;
+				    regulator-min-microvolt = <650000>;
 				    regulator-max-microvolt = <1400000>;
-				    regulator-min-microamp = <3500000>;
 				    regulator-max-microamp = <3500000>;
 				    regulator-always-on;
 				    regulator-boot-on;
@@ -84,7 +102,6 @@
 				    regulator-name = "vdd-core";
 				    regulator-min-microvolt = <700000>;
 				    regulator-max-microvolt = <1350000>;
-				    regulator-min-microamp = <3500000>;
 				    regulator-max-microamp = <3500000>;
 				    regulator-always-on;
 				    regulator-boot-on;
@@ -136,22 +153,6 @@
 					    c3 {
 						    regulator-consumer-supply = "dvddio_pex";
 					    };
-					    c4 {
-						    regulator-consumer-supply = "pwrdet_pex_ctl";
-					    };
-					    c5 {
-						    regulator-consumer-supply = "avdd_sata";
-					    };
-					    c6 {
-						    regulator-consumer-supply = "vdd_sata";
-					    };
-					    c7 {
-						    regulator-consumer-supply = "avdd_sata_pll";
-					    };
-					    c8 {
-						    regulator-consumer-supply = "avddio_usb";
-						    regulator-consumer-device = "tegra-xhci";
-					    };
 					    c9 {
 						    regulator-consumer-supply = "avdd_hdmi";
 						    regulator-consumer-device = "tegradc.1";
@@ -174,40 +175,22 @@
 					    c3 {
 						    regulator-consumer-supply = "vddio_audio";
 					    };
-					    c4 {
-						    regulator-consumer-supply = "pwrdet_audio";
-					    };
 					    c5 {
 						    regulator-consumer-supply = "vddio_sdmmc";
 						    regulator-consumer-device = "sdhci-tegra.0";
-					    };
-					    c6 {
-						    regulator-consumer-supply = "pwrdet_sdmmc1";
 					    };
 					    c7 {
 						    regulator-consumer-supply = "vddio_sdmmc";
 						    regulator-consumer-device = "sdhci-tegra.3";
 					    };
-					    c8 {
-						    regulator-consumer-supply = "pwrdet_sdmmc4";
-					    };
 					    c9 {
 						    regulator-consumer-supply = "vddio_uart";
-					    };
-					    c10 {
-						    regulator-consumer-supply = "pwrdet_uart";
 					    };
 					    c11 {
 						    regulator-consumer-supply = "vddio_bb";
 					    };
-					    c12 {
-						    regulator-consumer-supply = "pwrdet_bb";
-						    };
 					    c13 {
 						    regulator-consumer-supply = "vddio_gmi";
-					    };
-					    c14 {
-						    regulator-consumer-supply = "pwrdet_nand";
 					    };
 					    c15 {
 						    regulator-consumer-supply = "avdd_osc";
@@ -219,7 +202,6 @@
 				    regulator-name = "vdd-gpu";
 				    regulator-min-microvolt = <650000>;
 				    regulator-max-microvolt = <1200000>;
-				    regulator-min-microamp = <3500000>;
 				    regulator-max-microamp = <3500000>;
 				    regulator-init-microvolt = <1000000>;
 				    regulator-boot-on;
@@ -282,10 +264,6 @@
 						     regulator-consumer-supply = "vddio_cam";
 						     regulator-consumer-device = "vi";
 					     };
-					     c2 {
-						     regulator-consumer-supply = "pwrdet_cam";
-
-					     };
 					     c3 {
 						     regulator-consumer-supply = "vdd_cam_1v8_cam";
 					     };
@@ -300,6 +278,10 @@
 					     c6 {
 						     regulator-consumer-supply = "vdd_i2c";
 						     regulator-consumer-device = "2-000c";
+					     };
+					     c7 {
+						     regulator-consumer-supply = "vdd_i2c";
+						     regulator-consumer-device = "2-0010";
 					     };
 				     };
 			     };
@@ -317,10 +299,6 @@
 						     regulator-consumer-supply = "vddio_hsic";
 						     regulator-consumer-device = "tegra-ehci.2";
 					     };
-					     c3 {
-						     regulator-consumer-supply = "vddio_hsic";
-						     regulator-consumer-device = "tegra-xhci";
-					     };
 					     c4 {
 						     regulator-consumer-supply = "avdd_dsi_csi";
 						     regulator-consumer-device = "tegradc.0";
@@ -337,9 +315,6 @@
 						     regulator-consumer-supply = "avdd_dsi_csi";
 						     regulator-consumer-device = "vi.1";
 					     };
-					     c8 {
-						     regulator-consumer-supply = "pwrdet_mipi";
-					     };
 					     c9 {
 						     regulator-consumer-supply = "avdd_hsic_com";
 					     };
@@ -351,8 +326,8 @@
 
 				as3722_ldo3: ldo3 {
 				     regulator-name = "vdd-rtc";
-				     regulator-min-microvolt = <800000>;
-				     regulator-max-microvolt = <800000>;
+				     regulator-min-microvolt = <960000>;
+				     regulator-max-microvolt = <960000>;
 				     regulator-always-on;
 				     regulator-boot-on;
 				     ams,enable-tracking;
@@ -414,9 +389,6 @@
 						     regulator-consumer-supply = "vddio_sdmmc";
 						     regulator-consumer-device = "sdhci-tegra.2";
 					     };
-					     c2 {
-						     regulator-consumer-supply = "pwrdet_sdmmc3";
-					     };
 				     };
 			     };
 
@@ -431,6 +403,10 @@
 					     };
 					     c2 {
 						     regulator-consumer-supply = "imx135_reg2";
+					     };
+					     c3 {
+						     regulator-consumer-supply = "vdig_lv";
+						     regulator-consumer-device = "2-0010";
 					     };
 				     };
 			     };
@@ -486,10 +462,5 @@
 			 gpio-controller;
 			#gpio-cells = <2>;
 		 };
-	};
-
-	/* Populate fuse supply */
-	efuse@7000f800 {
-		vpp_fuse-supply = <&as3722_ldo11>;
 	};
 };

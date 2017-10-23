@@ -17,13 +17,15 @@
 #include <linux/delay.h>
 #include <linux/workqueue.h>
 #include <linux/kmod.h>
+#include <linux/wakeup_reason.h>
+#include <trace/events/power.h>
 
 /* 
  * Timeout for stopping processes
  */
 unsigned int __read_mostly freeze_timeout_msecs = 20 * MSEC_PER_SEC;
 
-static int try_to_freeze_tasks(bool user_only)
+static int try_to_freeze_tasks(bool user_only, bool ignore_wakeup)
 {
 	struct task_struct *g, *p;
 	unsigned long end_time;
@@ -34,6 +36,9 @@ static int try_to_freeze_tasks(bool user_only)
 	unsigned int elapsed_msecs;
 	bool wakeup = false;
 	int sleep_usecs = USEC_PER_MSEC;
+#ifdef CONFIG_PM_SLEEP
+	char suspend_abort[MAX_SUSPEND_ABORT_LEN];
+#endif
 
 	do_gettimeofday(&start);
 
@@ -62,7 +67,12 @@ static int try_to_freeze_tasks(bool user_only)
 		if (!todo || time_after(jiffies, end_time))
 			break;
 
-		if (pm_wakeup_pending()) {
+		if (!ignore_wakeup && pm_wakeup_pending()) {
+#ifdef CONFIG_PM_SLEEP
+			pm_get_active_wakeup_sources(suspend_abort,
+				MAX_SUSPEND_ABORT_LEN);
+			log_suspend_abort_reason(suspend_abort);
+#endif
 			wakeup = true;
 			break;
 		}
@@ -82,23 +92,24 @@ static int try_to_freeze_tasks(bool user_only)
 	do_div(elapsed_msecs64, NSEC_PER_MSEC);
 	elapsed_msecs = elapsed_msecs64;
 
-	if (todo) {
+	if (wakeup) {
 		printk("\n");
-		printk(KERN_ERR "Freezing of tasks %s after %d.%03d seconds "
-		       "(%d tasks refusing to freeze, wq_busy=%d):\n",
-		       wakeup ? "aborted" : "failed",
+		printk(KERN_ERR "Freezing of tasks aborted after %d.%03d seconds",
+		       elapsed_msecs / 1000, elapsed_msecs % 1000);
+	} else if (todo) {
+		printk("\n");
+		printk(KERN_ERR "Freezing of tasks failed after %d.%03d seconds"
+		       " (%d tasks refusing to freeze, wq_busy=%d):\n",
 		       elapsed_msecs / 1000, elapsed_msecs % 1000,
 		       todo - wq_busy, wq_busy);
 
-		if (!wakeup) {
-			read_lock(&tasklist_lock);
-			do_each_thread(g, p) {
-				if (p != current && !freezer_should_skip(p)
-				    && freezing(p) && !frozen(p))
-					sched_show_task(p);
-			} while_each_thread(g, p);
-			read_unlock(&tasklist_lock);
-		}
+		read_lock(&tasklist_lock);
+		do_each_thread(g, p) {
+			if (p != current && !freezer_should_skip(p)
+			    && freezing(p) && !frozen(p))
+				sched_show_task(p);
+		} while_each_thread(g, p);
+		read_unlock(&tasklist_lock);
 	} else {
 		printk("(elapsed %d.%03d seconds) ", elapsed_msecs / 1000,
 			elapsed_msecs % 1000);
@@ -114,7 +125,7 @@ static int try_to_freeze_tasks(bool user_only)
  *
  * On success, returns 0.  On failure, -errno and system is fully thawed.
  */
-int freeze_processes(void)
+static int __freeze_processes(bool ignore_wakeup)
 {
 	int error;
 
@@ -130,7 +141,12 @@ int freeze_processes(void)
 
 	printk("Freezing user space processes ... ");
 	pm_freezing = true;
+<<<<<<< HEAD
 	error = try_to_freeze_tasks(true);
+=======
+	oom_kills_saved = oom_kills_count();
+	error = try_to_freeze_tasks(true, ignore_wakeup);
+>>>>>>> update/master
 	if (!error) {
 		printk("done.");
 		__usermodehelper_set_disable_depth(UMH_DISABLED);
@@ -142,6 +158,16 @@ int freeze_processes(void)
 	if (error)
 		thaw_processes();
 	return error;
+}
+
+int freeze_processes(void)
+{
+	return __freeze_processes(false);
+}
+
+int freeze_processes_ignore_wakeup(void)
+{
+	return __freeze_processes(true);
 }
 
 /**
@@ -158,7 +184,7 @@ int freeze_kernel_threads(void)
 
 	printk("Freezing remaining freezable tasks ... ");
 	pm_nosig_freezing = true;
-	error = try_to_freeze_tasks(false);
+	error = try_to_freeze_tasks(false, false);
 	if (!error)
 		printk("done.");
 
@@ -175,6 +201,7 @@ void thaw_processes(void)
 	struct task_struct *g, *p;
 	struct task_struct *curr = current;
 
+	trace_suspend_resume(TPS("thaw_processes"), 0, true);
 	if (pm_freezing)
 		atomic_dec(&system_freezing_cnt);
 	pm_freezing = false;
@@ -201,6 +228,7 @@ void thaw_processes(void)
 
 	schedule();
 	printk("done.\n");
+	trace_suspend_resume(TPS("thaw_processes"), 0, false);
 }
 
 void thaw_kernel_threads(void)

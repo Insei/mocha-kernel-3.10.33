@@ -102,8 +102,10 @@ ENTRY(cpu_do_suspend)
 	str	x7, [x0, #CPU_CTX_TCR_EL1]
 	mrs	x8, vbar_el1
 	str	x8, [x0, #CPU_CTX_VBAR_EL1]
-	mrs	x9, sctlr_el1
-	str	x9, [x0, #CPU_CTX_SCTLR_EL1]
+	mrs	x9, s3_1_c15_c2_0
+	str	x9, [x0, #CPU_CTX_CPUACTLR_EL1]
+	mrs	x10, sctlr_el1
+	str	x10, [x0, #CPU_CTX_SCTLR_EL1]
 	ret
 ENDPROC(cpu_do_suspend)
 
@@ -137,6 +139,20 @@ ENTRY(cpu_do_resume)
 	msr	tcr_el1, x8
 	ldr	x9, [x0, #CPU_CTX_VBAR_EL1]
 	msr	vbar_el1, x9
+	mrs	x2, midr_el1
+	/*
+	 * cpuactlr_el1 is an implementation defined register
+	 * and Denver uses it to indicate the power state to enter.
+	 * If restored same value on restore then it is possible
+	 * that CPU would enter unexpected power state on next WFI.
+	 * Hence skip restoring this register for Denver.
+	 */
+	lsr	x2, x2, #24
+	cmp	x2, #0x4e
+	beq	skip_actlr_restore
+	ldr	x9, [x0, #CPU_CTX_CPUACTLR_EL1]
+	msr	s3_1_c15_c2_0, x9
+skip_actlr_restore:
 	ldr	x0, [x0, #CPU_CTX_SCTLR_EL1]
 	isb
 	dsb	sy
@@ -168,19 +184,16 @@ ENDPROC(cpu_do_switch_mm)
  *	value of the SCTLR_EL1 register.
  */
 ENTRY(__cpu_setup)
-	/*
-	 * Preserve the link register across the function call.
-	 */
-	mov	x28, lr
-	bl	__flush_dcache_all
-	mov	lr, x28
 	ic	iallu				// I+BTB cache invalidate
+	tlbi	vmalle1is			// invalidate I + D TLBs
 	dsb	sy
+
+__cpu_setup_post_flush:
 
 	mov	x0, #3 << 20
 	msr	cpacr_el1, x0			// Enable FP/ASIMD
-	msr	mdscr_el1, xzr			// Reset mdscr_el1
-	tlbi	vmalle1is			// invalidate I + D TLBs
+	mov	x0, #1 << 14			// Enable MDSCR_EL1.HDE
+	msr	mdscr_el1, x0			// only set HDE in mdscr_el1
 	/*
 	 * Memory region attributes for LPAE:
 	 *
@@ -220,30 +233,45 @@ ENTRY(__cpu_setup)
 	ret					// return to head.S
 ENDPROC(__cpu_setup)
 
-#ifdef CONFIG_ARMV7_COMPAT_CP15_BARRIER
+ENTRY(__cortexa53_cpu_setup)
+	/*
+	 * no need to flush cache and invalidate tlb and btbs because
+	 * cortex-a53 invalidates them already during reset
+	 */
+	b	__cpu_setup_post_flush
+ENDPROC(__cortexa53_cpu_setup)
+
+ENTRY(__cortexa57_cpu_setup)
+
+	mrs	x0, s3_1_c15_c2_0
+	/* enable non-cacheable streaming enhancement */
+	orr	x0, x0, #(1<<24)
+	msr	s3_1_c15_c2_0, x0
+	mrs	x0, s3_1_c11_c0_2
+	and	x1, x0, #7
+	cmp	x1, #2
+	b.eq	__cpu_setup_post_flush
+	mov	x1, #7
+	bic	x0, x0, x1
+	orr	x0, x0, #2			// set data RAM latency to 3
+	/*
+	 * no need to flush cache and invalidate tlb and btbs because
+	 * cortex-a57 invalidates them already during reset
+	 */
+	msr	s3_1_c11_c0_2, x0
+
+	b	__cpu_setup_post_flush
+ENDPROC(__cortexa57_cpu_setup)
+
 	/*
 	 *                 n n            T
 	 *       U E      WT T UD     US IHBS
 	 *       CE0      XWHW CZ     ME TEEA S
 	 * .... .IEE .... NEAI TE.I ..AD DEN0 ACAM
 	 * 0011 0... 1101 ..0. ..0. 10.. .... .... < hardware reserved
-	 * .... .100 .... 01.1 11.1 ..01 0011 1101 < software settings
+	 * .... .1.. .... 01.1 11.1 ..01 0001 1101 < software settings
 	 */
 	.type	crval, #object
 crval:
-	.word	0x030802e2			// clear
-	.word	0x0405d13d			// set
-#else
-	/*
-	 *                 n n            T
-	 *       U E      WT T UD     US IHBS
-	 *       CE0      XWHW CZ     ME TEEA S
-	 * .... .IEE .... NEAI TE.I ..AD DEN0 ACAM
-	 * 0011 0... 1101 ..0. ..0. 10.. .... .... < hardware reserved
-	 * .... .100 .... 01.1 11.1 ..01 0001 1101 < software settings
-	 */
-	.type	crval, #object
-crval:
-	.word	0x030802e2			// clear
+	.word	0x000802e2			// clear
 	.word	0x0405d11d			// set
-#endif

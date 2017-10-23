@@ -31,13 +31,23 @@
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
 #include <linux/moduleparam.h>
-#include <linux/spinlock_types.h>
+#include <linux/platform_device.h>
+#include <linux/of_irq.h>
+#include <linux/atomic.h>
 
-#include <mach/mc.h>
-#include <mach/irqs.h>
-#include <mach/mcerr.h>
+#include <linux/platform/tegra/mc.h>
+#include <linux/platform/tegra/mcerr.h>
+
+#define mcerr_pr(fmt, ...)					\
+	do {							\
+		if (!mcerr_silenced) {				\
+			trace_printk(fmt, ##__VA_ARGS__);	\
+			pr_err(fmt, ##__VA_ARGS__);		\
+		}						\
+	} while (0)
 
 static bool mcerr_throttle_enabled = true;
+static u32  mcerr_silenced;
 
 static int arb_intr_mma_set(const char *arg, const struct kernel_param *kp);
 static int arb_intr_mma_get(char *buff, const struct kernel_param *kp);
@@ -76,6 +86,9 @@ static const char *const smmu_page_attrib[] = {
  */
 static const struct mc_error mc_errors[] = {
 	MC_ERR(MC_INT_DECERR_EMEM,
+	       "EMEM address decode error",
+	       0, MC_ERR_STATUS, MC_ERR_ADR),
+	MC_ERR(MC_INT_DECERR_EMEM | MC_INT_SECURITY_VIOLATION,
 	       "EMEM address decode error",
 	       0, MC_ERR_STATUS, MC_ERR_ADR),
 	MC_ERR(MC_INT_DECERR_VPR,
@@ -125,16 +138,46 @@ static const struct mc_error mc_errors[] = {
 	       "MTS carveout access violation",
 	       0, MC_ERR_STATUS, MC_ERR_ADR),
 
+	/*
+	 * Generalized carveouts.
+	 */
+#ifdef CONFIG_ARCH_TEGRA_21x_SOC
+	MC_ERR(MC_INT_DECERR_GENERALIZED_CARVEOUT,
+	       "GSC access violation", 0,
+	       MC_ERR_GENERALIZED_CARVEOUT_STATUS,
+	       MC_ERR_GENERALIZED_CARVEOUT_ADR),
+	MC_ERR(MC_INT_DECERR_GENERALIZED_CARVEOUT | MC_INT_DECERR_EMEM,
+	       "EMEM GSC access violation", 0,
+	       MC_ERR_GENERALIZED_CARVEOUT_STATUS,
+	       MC_ERR_GENERALIZED_CARVEOUT_ADR),
+#endif
+
+	/*
+	 * Miscellaneous errors.
+	 */
+	MC_ERR(MC_INT_INVALID_APB_ASID_UPDATE,
+	       "invalid APB ASID update", 0,
+	       MC_ERR_STATUS, MC_ERR_ADR),
+
 	/* NULL terminate. */
 	MC_ERR(0, NULL, 0, 0, 0),
 };
 
-static DEFINE_SPINLOCK(mc_lock);
-static unsigned long error_count;
+static atomic_t error_count;
 
 static DECLARE_DELAYED_WORK(unthrottle_prints_work, unthrottle_prints);
 
 static struct dentry *mcerr_debugfs_dir;
+
+u32 mc_int_mask;
+static u32 mc_intr;
+static int err_channel;
+
+/*
+ * Allow the top and bottom halfs of the MC error handlers to be overwritten.
+ */
+irqreturn_t __weak tegra_mc_error_thread_ovr(int irq, void *data);
+irqreturn_t __weak tegra_mc_error_hard_irq_ovr(int irq, void *data);
 
 /*
  * Chip specific functions.
@@ -176,32 +219,36 @@ static void arb_intr(void)
 
 static void unthrottle_prints(struct work_struct *work)
 {
-	unsigned long flags;
+	atomic_set(&error_count, 0);
+}
 
-	spin_lock_irqsave(&mc_lock, flags);
-	error_count = 0;
-	spin_unlock_irqrestore(&mc_lock, flags);
+static void mcerr_info_update(struct mc_client *c, u32 stat)
+{
+	int i;
+
+	for (i = 0; i < (sizeof(stat) * 8); i++) {
+		if (stat & (1 << i))
+			c->intr_counts[i]++;
+	}
 }
 
 /*
  * Common MC error handling code.
  */
-static irqreturn_t tegra_mc_error_isr(int irq, void *data)
+static irqreturn_t tegra_mc_error_thread(int irq, void *data)
 {
-	int err_mc = 0;
 	struct mc_client *client = NULL;
 	const struct mc_error *fault;
 	const char *smmu_info;
 	unsigned long count;
 	phys_addr_t addr;
-	u32 status, intr;
+	u32 status, intr = mc_intr;
 	u32 write, secure;
 	u32 client_id;
 
-	intr = mc_readl(MC_INT_STATUS);
-
 	cancel_delayed_work(&unthrottle_prints_work);
 
+<<<<<<< HEAD
 #ifdef MC_DUAL_CHANNEL
 	/*
 	 * Interrupts can come from either MC; handle the case in which the
@@ -224,6 +271,8 @@ static irqreturn_t tegra_mc_error_isr(int irq, void *data)
 		goto out;
 	}
 
+=======
+>>>>>>> update/master
 	if (intr & MC_INT_ARBITRATION_EMEM) {
 		arb_intr();
 		if (intr == MC_INT_ARBITRATION_EMEM)
@@ -231,58 +280,94 @@ static irqreturn_t tegra_mc_error_isr(int irq, void *data)
 		intr &= ~MC_INT_ARBITRATION_EMEM;
 	}
 
-	spin_lock(&mc_lock);
-	count = ++error_count;
-	spin_unlock(&mc_lock);
+	count = atomic_inc_return(&error_count);
 
+<<<<<<< HEAD
 	fault = chip_specific.mcerr_info(intr);
 	if (WARN(!fault, "[mcerr] Unknown error! intr sig: 0x%08x\n", intr))
+=======
+	fault = chip_specific.mcerr_info(intr & mc_int_mask);
+	if (WARN(!fault, "Unknown error! intr sig: 0x%08x\n",
+		 intr & mc_int_mask))
+>>>>>>> update/master
 		goto out;
 
 	if (fault->flags & E_NO_STATUS) {
-		pr_err("[mcerr] MC fault - no status: %s\n", fault->msg);
+		mcerr_pr("MC fault - no status: %s\n", fault->msg);
 		goto out;
 	}
 
-	status = __mc_readl(err_mc, fault->stat_reg);
-	addr = __mc_readl(err_mc, fault->addr_reg);
+	status = __mc_readl(err_channel, fault->stat_reg);
+	addr = __mc_readl(err_channel, fault->addr_reg);
 	secure = !!(status & MC_ERR_STATUS_SECURE);
 	write = !!(status & MC_ERR_STATUS_WRITE);
-	client_id = status & 0x7f;
+	client_id = status & 0xff;
 	client = &mc_clients[client_id <= mc_client_last
 			     ? client_id : mc_client_last];
 
-#ifdef MC_ERR_34BIT_PHYS_ADDR
 	/*
 	 * LPAE: make sure we get the extra 2 physical address bits available
 	 * and pass them down to the printing function.
 	 */
 	addr |= (((phys_addr_t)(status & MC_ERR_STATUS_ADR_HI)) << 12);
-#endif
 
 	if (fault->flags & E_SMMU)
 		smmu_info = smmu_page_attrib[MC_ERR_SMMU_BITS(status)];
 	else
 		smmu_info = NULL;
 
-	chip_specific.mcerr_info_update(client, intr & MC_INT_EN_MASK);
+	mcerr_info_update(client, intr & mc_int_mask);
 
 	if (mcerr_throttle_enabled && count >= MAX_PRINTS) {
 		schedule_delayed_work(&unthrottle_prints_work, HZ/2);
 		if (count == MAX_PRINTS)
-			pr_err("Too many MC errors; throttling prints\n");
+			mcerr_pr("Too many MC errors; throttling prints\n");
 		goto out;
 	}
 
 	chip_specific.mcerr_print(fault, client, status, addr, secure, write,
 				  smmu_info);
 out:
-	__mc_writel(err_mc, intr, MC_INT_STATUS);
-	if (err_mc != 0) {
-		__mc_readl(err_mc, MC_INT_STATUS);
-		mc_writel(MC_INT_EXT_INTR_IN, MC_INT_STATUS);
-	}
+	mc_writel(intr, MC_INT_STATUS);
+	mc_readl(MC_INT_MASK);
+
+	mc_writel(mc_int_mask, MC_INT_MASK);
 	return IRQ_HANDLED;
+}
+
+/*
+ * The actual error handling takes longer than is ideal so this must be
+ * threaded.
+ */
+static irqreturn_t tegra_mc_error_hard_irq(int irq, void *data)
+{
+	u32 intr;
+
+	err_channel = 0;
+	intr = mc_readl(MC_INT_STATUS);
+
+	/*
+	 * Sometimes the MC seems to generate spurious interrupts - that
+	 * is interrupts with an interrupt status register equal to 0.
+	 * Not much we can do other than keep a count of them.
+	 */
+	if (!intr) {
+		spurious_intrs++;
+		return IRQ_NONE;
+	}
+
+	trace_printk("MCERR detected.\n");
+
+	/*
+	 * We have an interrupt; disable the rest until this one is handled.
+	 * This means we will potentially miss interrupts. We can live with
+	 * that.
+	 */
+	mc_writel(0, MC_INT_MASK);
+	mc_readl(MC_INT_STATUS);
+
+	mc_intr = intr & mc_int_mask;
+	return IRQ_WAKE_THREAD;
 }
 
 static const struct mc_error *mcerr_default_info(u32 intr)
@@ -298,18 +383,8 @@ static const struct mc_error *mcerr_default_info(u32 intr)
 	return NULL;
 }
 
-static void mcerr_default_info_update(struct mc_client *c, u32 stat)
+void __weak smmu_dump_pagetable(int swgid, dma_addr_t addr)
 {
-	if (stat & MC_INT_DECERR_EMEM)
-		c->intr_counts[0]++;
-	if (stat & MC_INT_SECURITY_VIOLATION)
-		c->intr_counts[1]++;
-	if (stat & MC_INT_INVALID_SMMU_PAGE)
-		c->intr_counts[2]++;
-
-	/* Unknown interrupts. */
-	if (stat & ~MC_INT_EN_MASK)
-		c->intr_counts[3]++;
 }
 
 /*
@@ -322,12 +397,15 @@ static void mcerr_default_print(const struct mc_error *err,
 				u32 status, phys_addr_t addr,
 				int secure, int rw, const char *smmu_info)
 {
-	pr_err("[mcerr] (%s) %s: %s\n", client->swgid, client->name, err->msg);
-	pr_err("[mcerr]   status = 0x%08x; addr = 0x%08llx", status,
-	       (long long unsigned int)addr);
-	pr_err("[mcerr]   secure: %s, access-type: %s, SMMU fault: %s\n",
-	       secure ? "yes" : "no", rw ? "write" : "read",
-	       smmu_info ? smmu_info : "none");
+	if (smmu_info)
+		smmu_dump_pagetable(client->swgid, addr);
+
+	mcerr_pr("(%d) %s: %s\n", client->swgid, client->name, err->msg);
+	mcerr_pr("  status = 0x%08x; addr = 0x%08llx\n", status,
+		 (long long unsigned int)addr);
+	mcerr_pr("  secure: %s, access-type: %s, SMMU fault: %s\n",
+		 secure ? "yes" : "no", rw ? "write" : "read",
+		 smmu_info ? smmu_info : "none");
 }
 
 /*
@@ -338,28 +416,40 @@ static int mcerr_default_debugfs_show(struct seq_file *s, void *v)
 	int i, j;
 	int do_print;
 
-	seq_printf(s, "%-24s %-24s %-9s %-9s %-9s %-9s\n", "swgid", "client",
-		   "decerr", "secerr", "smmuerr", "unknown");
+	seq_printf(s, "%-18s %-18s", "swgroup", "client");
+	for (i = 0; i < (sizeof(u32) * 8); i++) {
+		if (chip_specific.intr_descriptions[i])
+			seq_printf(s, " %-12s",
+				   chip_specific.intr_descriptions[i]);
+	}
+	seq_puts(s, "\n");
+
 	for (i = 0; i < chip_specific.nr_clients; i++) {
 		do_print = 0;
 
 		/* Only print clients who actually have errors. */
-		for (j = 0; j < INTR_COUNT; j++) {
-			if (mc_clients[i].intr_counts[j]) {
+		for (j = 0; j < (sizeof(u32) * 8); j++) {
+			if (chip_specific.intr_descriptions[j] &&
+			    mc_clients[i].intr_counts[j]) {
 				do_print = 1;
 				break;
 			}
 		}
 
-		if (do_print)
-			seq_printf(s, "%-24s %-24s %-9u %-9u %-9u %-9u\n",
+		if (do_print) {
+			seq_printf(s, "%-18s %-18s",
 				   mc_clients[i].name,
-				   mc_clients[i].swgid,
-				   mc_clients[i].intr_counts[0],
-				   mc_clients[i].intr_counts[1],
-				   mc_clients[i].intr_counts[2],
-				   mc_clients[i].intr_counts[3]);
+				   mc_clients[i].swgroup);
+			for (j = 0; j < (sizeof(u32) * 8); j++) {
+				if (!chip_specific.intr_descriptions[j])
+					continue;
+				seq_printf(s, " %-12u",
+					   mc_clients[i].intr_counts[j]);
+			}
+			seq_puts(s, "\n");
+		}
 	}
+
 	return 0;
 }
 
@@ -383,11 +473,7 @@ static int __get_throttle(void *data, u64 *val)
 
 static int __set_throttle(void *data, u64 val)
 {
-	unsigned long flags;
-
-	spin_lock_irqsave(&mc_lock, flags);
-	error_count = 0;
-	spin_unlock_irqrestore(&mc_lock, flags);
+	atomic_set(&error_count, 0);
 
 	mcerr_throttle_enabled = (bool) val;
 	return 0;
@@ -401,12 +487,17 @@ DEFINE_SIMPLE_ATTRIBUTE(mcerr_throttle_debugfs_fops, __get_throttle,
  * non-essential piece of the kernel no reason to fail the entire MC init
  * if this fails.
  */
-int __init tegra_mcerr_init(struct dentry *mc_parent)
+int tegra_mcerr_init(struct dentry *mc_parent, struct platform_device *pdev)
 {
-	u32 reg;
+	int irq;
+	const void *prop;
+
+	irqreturn_t (*irq_top)(int irq, void *data) =
+		tegra_mc_error_hard_irq;
+	irqreturn_t (*irq_bot)(int irq, void *data) =
+		tegra_mc_error_thread;
 
 	chip_specific.mcerr_info         = mcerr_default_info;
-	chip_specific.mcerr_info_update  = mcerr_default_info_update;
 	chip_specific.mcerr_print        = mcerr_default_print;
 	chip_specific.mcerr_debugfs_show = mcerr_default_debugfs_show;
 	chip_specific.nr_clients = 0;
@@ -416,15 +507,39 @@ int __init tegra_mcerr_init(struct dentry *mc_parent)
 	 * functions as it wishes.
 	 */
 	mcerr_chip_specific_setup(&chip_specific);
-
-	if (request_irq(INT_MC_GENERAL, tegra_mc_error_isr, 0,
-			"mc_status", NULL)) {
-		pr_err("%s: unable to register MC error interrupt\n", __func__);
-		goto done;
-	} else {
-		reg = MC_INT_EN_MASK;
-		mc_writel(reg, MC_INT_MASK);
+	if (chip_specific.nr_clients == 0 ||
+	    chip_specific.intr_descriptions == NULL) {
+		pr_err("Missing necessary chip_specific functionality!\n");
+		return -ENODEV;
 	}
+
+	if (tegra_mc_error_hard_irq_ovr)
+		irq_top = tegra_mc_error_hard_irq_ovr;
+	if (tegra_mc_error_thread_ovr)
+		irq_bot = tegra_mc_error_thread_ovr;
+
+	prop = of_get_property(pdev->dev.of_node, "int_mask", NULL);
+	if (!prop) {
+		pr_err("No int_mask prop for mcerr!\n");
+		return -EINVAL;
+	}
+
+	mc_int_mask = be32_to_cpup(prop);
+	mc_writel(mc_int_mask, MC_INT_MASK);
+
+	irq = irq_of_parse_and_map(pdev->dev.of_node, 0);
+	if (irq < 0) {
+		pr_err("Unable to parse/map MC error interrupt\n");
+		goto done;
+	}
+
+	if (request_threaded_irq(irq, irq_top, irq_bot, 0, "mc_status", NULL)) {
+		pr_err("Unable to register MC error interrupt\n");
+		goto done;
+	}
+
+	if (!mc_parent)
+		goto done;
 
 	mcerr_debugfs_dir = debugfs_create_dir("err", mc_parent);
 	if (mcerr_debugfs_dir == NULL) {
@@ -437,8 +552,7 @@ int __init tegra_mcerr_init(struct dentry *mc_parent)
 	debugfs_create_file("mcerr_throttle", S_IRUGO | S_IWUSR,
 			    mcerr_debugfs_dir, NULL,
 			    &mcerr_throttle_debugfs_fops);
-
-	pr_info("Started MC error interface!\n");
+	debugfs_create_u32("quiet", 0644, mcerr_debugfs_dir, &mcerr_silenced);
 
 done:
 	return 0;

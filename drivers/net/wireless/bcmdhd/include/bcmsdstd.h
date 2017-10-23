@@ -1,9 +1,14 @@
 /*
  *  'Standard' SDIO HOST CONTROLLER driver
  *
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
  *
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+ * 
+>>>>>>> update/master
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
  * under the terms of the GNU General Public License version 2 (the "GPL"),
@@ -22,7 +27,11 @@
  * software in any way with any other Broadcom software provided under a license
  * other than the GPL, without Broadcom's express prior written consent.
  *
+<<<<<<< HEAD
  * $Id: bcmsdstd.h 455427 2014-02-14 00:11:19Z $
+=======
+ * $Id: bcmsdstd.h 455390 2014-02-13 22:14:56Z $
+>>>>>>> update/master
  */
 #ifndef	_BCM_SD_STD_H
 #define	_BCM_SD_STD_H
@@ -238,8 +247,8 @@ extern void sdstd_spinbits(sdioh_info_t *sd, uint16 norm, uint16 err);
  */
 
 /* Register mapping routines */
-extern uint32 *sdstd_reg_map(osl_t *osh, int32 addr, int size);
-extern void sdstd_reg_unmap(osl_t *osh, int32 addr, int size);
+extern uint32 *sdstd_reg_map(osl_t *osh, ulong addr, int size);
+extern void sdstd_reg_unmap(osl_t *osh, ulong addr, int size);
 
 /* Interrupt (de)registration routines */
 extern int sdstd_register_irq(sdioh_info_t *sd, uint irq);
@@ -251,8 +260,13 @@ extern void sdstd_unlock(sdioh_info_t *sd);
 extern void sdstd_waitlockfree(sdioh_info_t *sd);
 
 /* OS-specific wrappers for safe concurrent register access */
+<<<<<<< HEAD
 extern void sdstd_os_lock_irqsave(sdioh_info_t *sd, ulong *flags);
 extern void sdstd_os_unlock_irqrestore(sdioh_info_t *sd, ulong *flags);
+=======
+extern void sdstd_os_lock_irqsave(sdioh_info_t *sd, ulong* flags);
+extern void sdstd_os_unlock_irqrestore(sdioh_info_t *sd, ulong* flags);
+>>>>>>> update/master
 
 /* OS-specific wait-for-interrupt-or-status */
 extern int sdstd_waitbits(sdioh_info_t *sd, uint16 norm, uint16 err, bool yield, uint16 *bits);
@@ -276,7 +290,11 @@ extern void sdstd_3_start_tuning(sdioh_info_t *sd);
 extern void sdstd_3_osinit_tuning(sdioh_info_t *sd);
 extern void sdstd_3_osclean_tuning(sdioh_info_t *sd);
 
+<<<<<<< HEAD
 extern void sdstd_enable_disable_periodic_timer(sdioh_info_t *sd, uint val);
+=======
+extern void sdstd_enable_disable_periodic_timer(sdioh_info_t * sd, uint val);
+>>>>>>> update/master
 
 extern sdioh_info_t *sdioh_attach(osl_t *osh, void *bar0, uint irq);
 extern SDIOH_API_RC sdioh_detach(osl_t *osh, sdioh_info_t *sd);

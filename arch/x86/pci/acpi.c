@@ -84,6 +84,17 @@ static const struct dmi_system_id pci_crs_quirks[] __initconst = {
 			DMI_MATCH(DMI_BIOS_VENDOR, "Phoenix Technologies, LTD"),
 		},
 	},
+	/* https://bugs.launchpad.net/ubuntu/+source/alsa-driver/+bug/931368 */
+	/* https://bugs.launchpad.net/ubuntu/+source/alsa-driver/+bug/1033299 */
+	{
+		.callback = set_use_crs,
+		.ident = "Foxconn K8M890-8237A",
+		.matches = {
+			DMI_MATCH(DMI_BOARD_VENDOR, "Foxconn"),
+			DMI_MATCH(DMI_BOARD_NAME, "K8M890-8237A"),
+			DMI_MATCH(DMI_BIOS_VENDOR, "Phoenix Technologies, LTD"),
+		},
+	},
 
 	/* Now for the blacklist.. */
 
@@ -571,13 +582,8 @@ struct pci_bus *pci_acpi_scan_root(struct acpi_pci_root *root)
 	 */
 	if (bus) {
 		struct pci_bus *child;
-		list_for_each_entry(child, &bus->children, node) {
-			struct pci_dev *self = child->self;
-			if (!self)
-				continue;
-
-			pcie_bus_configure_settings(child, self->pcie_mpss);
-		}
+		list_for_each_entry(child, &bus->children, node)
+			pcie_bus_configure_settings(child);
 	}
 
 	if (bus && node != -1) {

@@ -1,7 +1,7 @@
 /*
- * arch/arch/mach-tegra/timer-t3.c
+ * drivers/clocksource/tegra-wakeup-nvtimers.c
  *
- * Copyright (c) 2011-2013, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2014, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -83,7 +83,7 @@ static u32 lp2_wake_timers[] = {
 
 static irqreturn_t tegra_lp2wake_interrupt(int irq, void *dev_id)
 {
-	int cpu = (int)dev_id;
+	int cpu = (int)(uintptr_t)dev_id;
 	int base;
 
 	base = lp2_wake_timers[cpu];
@@ -171,7 +171,7 @@ fail:
 }
 
 #if defined(CONFIG_PM_SLEEP) && defined(CONFIG_HOTPLUG_CPU)
-static void tegra3_suspend_wake_timer(unsigned int cpu)
+static void tegra3_suspend_wake_timer(int cpu)
 {
 	cpumask_clear_cpu(cpu, &wake_timer_ready);
 #ifdef CONFIG_SMP
@@ -184,7 +184,7 @@ static void tegra3_suspend_wake_timer(unsigned int cpu)
 #endif
 }
 
-static void tegra3_unregister_wake_timer(unsigned int cpu)
+static void tegra3_unregister_wake_timer(int cpu)
 {
 	tegra3_suspend_wake_timer(cpu);
 
@@ -249,16 +249,16 @@ static int hotplug_notify(struct notifier_block *self,
 {
 	switch (action) {
 	case CPU_ONLINE:
-		tegra3_register_wake_timer((unsigned int)cpu);
+		tegra3_register_wake_timer((unsigned int)(uintptr_t)cpu);
 		break;
 	case CPU_ONLINE_FROZEN:
-		tegra3_resume_wake_timer((unsigned int)cpu);
+		tegra3_resume_wake_timer((unsigned int)(uintptr_t)cpu);
 		break;
 	case CPU_DOWN_PREPARE:
-		tegra3_unregister_wake_timer((unsigned int)cpu);
+		tegra3_unregister_wake_timer((int)(uintptr_t)cpu);
 		break;
 	case CPU_DOWN_PREPARE_FROZEN:
-		tegra3_suspend_wake_timer((unsigned int)cpu);
+		tegra3_suspend_wake_timer((int)(uintptr_t)cpu);
 		break;
 	default:
 		break;
@@ -270,20 +270,26 @@ static int hotplug_notify(struct notifier_block *self,
 static struct notifier_block __cpuinitdata hotplug_notifier_block = {
 	.notifier_call = hotplug_notify,
 };
+#endif
 
+#ifdef CONFIG_PM_SLEEP
 int __init hotplug_cpu_register(struct device_node *np)
 {
 	int cpu;
-	for (cpu = 0;cpu < 4;cpu++) {
+	for (cpu = 0; cpu < ARRAY_SIZE(tegra_lp2wake_irq); cpu++) {
 		tegra_lp2wake_irq[cpu].irq =
 				irq_of_parse_and_map(np, cpu + 2);
 
-	if (tegra_lp2wake_irq[cpu].irq <= 0) {
+		if (tegra_lp2wake_irq[cpu].irq <= 0) {
 			pr_err("Failed to map wakeup timer IRQ\n");
 			BUG();
 		}
 	}
+#ifdef CONFIG_HOTPLUG_CPU
 	return register_cpu_notifier(&hotplug_notifier_block);
+#else
+	return 0;
+#endif
 }
 #endif
 #endif

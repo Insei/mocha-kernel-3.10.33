@@ -3,7 +3,7 @@
  *
  * Tegra Graphics Host Syncpoint Integration to linux/sync Framework
  *
- * Copyright (c) 2013-2014, NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2013-2015, NVIDIA Corporation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -55,7 +55,7 @@ struct nvhost_sync_pt_inst {
 	struct nvhost_sync_pt		*shared;
 };
 
-struct nvhost_sync_pt *to_nvhost_sync_pt(struct sync_pt *pt)
+static struct nvhost_sync_pt *to_nvhost_sync_pt(struct sync_pt *pt)
 {
 	struct nvhost_sync_pt_inst *pti =
 			container_of(pt, struct nvhost_sync_pt_inst, pt);
@@ -234,6 +234,25 @@ static void nvhost_sync_pt_value_str(struct sync_pt *sync_pt, char *str,
 		snprintf(str, size, "0");
 }
 
+static void nvhost_sync_get_pt_name(struct sync_pt *sync_pt, char *str,
+		int size)
+{
+	struct nvhost_sync_pt *pt = to_nvhost_sync_pt(sync_pt);
+	struct nvhost_sync_timeline *obj;
+
+	/* shared data may not be available yet */
+	if (!pt)
+		return;
+
+	obj = pt->obj;
+
+	if (obj->id != NVSYNCPT_INVALID)
+		snprintf(str, size, "%s",
+			nvhost_syncpt_get_name_from_id(obj->sp, obj->id));
+	else
+		snprintf(str, size, "0");
+}
+
 static int nvhost_sync_fill_driver_data(struct sync_pt *sync_pt,
 		void *data, int size)
 {
@@ -250,6 +269,15 @@ static int nvhost_sync_fill_driver_data(struct sync_pt *sync_pt,
 	return sizeof(info);
 }
 
+static void nvhost_sync_platform_debug_dump(struct sync_pt *pt)
+{
+	struct nvhost_sync_pt *__pt = to_nvhost_sync_pt(pt);
+	struct nvhost_sync_timeline *obj = __pt->obj;
+	struct nvhost_syncpt *sp = obj->sp;
+
+	nvhost_debug_dump(syncpt_to_dev(sp));
+}
+
 static const struct sync_timeline_ops nvhost_sync_timeline_ops = {
 	.driver_name = "nvhost_sync",
 	.dup = nvhost_sync_pt_dup_inst,
@@ -259,6 +287,8 @@ static const struct sync_timeline_ops nvhost_sync_timeline_ops = {
 	.fill_driver_data = nvhost_sync_fill_driver_data,
 	.timeline_value_str = nvhost_sync_timeline_value_str,
 	.pt_value_str = nvhost_sync_pt_value_str,
+	.get_pt_name = nvhost_sync_get_pt_name,
+	.platform_debug_dump = nvhost_sync_platform_debug_dump
 };
 
 struct sync_fence *nvhost_sync_fdget(int fd)
@@ -282,6 +312,7 @@ struct sync_fence *nvhost_sync_fdget(int fd)
 
 	return fence;
 }
+EXPORT_SYMBOL(nvhost_sync_fdget);
 
 int nvhost_sync_num_pts(struct sync_fence *fence)
 {
@@ -294,16 +325,21 @@ int nvhost_sync_num_pts(struct sync_fence *fence)
 
 	return num;
 }
+EXPORT_SYMBOL(nvhost_sync_num_pts);
 
-u32 nvhost_sync_pt_id(struct nvhost_sync_pt *pt)
+u32 nvhost_sync_pt_id(struct sync_pt *__pt)
 {
+	struct nvhost_sync_pt *pt = to_nvhost_sync_pt(__pt);
 	return pt->obj->id;
 }
+EXPORT_SYMBOL(nvhost_sync_pt_id);
 
-u32 nvhost_sync_pt_thresh(struct nvhost_sync_pt *pt)
+u32 nvhost_sync_pt_thresh(struct sync_pt *__pt)
 {
+	struct nvhost_sync_pt *pt = to_nvhost_sync_pt(__pt);
 	return pt->thresh;
 }
+EXPORT_SYMBOL(nvhost_sync_pt_thresh);
 
 /* Public API */
 
@@ -335,7 +371,7 @@ struct nvhost_sync_timeline *nvhost_sync_timeline_create(
 	return obj;
 }
 
-void nvhost_sync_pt_signal(struct nvhost_sync_pt *pt)
+void nvhost_sync_pt_signal(struct nvhost_sync_pt *pt, u64 timestamp)
 {
 	/* At this point the fence (and its sync_pt's) might already be gone if
 	 * the user has closed its fd's. The nvhost_sync_pt object still exists
@@ -346,7 +382,7 @@ void nvhost_sync_pt_signal(struct nvhost_sync_pt *pt)
 		pt->has_intr = false;
 		kref_put(&pt->refcount, nvhost_sync_pt_free_shared);
 	}
-	sync_timeline_signal(&obj->obj);
+	sync_timeline_signal(&obj->obj, timestamp);
 }
 
 int nvhost_sync_fence_set_name(int fence_fd, const char *name)
@@ -360,14 +396,62 @@ int nvhost_sync_fence_set_name(int fence_fd, const char *name)
 }
 EXPORT_SYMBOL(nvhost_sync_fence_set_name);
 
+<<<<<<< HEAD
+int nvhost_sync_fence_set_name(int fence_fd, const char *name)
+{
+	struct sync_fence *fence = nvhost_sync_fdget(fence_fd);
+	if (!fence)
+		return -EINVAL;
+	strlcpy(fence->name, name, sizeof(fence->name));
+	sync_fence_put(fence);
+	return 0;
+}
+EXPORT_SYMBOL(nvhost_sync_fence_set_name);
+
 int nvhost_sync_create_fence(struct nvhost_syncpt *sp,
+=======
+int nvhost_sync_create_fence_fd(struct platform_device *pdev,
+>>>>>>> update/master
 		struct nvhost_ctrl_sync_fence_info *pts,
 		u32 num_pts, const char *name, int *fence_fd)
 {
 	int fd;
+	struct sync_fence *fence = NULL;
+
+	fence = nvhost_sync_create_fence(pdev, pts, num_pts, name);
+
+	if (IS_ERR(fence))
+		return -EINVAL;
+
+	fd = get_unused_fd();
+	if (fd < 0) {
+		sync_fence_put(fence);
+		return fd;
+	}
+
+	*fence_fd = fd;
+	sync_fence_install(fence, fd);
+
+	return 0;
+}
+EXPORT_SYMBOL(nvhost_sync_create_fence_fd);
+
+struct sync_fence *nvhost_sync_create_fence(struct platform_device *pdev,
+		struct nvhost_ctrl_sync_fence_info *pts,
+		u32 num_pts, const char *name)
+{
+	struct nvhost_master *master = nvhost_get_host(pdev);
+	struct nvhost_syncpt *sp = &master->syncpt;
 	int err;
 	u32 i;
 	struct sync_fence *fence = NULL;
+
+	for (i = 0; i < num_pts; i++) {
+		if (!nvhost_syncpt_is_valid_hw_pt(sp, pts[i].id)) {
+			WARN_ON(1);
+			return ERR_PTR(-EINVAL);
+		}
+	}
 
 	for (i = 0; i < num_pts; i++) {
 		struct nvhost_sync_timeline *obj;
@@ -376,8 +460,6 @@ int nvhost_sync_create_fence(struct nvhost_syncpt *sp,
 		u32 id = pts[i].id;
 		u32 thresh = pts[i].thresh;
 
-		BUG_ON(id >= nvhost_syncpt_nb_pts(sp) &&
-				(id != NVSYNCPT_INVALID));
 		obj = nvhost_syncpt_timeline(sp, id);
 		pt = nvhost_sync_pt_create_inst(obj, thresh);
 		if (pt == NULL) {
@@ -411,19 +493,13 @@ int nvhost_sync_create_fence(struct nvhost_syncpt *sp,
 		goto err;
 	}
 
-	fd = get_unused_fd();
-	if (fd < 0) {
-		err = fd;
-		goto err;
-	}
-
-	*fence_fd = fd;
-	sync_fence_install(fence, fd);
-	return 0;
+	return fence;
 
 err:
 	if (fence)
 		sync_fence_put(fence);
 
-	return err;
+	return ERR_PTR(err);
 }
+EXPORT_SYMBOL(nvhost_sync_create_fence);
+

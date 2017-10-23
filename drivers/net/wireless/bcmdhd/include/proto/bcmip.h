@@ -1,7 +1,12 @@
 /*
+<<<<<<< HEAD
  * Copyright (C) 1999-2014, Broadcom Corporation
  * Copyright (C) 2016 XiaoMi, Inc.
  *
+=======
+ * Copyright (C) 1999-2015, Broadcom Corporation
+ * 
+>>>>>>> update/master
  *      Unless you and Broadcom execute a separate written software license
  * agreement governing use of this software, this software is licensed to you
  * under the terms of the GNU General Public License version 2 (the "GPL"),
@@ -22,7 +27,11 @@
  *
  * Fundamental constants relating to IP Protocol
  *
+<<<<<<< HEAD
  * $Id: bcmip.h 457888 2014-02-25 03:34:39Z $
+=======
+ * $Id: bcmip.h 458522 2014-02-27 02:26:15Z $
+>>>>>>> update/master
  */
 
 #ifndef _bcmip_h_
@@ -91,6 +100,15 @@
 #define IPV4_TOS_THROUGHPUT	0x8	/* Best throughput requested */
 #define IPV4_TOS_RELIABILITY	0x4	/* Most reliable delivery requested */
 
+#define IPV4_TOS_ROUTINE        0
+#define IPV4_TOS_PRIORITY       1
+#define IPV4_TOS_IMMEDIATE      2
+#define IPV4_TOS_FLASH          3
+#define IPV4_TOS_FLASHOVERRIDE  4
+#define IPV4_TOS_CRITICAL       5
+#define IPV4_TOS_INETWORK_CTRL  6
+#define IPV4_TOS_NETWORK_CTRL   7
+
 #define IPV4_PROT(ipv4_body)	(((uint8 *)(ipv4_body))[IPV4_PROT_OFFSET])
 
 #define IPV4_FRAG_RESV		0x8000	/* Reserved */
@@ -153,6 +171,14 @@ BWL_PRE_PACKED_STRUCT struct ipv4_hdr {
 
 #define IP_DSCP46(ip_body) (IP_TOS46(ip_body) >> IPV4_TOS_DSCP_SHIFT);
 
+<<<<<<< HEAD
+=======
+/* IPV4 or IPV6 Protocol Classifier or 0 */
+#define IP_PROT46(ip_body) \
+	(IP_VER(ip_body) == IP_VER_4 ? IPV4_PROT(ip_body) : \
+	 IP_VER(ip_body) == IP_VER_6 ? IPV6_PROT(ip_body) : 0)
+
+>>>>>>> update/master
 /* IPV6 extension headers (options) */
 #define IPV6_EXTHDR_HOP		0
 #define IPV6_EXTHDR_ROUTING	43

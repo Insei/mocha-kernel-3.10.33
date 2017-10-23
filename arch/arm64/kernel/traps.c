@@ -287,19 +287,23 @@ asmlinkage void __exception do_undefinstr(struct pt_regs *regs)
 	/* check for AArch32 breakpoint instructions */
 	if (!aarch32_break_handler(regs))
 		return;
-	if (compat_thumb_mode(regs)) {
-		if (get_user(instr, (u16 __user *)pc))
-			goto die_sig;
-		if (is_wide_instruction(instr)) {
-			u32 instr2;
-			if (get_user(instr2, (u16 __user *)pc+1))
+	if (user_mode(regs)) {
+		if (compat_thumb_mode(regs)) {
+			if (get_user(instr, (u16 __user *)pc))
 				goto die_sig;
-			instr <<= 16;
-			instr |= instr2;
+			if (is_wide_instruction(instr)) {
+				u32 instr2;
+				if (get_user(instr2, (u16 __user *)pc+1))
+					goto die_sig;
+				instr <<= 16;
+				instr |= instr2;
+			}
+		} else if (get_user(instr, (u32 __user *)pc)) {
+			goto die_sig;
 		}
-
-	} else if ((get_user(instr, (u32 __user *)pc))) {
-		goto die_sig;
+	} else {
+		/* kernel mode */
+		instr = *((u32 *)pc);
 	}
 
 	if (call_undef_hook(regs, instr) == 0)
@@ -451,7 +455,9 @@ misc1:0x%016lx, misc2:0x%016lx\n",
 asmlinkage void bad_mode(struct pt_regs *regs, int reason, unsigned int esr)
 {
 	siginfo_t info;
+#ifdef CONFIG_DENVER_CPU
 	unsigned long serr_status;
+#endif
 	void __user *pc = (void __user *)instruction_pointer(regs);
 	console_verbose();
 

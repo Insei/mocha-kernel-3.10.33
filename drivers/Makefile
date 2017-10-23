@@ -12,6 +12,8 @@ obj-$(CONFIG_CPUQUIET_FRAMEWORK) += cpuquiet/
 obj-y				+= irqchip/
 obj-y				+= bus/
 
+obj-$(CONFIG_GENERIC_PHY)	+= phy/
+
 # GPIO must come after pinctrl as gpios may need to mux pins etc
 obj-y				+= pinctrl/
 obj-y				+= gpio/
@@ -21,6 +23,8 @@ obj-$(CONFIG_PARISC)		+= parisc/
 obj-$(CONFIG_RAPIDIO)		+= rapidio/
 obj-y				+= video/
 obj-y				+= idle/
+
+obj-$(CONFIG_PADCTRL)		+= padctrl/
 
 # IPMI must come before ACPI in order to provide IPMI opregion support
 obj-$(CONFIG_IPMI_HANDLER)	+= char/ipmi/
@@ -158,4 +162,13 @@ obj-$(CONFIG_VME_BUS)		+= vme/
 obj-$(CONFIG_IPACK_BUS)		+= ipack/
 obj-$(CONFIG_NTB)		+= ntb/
 obj-$(CONFIG_MIPI_BIF)		+= mipi_bif/
+<<<<<<< HEAD
 obj-$(CONFIG_TSPDRV)		+= tspdrv/
+=======
+
+# The wildcard hack is necessary for kernel's make clean.
+ifneq ($(wildcard $(srctree)/../kernel-t18x/drivers/Makefile),)
+obj-$(CONFIG_ARCH_TEGRA_18x_SOC) += ../../kernel-t18x/drivers/
+endif
+obj-$(CONFIG_ANDROID)		+= android/
+>>>>>>> update/master

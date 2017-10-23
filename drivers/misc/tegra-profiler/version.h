@@ -1,7 +1,11 @@
 /*
  * drivers/misc/tegra-profiler/hrt.h
  *
+<<<<<<< HEAD
  * Copyright (c) 2013-2015, NVIDIA CORPORATION.  All rights reserved.
+=======
+ * Copyright (c) 2013-2016, NVIDIA CORPORATION.  All rights reserved.
+>>>>>>> update/master
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -18,7 +22,11 @@
 #ifndef __QUADD_VERSION_H
 #define __QUADD_VERSION_H
 
+<<<<<<< HEAD
 #define QUADD_MODULE_VERSION		"1.103"
+=======
+#define QUADD_MODULE_VERSION		"1.107"
+>>>>>>> update/master
 #define QUADD_MODULE_BRANCH		"Dev"
 
 #endif	/* __QUADD_VERSION_H */

@@ -23,8 +23,9 @@
 #include <linux/slab.h>
 #include <linux/edp.h>
 
-#include <mach/isomgr.h>
-#include <mach/latency_allowance.h>
+#include <linux/platform/tegra/isomgr.h>
+#include <linux/platform/tegra/latency_allowance.h>
+
 #include <mach/tegra_bbc_proxy.h>
 #include <mach/tegra_bbc_thermal.h>
 

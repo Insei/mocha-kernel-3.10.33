@@ -392,6 +392,7 @@ config SENSORS_NCT1008
 	tristate "ON Semiconductor Temperature Sensor"
 	default n
 	depends on I2C
+	depends on THERMAL
 	help
 	 Say yes here if you wish to include the ON Semiconductor
 	 NCT1008 Temperature sensor.
@@ -558,6 +559,13 @@ config TEGRA_CRYPTO_DEV
 	Dev node /dev/tegra-crypto in order to get access to tegra aes
 	hardware from user space
 
+config TEGRA_CPC
+	bool "Tegra content protection controller"
+	depends on I2C
+	---help---
+	This driver allows authenticated IO access to storage blocks on
+	CPC controller via i2c.
+
 config MAX1749_VIBRATOR
 	bool "MAX1749 vibrator device driver"
 	depends on ANDROID_TIMED_OUTPUT
@@ -581,6 +589,7 @@ config APANIC_PLABEL
 
 config THERM_EST
 	bool "Thermal estimator driver"
+	depends on THERMAL
 	default n
 	---help---
 	Thermal driver which estimates temperature based of other sensors.
@@ -594,6 +603,7 @@ config TEGRA_THROUGHPUT
 
 config FAN_THERM_EST
 	bool "Fan driving temp estimator"
+	depends on THERMAL
 	---help---
 	Thermal driver that estimates the fan driving temperature based on
 	other sensors.
@@ -610,6 +620,11 @@ config BLUEDROID_PM
 
           Say Y here to compile support for bluedroid_pm support into the kernel
           or say M to compile it as module (bluedroid_pm).
+
+config GPS_HWGEOFENCING
+	tristate "hw geofencing support"
+	---help---
+	This driver provides gps enable, hw geofencing and host wake capability.
 
 config CPULOAD_MONITOR
 	bool "Publish cpu load measures in sysfs"
@@ -653,6 +668,7 @@ config MODS
 
 	If unsure, say N here.
 
+<<<<<<< HEAD
 config SENSORS_AK09911
 	tristate "AK09911 compass support"
 	default n
@@ -660,6 +676,29 @@ config SENSORS_AK09911
 	help
 	  If you say yes here you get support for Asahi Kasei's
 	  orientation sensor AK09911.
+=======
+config TEGRA_PROC_POWER_MODEL
+	bool
+	help
+	  A simple model of processor power relating voltage, frequency,
+	  cores, and chip specific data. Used by various drivers.
+
+config NV_GAMEPAD_RESET
+	tristate "Nvidia Gamepad Reset Driver"
+	help
+	 This driver provides an interface that can be used to recover
+	 gamepad uC when needed
+
+config SAF775x_HWDEP
+        tristate "SAF775x HWDEP Driver"
+        depends on I2C
+
+config UID_CPUTIME
+	tristate "Per-UID cpu time statistics"
+	depends on PROFILING
+	help
+	  Per UID based cpu time statistics exported to /proc/uid_cputime
+>>>>>>> update/master
 
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"

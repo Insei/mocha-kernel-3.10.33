@@ -1,6 +1,7 @@
 /* include/linux/tegra_audio.h
  *
  * Copyright (C) 2010 Google, Inc.
+ * Copyright (C) 2013-2014, NVIDIA CORPORATION. All rights reserved.
  *
  * Author:
  *     Iliyan Malchev <malchev@google.com>
@@ -81,6 +82,226 @@ struct dmic_params_t {
 	unsigned int captured_data_size;
 };
 
+enum AHUB_MODULE_ID {
+	MODULE_ADMAIF,
+	MODULE_SFC,
+	MODULE_OPE,
+	MODULE_PEQ,
+	MODULE_MBDRC,
+	MODULE_SPKPROT,
+	MODULE_I2S,
+	MODULE_AMIXER,
+	MODULE_DMIC,
+	MODULE_ADSP,
+	MODULE_MVC,
+	MODULE_NUM,
+};
+
+enum tegra210_audio_test_id {
+	TEST_ID_REG_ACCESS = 0x1,
+	TEST_ID_STATUS_REG_CHECK,
+	TEST_ID_RUNTIME_SOFT_RESET,
+	TEST_ID_GET_POSITION,
+	TEST_ID_COEFF_RAM_SEQ,
+	TEST_ID_COEFF_RAM_NON_SEQ,
+	TEST_ID_MVC_MUTE_CTRL,
+	TEST_ID_MVC_UNMUTE_CTRL,
+	TEST_ID_AMIXER_PEAK_VALUE_SAMPLE_COUNT,
+	TEST_ID_MVC_MUTE_UNMUTE_CTRL,
+	TEST_ID_MVC_START_STOP,
+	TEST_ID_RUNTIME_PEAKMETER,
+	TEST_ID_RUNTIME_PARAM_SWITCH,
+	TEST_ID_MVC_UNMUTE_FIRST_CH,
+	TEST_ID_MVC_CHANGE_LIN_CURVE_PARAMS,
+	TEST_ID_MVC_CHANGE_POLY_CURVE_PARAMS,
+	TEST_ID_MVC_DISABLE_ENABLE,
+	TEST_ID_MVC_DISABLE_UNMUTE,
+};
+
+struct tegra210_audio_test_param {
+	enum AHUB_MODULE_ID module;
+	u32 cif;
+	enum tegra210_audio_test_id test_id;
+};
+
+struct tegra210_audio_axbar_test_param {
+	u32 rx_cif;
+	u32 tx_cif;
+};
+
+struct tegra210_audio_admaif_test_param {
+	int admaif_id;
+	int test_id;
+	unsigned int in_channels;
+	unsigned int out_channels;
+	unsigned int in_bps;
+	unsigned int out_bps;
+	unsigned int buffer_size;
+	unsigned int periods;
+};
+
+
+struct tegra210_audio_ope_test_param {
+	int ope_id;
+	int test_id;
+	int peq_to_drc;
+};
+
+#define TEGRA210_PEQ_MAX_BIQ_STAGES 12
+#define PEQ_MAX_CHAN 8
+struct tegra210_audio_peq_test_param {
+	int peq_id;
+	int test_id;
+	int is_bypass;
+	int chan_mask;
+	unsigned int biquad_stages;
+	unsigned int pre_gain[PEQ_MAX_CHAN];
+	unsigned int post_gain[PEQ_MAX_CHAN];
+	unsigned int pre_shift[PEQ_MAX_CHAN];
+	unsigned int post_shift[PEQ_MAX_CHAN];
+	unsigned int biquad_shifts[PEQ_MAX_CHAN][TEGRA210_PEQ_MAX_BIQ_STAGES];
+	unsigned int biquad_b0[PEQ_MAX_CHAN][TEGRA210_PEQ_MAX_BIQ_STAGES];
+	unsigned int biquad_b1[PEQ_MAX_CHAN][TEGRA210_PEQ_MAX_BIQ_STAGES];
+	unsigned int biquad_b2[PEQ_MAX_CHAN][TEGRA210_PEQ_MAX_BIQ_STAGES];
+	unsigned int biquad_a1[PEQ_MAX_CHAN][TEGRA210_PEQ_MAX_BIQ_STAGES];
+	unsigned int biquad_a2[PEQ_MAX_CHAN][TEGRA210_PEQ_MAX_BIQ_STAGES];
+};
+
+enum mbdrc_mode {
+	MBDRC_FULL_BAND,
+	MBDRC_DUAL_BAND,
+	MBDRC_MULTI_BAND,
+};
+
+enum mbdrc_bands {
+	MBDRC_BAND_LOW,
+	MBDRC_BAND_MID,
+	MBDRC_BAND_HIGH,
+	MBDRC_BAND_NUM,
+};
+
+#define TEGRA210_MBDRC_MAX_BIQ_STAGES 8
+struct tegra210_audio_mbdrc_test_param {
+	int mbdrc_id;
+	int test_id;
+	int is_bypass;
+	unsigned int master_volume;
+	int mode;
+	unsigned int rms_mode_peak;
+	unsigned int rms_offset;
+	int is_all_pass_tree;
+	unsigned int shift_ctrl;
+	unsigned int frame_size;
+	unsigned int channel_mask;
+	unsigned int fast_attack_factor;
+	unsigned int fast_release_factor;
+	unsigned int num_iir_stages[MBDRC_BAND_NUM];
+	unsigned int in_attack_time_const[MBDRC_BAND_NUM];
+	unsigned int in_release_time_const[MBDRC_BAND_NUM];
+	unsigned int fast_attack_time_const[MBDRC_BAND_NUM];
+	unsigned int in_threshold[MBDRC_BAND_NUM][4];
+	unsigned int out_threshold[MBDRC_BAND_NUM][4];
+	unsigned int ratio[MBDRC_BAND_NUM][5];
+	unsigned int makeup_gain[MBDRC_BAND_NUM];
+	unsigned int gain_init[MBDRC_BAND_NUM];
+	unsigned int gain_attack_time_const[MBDRC_BAND_NUM];
+	unsigned int gain_release_time_const[MBDRC_BAND_NUM];
+	unsigned int fast_release_time_const[MBDRC_BAND_NUM];
+	unsigned int biquad_b0[MBDRC_BAND_NUM][TEGRA210_MBDRC_MAX_BIQ_STAGES];
+	unsigned int biquad_b1[MBDRC_BAND_NUM][TEGRA210_MBDRC_MAX_BIQ_STAGES];
+	unsigned int biquad_b2[MBDRC_BAND_NUM][TEGRA210_MBDRC_MAX_BIQ_STAGES];
+	unsigned int biquad_a1[MBDRC_BAND_NUM][TEGRA210_MBDRC_MAX_BIQ_STAGES];
+	unsigned int biquad_a2[MBDRC_BAND_NUM][TEGRA210_MBDRC_MAX_BIQ_STAGES];
+};
+
+struct tegra210_audio_sfc_test_param {
+	int sfc_id;
+	int test_id;
+	unsigned int in_rate;
+	unsigned int out_rate;
+};
+
+#define TEGRA210_SPKPROT_ARF_MAX_BIQ 3
+#define SPKPROT_MAX_CH 8
+struct tegra210_audio_spkprot_test_param {
+	int spkprot_id;
+	int test_id;
+	unsigned int mode;
+	unsigned int bias;
+	unsigned int channels;
+	unsigned int bandfilter_type;
+	unsigned int bandfilter_biquad_stages;
+	unsigned int arfilter_biquad_stages;
+	unsigned int spfilter_biquad_stages;
+	unsigned int gain_l;
+	unsigned int gain_h;
+	int threshold;
+	unsigned int reconfig;
+	unsigned int pre_gain[SPKPROT_MAX_CH];
+	unsigned int post_gain[SPKPROT_MAX_CH];
+	unsigned int biquad_b0[SPKPROT_MAX_CH][TEGRA210_SPKPROT_ARF_MAX_BIQ];
+	unsigned int biquad_b1[SPKPROT_MAX_CH][TEGRA210_SPKPROT_ARF_MAX_BIQ];
+	unsigned int biquad_b2[SPKPROT_MAX_CH][TEGRA210_SPKPROT_ARF_MAX_BIQ];
+	unsigned int biquad_a1[SPKPROT_MAX_CH][TEGRA210_SPKPROT_ARF_MAX_BIQ];
+	unsigned int biquad_a2[SPKPROT_MAX_CH][TEGRA210_SPKPROT_ARF_MAX_BIQ];
+};
+
+struct tegra210_audio_i2s_test_param {
+	int i2s_id;
+	int test_id;
+	unsigned int i2s_mode;
+	unsigned int is_i2s_loopback;
+	unsigned int is_i2s_master;
+	unsigned int in_channels;
+	unsigned int out_channels;
+	unsigned int sample_rate;
+	unsigned int in_bps;
+	unsigned int out_bps;
+};
+
+struct tegra210_audio_amixer_test_param {
+	int test_id;
+	int rxpath_id;
+	unsigned int act_th;
+	unsigned int deact_th;
+	unsigned int gain;
+	unsigned int peakmeter_mode;
+	unsigned int peakmeter_window_size;
+};
+
+enum T210_MVC_CURVE_TYPE {
+	MVC_CURVE_POLYNOMIAL = 0,
+	MVC_CURVE_LINEAR_RAMP = 1,
+};
+
+struct tegra210_audio_mvc_test_param {
+	int mvc_id;
+	int test_id;
+	unsigned int bypass_en;
+	unsigned int channels;
+	unsigned int per_ch_ctrl_en;
+	unsigned int mute_unmute_ctrl;
+	unsigned int curve_type;
+	unsigned int rounding_type;
+	unsigned int init_vol[8];
+	unsigned int target_vol[8];
+	unsigned int duration_in_samples;
+	unsigned int inv_duration_in_samples;
+	unsigned int curve_split_points[2];
+	unsigned int curve_coef[9];
+	unsigned int peakmeter_mode;
+	unsigned int peakmeter_window_size;
+};
+
+struct tegra210_audio_dmic_test_param {
+	int test_id;
+	int dmic_id;
+	int osr;
+	unsigned int bps;
+	unsigned int channels;
+	unsigned int sample_rate;
+};
+
 #define TEGRA_AUDIO_IN_SET_CONFIG	_IOW(TEGRA_AUDIO_MAGIC, 2, \
 			const struct tegra_audio_in_config *)
 #define TEGRA_AUDIO_IN_GET_CONFIG	_IOR(TEGRA_AUDIO_MAGIC, 3, \
@@ -147,6 +368,32 @@ struct dmic_params_t {
 #define TEGRA_AUDIO_TEST_SET_PARAMS		_IO(TEGRA_AUDIO_MAGIC, 62)
 #define TEGRA_AUDIO_TEST_GET_PARAMS		_IO(TEGRA_AUDIO_MAGIC, 63)
 #define TEGRA_AUDIO_TEST_STOP			_IO(TEGRA_AUDIO_MAGIC, 64)
+
+/* Tegra210 AHUB test specific macros */
+#define TEGRA210_AUDIO_TEST_EXEC	_IOW(TEGRA_AUDIO_MAGIC, 71, \
+				    struct tegra210_audio_test_param *)
+#define TEGRA210_AUDIO_AXBAR_CONNECT	_IOW(TEGRA_AUDIO_MAGIC, 72, \
+				    struct tegra210_audio_axbar_test_param *)
+#define TEGRA210_AUDIO_ADMAIF_TEST_PARAM _IOW(TEGRA_AUDIO_MAGIC, 73, \
+				    struct tegra210_audio_admaif_test_param *)
+#define TEGRA210_AUDIO_SFC_TEST_PARAM	_IOW(TEGRA_AUDIO_MAGIC, 74, \
+				    struct tegra210_audio_sfc_test_param *)
+#define TEGRA210_AUDIO_OPE_TEST_PARAM    _IOW(TEGRA_AUDIO_MAGIC, 75, \
+				    struct tegra210_audio_ope_test_param *)
+#define TEGRA210_AUDIO_SPKPROT_TEST_PARAM    _IOW(TEGRA_AUDIO_MAGIC, 76, \
+				struct tegra210_audio_spkprot_test_param *)
+#define TEGRA210_AUDIO_PEQ_TEST_PARAM	_IOW(TEGRA_AUDIO_MAGIC, 77, \
+				    struct tegra210_audio_peq_test_param *)
+#define TEGRA210_AUDIO_MBDRC_TEST_PARAM	_IOW(TEGRA_AUDIO_MAGIC, 78, \
+				    struct tegra210_audio_mbdrc_test_param *)
+#define TEGRA210_AUDIO_I2S_TEST_PARAM    _IOW(TEGRA_AUDIO_MAGIC, 79, \
+				struct tegra210_audio_i2s_test_param *)
+#define TEGRA210_AUDIO_AMIXER_TEST_PARAM	_IOW(TEGRA_AUDIO_MAGIC, 80, \
+				    struct tegra210_audio_amixer_test_param *)
+#define TEGRA210_AUDIO_DMIC_TEST_PARAM		_IOW(TEGRA_AUDIO_MAGIC, 81, \
+				    struct tegra210_audio_dmic_test_param *)
+#define TEGRA210_AUDIO_MVC_TEST_PARAM	_IOW(TEGRA_AUDIO_MAGIC, 82, \
+				    struct tegra210_audio_mvc_test_param *)
 
 #ifdef CONFIG_SND_SOC_TEGRA
 extern bool tegra_is_voice_call_active(void);

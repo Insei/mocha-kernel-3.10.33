@@ -1,7 +1,7 @@
 /*
  * arch/arm/mach-tegra/board-laguna-power.c
  *
- * Copyright (c) 2013 NVIDIA Corporation. All rights reserved.
+ * Copyright (c) 2013-2014, NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -18,7 +18,6 @@
  */
 
 #include <linux/i2c.h>
-#include <linux/i2c/pca953x.h>
 #include <linux/pda_power.h>
 #include <linux/platform_device.h>
 #include <linux/resource.h>
@@ -26,19 +25,18 @@
 #include <linux/regulator/machine.h>
 #include <linux/regulator/driver.h>
 #include <linux/regulator/fixed.h>
-#include <linux/mfd/as3722-plat.h>
 #include <linux/gpio.h>
 #include <linux/regulator/userspace-consumer.h>
 #include <linux/pid_thermal_gov.h>
-#include <linux/power/bq2471x-charger.h>
+#include <linux/tegra-pmc.h>
 
 #include <asm/mach-types.h>
 
 #include <mach/irqs.h>
 #include <mach/edp.h>
-#include <mach/gpio-tegra.h>
+#include <linux/tegra_soctherm.h>
 
-#include "cpu-tegra.h"
+#include <linux/platform/tegra/cpu-tegra.h>
 #include "pm.h"
 #include "tegra-board-id.h"
 #include "board.h"
@@ -46,42 +44,9 @@
 #include "board-common.h"
 #include "board-pmu-defines.h"
 #include "board-ardbeg.h"
-#include "tegra_cl_dvfs.h"
+#include <linux/platform/tegra/tegra_cl_dvfs.h>
 #include "devices.h"
-#include "tegra11_soctherm.h"
 #include "iomap.h"
-
-#define PMC_CTRL		0x0
-#define PMC_CTRL_INTR_LOW	(1 << 17)
-#define AS3722_SUPPLY(_name) "as3722_"#_name
-
-struct bq2471x_platform_data laguna_bq2471x_pdata = {
-	.charge_broadcast_mode = 1,
-	.gpio_active_low = 1,
-	.gpio = TEGRA_GPIO_PK3,
-};
-
-static struct i2c_board_info __initdata bq2471x_boardinfo[] = {
-	{
-		I2C_BOARD_INFO("bq2471x", 0x09),
-		.platform_data  = &laguna_bq2471x_pdata,
-	},
-};
-
-int __init laguna_as3722_regulator_init(void)
-{
-	void __iomem *pmc = IO_ADDRESS(TEGRA_PMC_BASE);
-	u32 pmc_ctrl;
-
-	/* AS3722: Normal state of INT request line is LOW.
-	 * configure the power management controller to trigger PMU
-	 * interrupts when HIGH.
-	 */
-	pmc_ctrl = readl(pmc + PMC_CTRL);
-	writel(pmc_ctrl | PMC_CTRL_INTR_LOW, pmc + PMC_CTRL);
-
-	return 0;
-}
 
 static struct tegra_suspend_platform_data laguna_suspend_data = {
 	.cpu_timer	= 2000,
@@ -120,11 +85,12 @@ static inline void fill_reg_map(void)
 	struct board_info board_info;
 
 	tegra_get_board_info(&board_info);
-	if ((board_info.board_id == BOARD_PM359) &&
+	if (board_info.board_id == BOARD_PM375 ||
+	((board_info.board_id == BOARD_PM359) &&
 	((board_info.sku >= 0x0003) ||
 	((board_info.sku == 0x0002) && (board_info.major_revision == 'B')) ||
 	((board_info.sku == 0x0001) && (board_info.major_revision == 'C')) ||
-	((board_info.sku == 0x0000) && (board_info.major_revision == 'C'))))
+	((board_info.sku == 0x0000) && (board_info.major_revision == 'C')))))
 		reg_init_value = 0x1e;
 
 	for (i = 0; i < PMU_CPU_VDD_MAP_SIZE; i++) {
@@ -132,6 +98,7 @@ static inline void fill_reg_map(void)
 		pmu_cpu_vdd_map[i].reg_uV = 700000 + 10000 * i;
 	}
 }
+
 
 #ifdef CONFIG_ARCH_TEGRA_HAS_CL_DVFS
 static struct tegra_cl_dvfs_platform_data laguna_cl_dvfs_data = {
@@ -148,8 +115,28 @@ static struct tegra_cl_dvfs_platform_data laguna_cl_dvfs_data = {
 	.cfg_param = &laguna_cl_dvfs_param,
 };
 
+static const struct of_device_id dfll_of_match[] = {
+	{ .compatible	= "nvidia,tegra124-dfll", },
+	{ .compatible	= "nvidia,tegra132-dfll", },
+	{ },
+};
+
 static int __init laguna_cl_dvfs_init(void)
 {
+	struct device_node *dn = of_find_matching_node(NULL, dfll_of_match);
+
+	/*
+	 * Laguna platforms maybe used with different DT variants. Some of them
+	 * include DFLL data in DT, some - not. Check DT here, and continue with
+	 * platform device registration only if DT DFLL node is not present.
+	 */
+	if (dn) {
+		bool available = of_device_is_available(dn);
+		of_node_put(dn);
+		if (available)
+			return 0;
+	}
+
 	fill_reg_map();
 	laguna_cl_dvfs_data.flags = TEGRA_CL_DVFS_DYN_OUTPUT_CFG;
 	tegra_cl_dvfs_device.dev.platform_data = &laguna_cl_dvfs_data;
@@ -165,38 +152,12 @@ int __init laguna_regulator_init(void)
 #ifdef CONFIG_ARCH_TEGRA_HAS_CL_DVFS
 	laguna_cl_dvfs_init();
 #endif
-	laguna_as3722_regulator_init();
-
-	if (get_power_supply_type() == POWER_SUPPLY_TYPE_BATTERY)
-		i2c_register_board_info(1, bq2471x_boardinfo,
-			ARRAY_SIZE(bq2471x_boardinfo));
-
 	return 0;
 }
 
 int __init laguna_suspend_init(void)
 {
 	tegra_init_suspend(&laguna_suspend_data);
-	return 0;
-}
-
-int __init laguna_edp_init(void)
-{
-	unsigned int regulator_mA;
-
-	regulator_mA = get_maximum_cpu_current_supported();
-	if (!regulator_mA)
-		regulator_mA = 15000;
-
-	pr_info("%s: CPU regulator %d mA\n", __func__, regulator_mA);
-
-	tegra_init_cpu_edp_limits(regulator_mA);
-
-	/* gpu maximum current */
-	regulator_mA = 8000;
-	pr_info("%s: GPU regulator %d mA\n", __func__, regulator_mA);
-
-	tegra_init_gpu_edp_limits(regulator_mA);
 	return 0;
 }
 
@@ -340,5 +301,5 @@ int __init laguna_soctherm_init(void)
 	tegra_add_core_vmax_trips(laguna_soctherm_data.therm[THERM_PLL].trips,
 			&laguna_soctherm_data.therm[THERM_PLL].num_trips);
 
-	return tegra11_soctherm_init(&laguna_soctherm_data);
+	return tegra_soctherm_init(&laguna_soctherm_data);
 }

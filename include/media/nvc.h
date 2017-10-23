@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2014, NVIDIA CORPORATION.  All rights reserved.
+/* Copyright (c) 2012-2015, NVIDIA CORPORATION.  All rights reserved.
 
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -18,17 +18,26 @@
 
 #include <linux/ioctl.h>
 #include <linux/regulator/consumer.h>
-#include <mach/pinmux.h>
+
+#define MAKE_CONSTUSER_PTR(p)	(const void __user *)((unsigned long)(p))
+#define MAKE_USER_PTR(p)	(void __user *)((unsigned long)(p))
 
 #define NVC_INT2FLOAT_DIVISOR_1K	1000
 #define NVC_INT2FLOAT_DIVISOR_1M	1000000
 #define NVC_INT2FLOAT_DIVISOR		1000
 
-struct nvc_param {
+struct nvc_param_32 {
 	__u32 param;
 	__u32 sizeofvalue;
 	__u32 variant;
 	__u32 p_value;
+} __packed;
+
+struct nvc_param {
+	__u32 param;
+	__u32 sizeofvalue;
+	__u32 variant;
+	unsigned long p_value;
 } __packed;
 
 enum nvc_params {
@@ -96,6 +105,7 @@ enum nvc_params {
 	NVC_PARAM_BRACKET_CAPS,
 	NVC_PARAM_NUM,
 	NVC_PARAM_I2C,
+	NVC_PARAM_FEATURES,
 	NVC_PARAM_FORCE32 = 0x7FFFFFFF
 };
 
@@ -168,10 +178,14 @@ enum nvc_params_isp {
 #define NVC_IOCTL_PWR_WR		_IOW('o', 102, int)
 #define NVC_IOCTL_PWR_RD		_IOW('o', 103, int)
 #define NVC_IOCTL_PARAM_WR		_IOW('o', 104, struct nvc_param)
+#define NVC_IOCTL32_PARAM_WR		_IOW('o', 104, struct nvc_param_32)
 #define NVC_IOCTL_PARAM_RD		_IOWR('o', 105, struct nvc_param)
+#define NVC_IOCTL32_PARAM_RD		_IOWR('o', 105, struct nvc_param_32)
 #define NVC_IOCTL_PARAM_ISP_RD		_IOWR('o', 200, struct nvc_param_isp)
 #define NVC_IOCTL_PARAM_ISP_WR		_IOWR('o', 201, struct nvc_param_isp)
 #define NVC_IOCTL_FUSE_ID		_IOWR('o', 202, struct nvc_fuseid)
+#define NVC_IOCTL_SET_EEPROM_DATA	_IOWR('o', 254, __u8 *)
+#define NVC_IOCTL_GET_EEPROM_DATA	_IOWR('o', 255, __u8 *)
 
 /* Expected higher level power calls are:
  * 1 = OFF
@@ -288,13 +302,6 @@ struct nvc_gpio {
 struct nvc_fuseid {
 	__u32 size;
 	__u8 data[16];
-};
-
-struct nvc_pinmux {
-	struct tegra_pingroup_config pcfg;
-	bool valid; /* set if struct data is valid */
-	bool own; /* gets set if driver initializes */
-	bool flag; /* scratch flag for driver implementation */
 };
 
 #endif /* __KERNEL__ */

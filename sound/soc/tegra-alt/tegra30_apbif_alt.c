@@ -1,7 +1,7 @@
 /*
  * tegra30_apbif_alt.c - Tegra APBIF driver
  *
- * Copyright (c) 2011-2014 NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2011-2015 NVIDIA CORPORATION.  All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -34,7 +34,52 @@
 
 #define DRV_NAME "tegra30-ahub-apbif"
 
+struct tegra30_apbif *apbif;
+
 #define FIFOS_IN_FIRST_REG_BLOCK 4
+
+#define APBIF_CH_REG(name, id) \
+	((id < FIFOS_IN_FIRST_REG_BLOCK) ? \
+	(TEGRA_AHUB_##name + (TEGRA_AHUB_##name##_STRIDE * id)) : \
+	(TEGRA_AHUB_##name + (TEGRA_AHUB_##name##_STRIDE * (id - FIFOS_IN_FIRST_REG_BLOCK))))
+
+#define APBIF_REG_DEFAULTS(id) \
+	{APBIF_CH_REG(CHANNEL_CTRL, id), 0x00000000}, \
+	{APBIF_CH_REG(CHANNEL_CLEAR, id), 0x00000000}, \
+	{APBIF_CH_REG(CHANNEL_TXFIFO, id), 0x00000000}, \
+	{APBIF_CH_REG(CHANNEL_RXFIFO, id), 0x00000000}, \
+	{APBIF_CH_REG(CIF_TX_CTRL, id), 0x00001100}, \
+	{APBIF_CH_REG(CIF_RX_CTRL, id), 0x00001100}
+
+static const struct reg_default tegra30_apbif_reg_defaults[] = {
+	APBIF_REG_DEFAULTS(0),
+	APBIF_REG_DEFAULTS(1),
+	APBIF_REG_DEFAULTS(2),
+	APBIF_REG_DEFAULTS(3),
+	{TEGRA_AHUB_CONFIG_LINK_CTRL, 0x08008000},
+	{TEGRA_AHUB_MISC_CTRL, 0x00000000},
+	{TEGRA_AHUB_I2S_INT_MASK, 0x7fff03ff},
+	{TEGRA_AHUB_DAM_INT_MASK, 0x00939393},
+	{TEGRA_AHUB_SPDIF_INT_MASK, 0x00008fff},
+	{TEGRA_AHUB_APBIF_INT_MASK, 0x0001ffff},
+	{TEGRA_AHUB_I2S_INT_STATUS, 0x00000000},
+	{TEGRA_AHUB_DAM_INT_STATUS, 0x00000000},
+	{TEGRA_AHUB_SPDIF_INT_STATUS, 0x00000000},
+	{TEGRA_AHUB_APBIF_INT_STATUS, 0x00000000},
+	{TEGRA_AHUB_I2S_INT_SET, 0x00000000},
+	{TEGRA_AHUB_DAM_INT_SET, 0x00000000},
+	{TEGRA_AHUB_SPDIF_INT_SET, 0x00000000},
+	{TEGRA_AHUB_APBIF_INT_SET, 0x00000000},
+};
+
+static const struct reg_default tegra30_apbif2_reg_defaults[] = {
+	APBIF_REG_DEFAULTS(4),
+	APBIF_REG_DEFAULTS(5),
+	APBIF_REG_DEFAULTS(6),
+	APBIF_REG_DEFAULTS(7),
+	APBIF_REG_DEFAULTS(8),
+	APBIF_REG_DEFAULTS(9),
+};
 
 #define LAST_REG(name) \
 	(TEGRA_AHUB_##name + \
@@ -45,7 +90,40 @@
 	 (reg <= LAST_REG(name) && \
 	 (!((reg - TEGRA_AHUB_##name) % TEGRA_AHUB_##name##_STRIDE))))
 
-static bool tegra30_apbif_wr_rd_reg(struct device *dev, unsigned int reg)
+static bool tegra30_apbif_wr_reg(struct device *dev, unsigned int reg)
+{
+	switch (reg) {
+	case TEGRA_AHUB_CONFIG_LINK_CTRL:
+	case TEGRA_AHUB_MISC_CTRL:
+	case TEGRA_AHUB_I2S_INT_MASK:
+	case TEGRA_AHUB_DAM_INT_MASK:
+	case TEGRA_AHUB_SPDIF_INT_MASK:
+	case TEGRA_AHUB_APBIF_INT_MASK:
+	case TEGRA_AHUB_I2S_INT_STATUS:
+	case TEGRA_AHUB_DAM_INT_STATUS:
+	case TEGRA_AHUB_SPDIF_INT_STATUS:
+	case TEGRA_AHUB_APBIF_INT_STATUS:
+	case TEGRA_AHUB_I2S_INT_SET:
+	case TEGRA_AHUB_DAM_INT_SET:
+	case TEGRA_AHUB_SPDIF_INT_SET:
+	case TEGRA_AHUB_APBIF_INT_SET:
+		return true;
+	default:
+		break;
+	};
+
+	if (REG_IN_ARRAY(reg, CHANNEL_CTRL) ||
+	    REG_IN_ARRAY(reg, CHANNEL_CLEAR) ||
+	    REG_IN_ARRAY(reg, CHANNEL_TXFIFO) ||
+	    REG_IN_ARRAY(reg, CHANNEL_RXFIFO) ||
+	    REG_IN_ARRAY(reg, CIF_TX_CTRL) ||
+	    REG_IN_ARRAY(reg, CIF_RX_CTRL))
+		return true;
+
+	return false;
+}
+
+static bool tegra30_apbif_rd_reg(struct device *dev, unsigned int reg)
 {
 	switch (reg) {
 	case TEGRA_AHUB_CONFIG_LINK_CTRL:
@@ -132,11 +210,13 @@ static const struct regmap_config tegra30_apbif_regmap_config = {
 	.val_bits = 32,
 	.reg_stride = 4,
 	.max_register = TEGRA_AHUB_APBIF_INT_SET,
-	.writeable_reg = tegra30_apbif_wr_rd_reg,
-	.readable_reg = tegra30_apbif_wr_rd_reg,
+	.writeable_reg = tegra30_apbif_wr_reg,
+	.readable_reg = tegra30_apbif_rd_reg,
 	.volatile_reg = tegra30_apbif_volatile_reg,
 	.precious_reg = tegra30_apbif_precious_reg,
-	.cache_type = REGCACHE_RBTREE,
+	.cache_type = REGCACHE_FLAT,
+	.reg_defaults = tegra30_apbif_reg_defaults,
+	.num_reg_defaults = ARRAY_SIZE(tegra30_apbif_reg_defaults),
 };
 
 static const struct regmap_config tegra30_apbif2_regmap_config = {
@@ -144,7 +224,9 @@ static const struct regmap_config tegra30_apbif2_regmap_config = {
 	.val_bits = 32,
 	.reg_stride = 4,
 	.max_register = TEGRA_AHUB_CIF_RX9_CTRL,
-	.cache_type = REGCACHE_RBTREE,
+	.cache_type = REGCACHE_FLAT,
+	.reg_defaults = tegra30_apbif2_reg_defaults,
+	.num_reg_defaults = ARRAY_SIZE(tegra30_apbif2_reg_defaults),
 };
 
 static int tegra30_apbif_runtime_suspend(struct device *dev)
@@ -172,11 +254,148 @@ static int tegra30_apbif_runtime_resume(struct device *dev)
 	}
 
 	regcache_cache_only(apbif->regmap[0], false);
-	if (apbif->regmap[1])
+	regcache_sync(apbif->regmap[0]);
+	if (apbif->regmap[1]) {
 		regcache_cache_only(apbif->regmap[1], false);
+		regcache_sync(apbif->regmap[1]);
+	}
 
 	return 0;
 }
+
+#ifdef CONFIG_PM_SLEEP
+static int tegra30_apbif_suspend(struct device *dev)
+{
+	struct tegra30_apbif *apbif = dev_get_drvdata(dev);
+
+	regcache_mark_dirty(apbif->regmap[0]);
+	if (apbif->regmap[1])
+		regcache_mark_dirty(apbif->regmap[1]);
+
+	return 0;
+}
+#endif
+
+
+int tegra30_apbif_i2s_underrun_interrupt_mask_clear(int i2s_id)
+{
+	regmap_update_bits(apbif->regmap[0], TEGRA_AHUB_I2S_INT_MASK,
+		(TEGRA_AHUB_I2S0_INT_MASK_I2S_RXCIF_UNDERRUN <<
+						(i2s_id * 2)), 0);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(tegra30_apbif_i2s_underrun_interrupt_mask_clear);
+
+int tegra30_apbif_i2s_overrun_interrupt_mask_clear(int i2s_id)
+{
+	regmap_update_bits(apbif->regmap[0], TEGRA_AHUB_I2S_INT_MASK,
+		(TEGRA_AHUB_I2S0_INT_MASK_I2S_TXCIF_OVERRUN <<
+						(i2s_id * 2)), 0);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(tegra30_apbif_i2s_overrun_interrupt_mask_clear);
+
+int tegra30_apbif_i2s_underrun_interrupt_mask_set(int i2s_id)
+{
+	regmap_update_bits(apbif->regmap[0], TEGRA_AHUB_I2S_INT_MASK,
+		(TEGRA_AHUB_I2S0_INT_MASK_I2S_RXCIF_UNDERRUN <<
+						(i2s_id * 2)), 1);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(tegra30_apbif_i2s_underrun_interrupt_mask_set);
+
+int tegra30_apbif_i2s_overrun_interrupt_mask_set(int i2s_id)
+{
+	regmap_update_bits(apbif->regmap[0], TEGRA_AHUB_I2S_INT_MASK,
+		(TEGRA_AHUB_I2S0_INT_MASK_I2S_TXCIF_OVERRUN <<
+						(i2s_id * 2)), 1);
+	return 0;
+}
+EXPORT_SYMBOL_GPL(tegra30_apbif_i2s_overrun_interrupt_mask_set);
+
+int tegra30_apbif_i2s_underrun_interrupt_status_clear(int i2s_id)
+{
+	regmap_write(apbif->regmap[0], TEGRA_AHUB_I2S_INT_STATUS,
+			 TEGRA_AHUB_I2S_INT_STATUS_I2S0_RXCIF_UNDERRUN
+			 << (i2s_id * 2));
+	return 0;
+}
+EXPORT_SYMBOL_GPL(tegra30_apbif_i2s_underrun_interrupt_status_clear);
+
+int tegra30_apbif_i2s_overrun_interrupt_status_clear(int i2s_id)
+{
+	regmap_write(apbif->regmap[0], TEGRA_AHUB_I2S_INT_STATUS,
+			 TEGRA_AHUB_I2S_INT_STATUS_I2S0_TXCIF_OVERRUN
+			 << (i2s_id * 2));
+	return 0;
+}
+EXPORT_SYMBOL_GPL(tegra30_apbif_i2s_overrun_interrupt_status_clear);
+
+int tegra30_apbif_i2s_underrun_interrupt_status(int i2s_id)
+{
+	int val;
+	regmap_read(apbif->regmap[0], TEGRA_AHUB_I2S_INT_STATUS, &val);
+	return val & (TEGRA_AHUB_I2S_INT_STATUS_I2S0_RXCIF_UNDERRUN
+						 << (i2s_id * 2));
+}
+EXPORT_SYMBOL_GPL(tegra30_apbif_i2s_underrun_interrupt_status);
+
+int tegra30_apbif_i2s_overrun_interrupt_status(int i2s_id)
+{
+	int val;
+	regmap_read(apbif->regmap[0], TEGRA_AHUB_I2S_INT_STATUS, &val);
+	return val & (TEGRA_AHUB_I2S_INT_STATUS_I2S0_TXCIF_OVERRUN
+						 << (i2s_id * 2));
+}
+EXPORT_SYMBOL_GPL(tegra30_apbif_i2s_overrun_interrupt_status);
+
+int tegra30_apbif_i2s_rx_fifo_is_enabled(int i2s_id)
+{
+	int val;
+
+	regmap_read(apbif->regmap[0], TEGRA_AHUB_I2S_LIVE_STATUS, &val);
+	val &= (TEGRA_AHUB_I2S_LIVE_STATUS_I2S0_RX_FIFO_ENABLED <<
+			(i2s_id * 2));
+
+	return val;
+}
+EXPORT_SYMBOL_GPL(tegra30_apbif_i2s_rx_fifo_is_enabled);
+
+int tegra30_apbif_i2s_tx_fifo_is_enabled(int i2s_id)
+{
+	int val;
+
+	regmap_read(apbif->regmap[0], TEGRA_AHUB_I2S_LIVE_STATUS, &val);
+	val &= (TEGRA_AHUB_I2S_LIVE_STATUS_I2S0_TX_FIFO_ENABLED <<
+			(i2s_id * 2));
+
+	return val;
+}
+EXPORT_SYMBOL_GPL(tegra30_apbif_i2s_tx_fifo_is_enabled);
+
+int tegra30_apbif_i2s_rx_fifo_is_empty(int i2s_id)
+{
+	int val;
+
+	regmap_read(apbif->regmap[0], TEGRA_AHUB_I2S_LIVE_STATUS, &val);
+	val &= (TEGRA_AHUB_I2S_LIVE_STATUS_I2S0_RX_FIFO_EMPTY <<
+			(i2s_id * 2));
+
+	return val;
+}
+EXPORT_SYMBOL_GPL(tegra30_apbif_i2s_rx_fifo_is_empty);
+
+int tegra30_apbif_i2s_tx_fifo_is_empty(int i2s_id)
+{
+	int val;
+
+	regmap_read(apbif->regmap[0], TEGRA_AHUB_I2S_LIVE_STATUS, &val);
+	val &= (TEGRA_AHUB_I2S_LIVE_STATUS_I2S0_TX_FIFO_EMPTY <<
+			(i2s_id * 2));
+
+	return val;
+}
+EXPORT_SYMBOL_GPL(tegra30_apbif_i2s_tx_fifo_is_empty);
 
 static int tegra30_apbif_hw_params(struct snd_pcm_substream *substream,
 				 struct snd_pcm_hw_params *params,
@@ -308,6 +527,12 @@ static void tegra30_apbif_stop_playback(struct snd_soc_dai *dai)
 	reg = TEGRA_AHUB_CHANNEL_CTRL +
 		((dai->id - base_ch) * TEGRA_AHUB_CHANNEL_CTRL_STRIDE);
 	regmap_update_bits(regmap, reg, TEGRA_AHUB_CHANNEL_CTRL_TX_EN, 0);
+
+	/* soft reset APBIF TX */
+	reg = TEGRA_AHUB_CHANNEL_CLEAR +
+		((dai->id - base_ch) * TEGRA_AHUB_CHANNEL_CTRL_STRIDE);
+	regmap_update_bits(regmap, reg,
+		TEGRA_AHUB_CHANNEL_CLEAR_TX_SOFT_RESET, 1);
 }
 
 static void tegra30_apbif_start_capture(struct snd_soc_dai *dai)
@@ -347,6 +572,12 @@ static void tegra30_apbif_stop_capture(struct snd_soc_dai *dai)
 	reg = TEGRA_AHUB_CHANNEL_CTRL +
 		((dai->id - base_ch) * TEGRA_AHUB_CHANNEL_CTRL_STRIDE);
 	regmap_update_bits(regmap, reg, TEGRA_AHUB_CHANNEL_CTRL_RX_EN, 0);
+
+	/* soft reset APBIF RX */
+	reg = TEGRA_AHUB_CHANNEL_CLEAR +
+		((dai->id - base_ch) * TEGRA_AHUB_CHANNEL_CTRL_STRIDE);
+	regmap_update_bits(regmap, reg,
+		TEGRA_AHUB_CHANNEL_CLEAR_RX_SOFT_RESET, 1);
 }
 
 static int tegra30_apbif_trigger(struct snd_pcm_substream *substream, int cmd,
@@ -470,13 +701,15 @@ static const struct {
 	{ "afc5", CLK_LIST_MASK_TEGRA124 },
 };
 
-
 struct of_dev_auxdata tegra30_apbif_auxdata[] = {
 	OF_DEV_AUXDATA("nvidia,tegra30-i2s", 0x70080300, "tegra30-i2s.0", NULL),
 	OF_DEV_AUXDATA("nvidia,tegra30-i2s", 0x70080400, "tegra30-i2s.1", NULL),
 	OF_DEV_AUXDATA("nvidia,tegra30-i2s", 0x70080500, "tegra30-i2s.2", NULL),
 	OF_DEV_AUXDATA("nvidia,tegra30-i2s", 0x70080600, "tegra30-i2s.3", NULL),
 	OF_DEV_AUXDATA("nvidia,tegra30-i2s", 0x70080700, "tegra30-i2s.4", NULL),
+	OF_DEV_AUXDATA("nvidia,tegra30-dam", 0x70080800, "tegra30-dam.0", NULL),
+	OF_DEV_AUXDATA("nvidia,tegra30-dam", 0x70080900, "tegra30-dam.1", NULL),
+	OF_DEV_AUXDATA("nvidia,tegra30-dam", 0x70080a00, "tegra30-dam.2", NULL),
 	OF_DEV_AUXDATA("nvidia,tegra114-amx", 0x70080c00, "tegra114-amx.0", NULL),
 	OF_DEV_AUXDATA("nvidia,tegra114-adx", 0x70080e00, "tegra114-adx.0", NULL),
 	OF_DEV_AUXDATA("nvidia,tegra124-i2s", 0x70301000, "tegra30-i2s.0", NULL),
@@ -484,11 +717,30 @@ struct of_dev_auxdata tegra30_apbif_auxdata[] = {
 	OF_DEV_AUXDATA("nvidia,tegra124-i2s", 0x70301200, "tegra30-i2s.2", NULL),
 	OF_DEV_AUXDATA("nvidia,tegra124-i2s", 0x70301300, "tegra30-i2s.3", NULL),
 	OF_DEV_AUXDATA("nvidia,tegra124-i2s", 0x70301400, "tegra30-i2s.4", NULL),
+	OF_DEV_AUXDATA("nvidia,tegra124-dam", 0x70302000, "tegra30-dam.0", NULL),
+	OF_DEV_AUXDATA("nvidia,tegra124-dam", 0x70302200, "tegra30-dam.1", NULL),
+	OF_DEV_AUXDATA("nvidia,tegra124-dam", 0x70302400, "tegra30-dam.2", NULL),
+	OF_DEV_AUXDATA("nvidia,tegra124-virt-dam", 0x70302000,
+		"tegra30-dam.0", NULL),
+	OF_DEV_AUXDATA("nvidia,tegra124-virt-dam", 0x70302200,
+		"tegra30-dam.1", NULL),
+	OF_DEV_AUXDATA("nvidia,tegra124-virt-dam", 0x70302400,
+		"tegra30-dam.2", NULL),
 	OF_DEV_AUXDATA("nvidia,tegra124-spdif", 0x70306000, "tegra30-spdif", NULL),
 	OF_DEV_AUXDATA("nvidia,tegra124-amx", 0x70303000, "tegra124-amx.0", NULL),
 	OF_DEV_AUXDATA("nvidia,tegra124-amx", 0x70303100, "tegra124-amx.1", NULL),
+	OF_DEV_AUXDATA("nvidia,tegra124-virt-amx", 0x70303000,
+		"tegra124-amx.0", NULL),
+	OF_DEV_AUXDATA("nvidia,tegra124-virt-amx", 0x70303100,
+		"tegra124-amx.1", NULL),
 	OF_DEV_AUXDATA("nvidia,tegra124-adx", 0x70303800, "tegra124-adx.0", NULL),
 	OF_DEV_AUXDATA("nvidia,tegra124-adx", 0x70303900, "tegra124-adx.1", NULL),
+	OF_DEV_AUXDATA("nvidia,tegra124-afc", 0x70307000, "tegra124-afc.0", NULL),
+	OF_DEV_AUXDATA("nvidia,tegra124-afc", 0x70307100, "tegra124-afc.1", NULL),
+	OF_DEV_AUXDATA("nvidia,tegra124-afc", 0x70307200, "tegra124-afc.2", NULL),
+	OF_DEV_AUXDATA("nvidia,tegra124-afc", 0x70307300, "tegra124-afc.3", NULL),
+	OF_DEV_AUXDATA("nvidia,tegra124-afc", 0x70307400, "tegra124-afc.4", NULL),
+	OF_DEV_AUXDATA("nvidia,tegra124-afc", 0x70307500, "tegra124-afc.5", NULL),
 	{}
 };
 
@@ -514,6 +766,8 @@ static const struct of_device_id tegra30_apbif_of_match[] = {
 	{ .compatible = "nvidia,tegra30-ahub", .data = &soc_data_tegra30 },
 	{ .compatible = "nvidia,tegra114-ahub", .data = &soc_data_tegra114 },
 	{ .compatible = "nvidia,tegra124-ahub", .data = &soc_data_tegra124 },
+	{ .compatible = "nvidia,tegra124-virt-ahub-master",
+			.data = &soc_data_tegra124 },
 	{},
 };
 
@@ -526,11 +780,10 @@ static int tegra30_apbif_probe(struct platform_device *pdev)
 {
 	int i;
 	struct clk *clk;
-	int ret;
-	struct tegra30_apbif *apbif;
+	int ret = 0;
 	void __iomem *regs;
 	struct resource *res[2];
-	u32 of_dma[10][2];
+	u32 of_dma[20][2];
 	const struct of_device_id *match;
 	struct tegra30_apbif_soc_data *soc_data;
 
@@ -570,28 +823,7 @@ static int tegra30_apbif_probe(struct platform_device *pdev)
 	}
 
 	dev_set_drvdata(&pdev->dev, apbif);
-
 	apbif->soc_data = soc_data;
-
-	apbif->capture_dma_data = devm_kzalloc(&pdev->dev,
-			sizeof(struct tegra_alt_pcm_dma_params) *
-				apbif->soc_data->num_ch,
-			GFP_KERNEL);
-	if (!apbif->capture_dma_data) {
-		dev_err(&pdev->dev, "Can't allocate tegra_alt_pcm_dma_params\n");
-		ret = -ENOMEM;
-		goto err;
-	}
-
-	apbif->playback_dma_data = devm_kzalloc(&pdev->dev,
-			sizeof(struct tegra_alt_pcm_dma_params) *
-				apbif->soc_data->num_ch,
-			GFP_KERNEL);
-	if (!apbif->playback_dma_data) {
-		dev_err(&pdev->dev, "Can't allocate tegra_alt_pcm_dma_params\n");
-		ret = -ENOMEM;
-		goto err;
-	}
 
 	apbif->clk = devm_clk_get(&pdev->dev, "apbif");
 	if (IS_ERR(apbif->clk)) {
@@ -649,16 +881,6 @@ static int tegra30_apbif_probe(struct platform_device *pdev)
 		regcache_cache_only(apbif->regmap[1], true);
 	}
 
-	if (of_property_read_u32_array(pdev->dev.of_node,
-				"nvidia,dma-request-selector",
-				&of_dma[0][0],
-				apbif->soc_data->num_ch * 2) < 0) {
-		dev_err(&pdev->dev,
-			"Missing property nvidia,dma-request-selector\n");
-		ret = -ENODEV;
-		goto err_clk_put;
-	}
-
 	pm_runtime_enable(&pdev->dev);
 	if (!pm_runtime_enabled(&pdev->dev)) {
 		ret = tegra30_apbif_runtime_resume(&pdev->dev);
@@ -666,53 +888,105 @@ static int tegra30_apbif_probe(struct platform_device *pdev)
 			goto err_pm_disable;
 	}
 
-	/* default DAI number is 4 */
-	for (i = 0; i < apbif->soc_data->num_ch; i++) {
-		if (i < FIFOS_IN_FIRST_REG_BLOCK) {
-			apbif->playback_dma_data[i].addr = res[0]->start +
-					TEGRA_AHUB_CHANNEL_TXFIFO +
-					(i * TEGRA_AHUB_CHANNEL_TXFIFO_STRIDE);
-
-			apbif->capture_dma_data[i].addr = res[0]->start +
-					TEGRA_AHUB_CHANNEL_RXFIFO +
-					(i * TEGRA_AHUB_CHANNEL_RXFIFO_STRIDE);
-		} else {
-			apbif->playback_dma_data[i].addr = res[1]->start +
-					TEGRA_AHUB_CHANNEL_TXFIFO +
-					((i - FIFOS_IN_FIRST_REG_BLOCK) *
-					TEGRA_AHUB_CHANNEL_TXFIFO_STRIDE);
-
-			apbif->capture_dma_data[i].addr = res[1]->start +
-					TEGRA_AHUB_CHANNEL_RXFIFO +
-					((i - FIFOS_IN_FIRST_REG_BLOCK) *
-					TEGRA_AHUB_CHANNEL_RXFIFO_STRIDE);
+	if (!of_device_is_compatible(pdev->dev.of_node,
+				"nvidia,tegra124-virt-ahub-master")) {
+		apbif->capture_dma_data = devm_kzalloc(&pdev->dev,
+			sizeof(struct tegra_alt_pcm_dma_params) *
+			apbif->soc_data->num_ch,
+			GFP_KERNEL);
+		if (!apbif->capture_dma_data) {
+			dev_err(&pdev->dev, "Can't allocate tegra_alt_pcm_dma_params\n");
+			ret = -ENOMEM;
+			goto err;
 		}
 
-		apbif->playback_dma_data[i].wrap = 4;
-		apbif->playback_dma_data[i].width = 32;
-		apbif->playback_dma_data[i].req_sel = of_dma[i][1];
+		apbif->playback_dma_data = devm_kzalloc(&pdev->dev,
+			sizeof(struct tegra_alt_pcm_dma_params) *
+			apbif->soc_data->num_ch,
+			GFP_KERNEL);
+		if (!apbif->playback_dma_data) {
+			dev_err(&pdev->dev, "Can't allocate tegra_alt_pcm_dma_params\n");
+			ret = -ENOMEM;
+			goto err;
+		}
 
-		apbif->capture_dma_data[i].wrap = 4;
-		apbif->capture_dma_data[i].width = 32;
-		apbif->capture_dma_data[i].req_sel = of_dma[i][1];
-	}
+		if (of_property_read_u32_array(pdev->dev.of_node,
+			"dmas",
+			&of_dma[0][0],
+			apbif->soc_data->num_ch * 2) < 0) {
+				dev_err(&pdev->dev,
+					"Missing property nvidia,dma-request-selector\n");
+				ret = -ENODEV;
+				goto err_clk_put;
+		}
 
+		/* default DAI number is 4 */
+		for (i = 0; i < apbif->soc_data->num_ch; i++) {
+			if (i < FIFOS_IN_FIRST_REG_BLOCK) {
+				apbif->playback_dma_data[i].addr = res[0]->start
+				+ TEGRA_AHUB_CHANNEL_TXFIFO
+				+ (i * TEGRA_AHUB_CHANNEL_TXFIFO_STRIDE);
 
-	ret = snd_soc_register_component(&pdev->dev,
-					&tegra30_apbif_dai_driver,
-					tegra30_apbif_dais,
-					apbif->soc_data->num_ch);
-	if (ret) {
-		dev_err(&pdev->dev, "Could not register DAIs %d: %d\n",
-			i, ret);
-		ret = -ENOMEM;
-		goto err_suspend;
-	}
+				apbif->capture_dma_data[i].addr = res[0]->start
+				+ TEGRA_AHUB_CHANNEL_RXFIFO
+				+ (i * TEGRA_AHUB_CHANNEL_RXFIFO_STRIDE);
+			} else {
+				apbif->playback_dma_data[i].addr = res[1]->start
+				+ TEGRA_AHUB_CHANNEL_TXFIFO
+				+ ((i - FIFOS_IN_FIRST_REG_BLOCK) *
+				TEGRA_AHUB_CHANNEL_TXFIFO_STRIDE);
 
-	ret = tegra_alt_pcm_platform_register(&pdev->dev);
-	if (ret) {
-		dev_err(&pdev->dev, "Could not register PCM: %d\n", ret);
-		goto err_unregister_dais;
+				apbif->capture_dma_data[i].addr = res[1]->start
+				+ TEGRA_AHUB_CHANNEL_RXFIFO
+				+ ((i - FIFOS_IN_FIRST_REG_BLOCK) *
+				TEGRA_AHUB_CHANNEL_RXFIFO_STRIDE);
+			}
+
+			apbif->playback_dma_data[i].wrap = 4;
+			apbif->playback_dma_data[i].width = 32;
+			apbif->playback_dma_data[i].req_sel =
+				of_dma[(i * 2) + 1][1];
+			if (of_property_read_string_index(pdev->dev.of_node,
+				"dma-names",
+				(i * 2) + 1,
+				&apbif->playback_dma_data[i].chan_name) < 0) {
+					dev_err(&pdev->dev,
+						"Missing property nvidia,dma-names\n");
+					ret = -ENODEV;
+					goto err_suspend;
+			}
+
+			apbif->capture_dma_data[i].wrap = 4;
+			apbif->capture_dma_data[i].width = 32;
+			apbif->capture_dma_data[i].req_sel = of_dma[(i * 2)][1];
+			if (of_property_read_string_index(pdev->dev.of_node,
+				"dma-names",
+				(i * 2),
+				&apbif->capture_dma_data[i].chan_name) < 0) {
+					dev_err(&pdev->dev,
+						"Missing property nvidia,dma-names\n");
+					ret = -ENODEV;
+					goto err_suspend;
+			}
+		}
+
+		ret = snd_soc_register_component(&pdev->dev,
+				&tegra30_apbif_dai_driver,
+				tegra30_apbif_dais,
+				apbif->soc_data->num_ch);
+		if (ret) {
+			dev_err(&pdev->dev, "Could not register DAIs %d: %d\n",
+				i, ret);
+			ret = -ENOMEM;
+			goto err_suspend;
+		}
+
+		ret = tegra_alt_pcm_platform_register(&pdev->dev);
+		if (ret) {
+			dev_err(&pdev->dev, "Could not register PCM: %d\n",
+				ret);
+			goto err_unregister_dais;
+		}
 	}
 
 	tegra30_xbar_device_info.res = platform_get_resource(pdev,
@@ -765,6 +1039,8 @@ static int tegra30_apbif_remove(struct platform_device *pdev)
 static const struct dev_pm_ops tegra30_apbif_pm_ops = {
 	SET_RUNTIME_PM_OPS(tegra30_apbif_runtime_suspend,
 			   tegra30_apbif_runtime_resume, NULL)
+	SET_SYSTEM_SLEEP_PM_OPS(tegra30_apbif_suspend,
+			   NULL)
 };
 
 static struct platform_driver tegra30_apbif_driver = {
